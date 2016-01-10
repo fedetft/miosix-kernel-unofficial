@@ -36,6 +36,7 @@
 #include "stage_2_boot.h"
 #include "process.h"
 #include "kernel/scheduler/scheduler.h"
+#include "interfaces/cstimer.h"
 #include <stdexcept>
 #include <algorithm>
 #include <string.h>
@@ -60,7 +61,7 @@ volatile Thread *cur=NULL;///<\internal Thread currently running
 ///\internal True if there are threads in the DELETED status. Used by idle thread
 static volatile bool exist_deleted=false;
 
-static SleepData *sleeping_list=NULL;///<\internal list of sleeping threads
+SleepData *sleeping_list=NULL;///list of sleeping threads
 
 static volatile long long tick=0;///<\internal Kernel tick
 
@@ -250,6 +251,10 @@ void IRQaddToSleepingList(SleepData *x)
            cur=cur->next;
        }
     }
+    //Upon any change to the sleeping_list the ContextSwitchTimer should have
+    //its interrupt set to the head of the list in order to keep it sync with
+    //the list
+    ContextSwitchTimer::instance().setNextInterrupt(sleeping_list->wakeup_time);
 }
 
 /**
@@ -269,10 +274,14 @@ bool IRQwakeThreads()
         if(sleeping_list==NULL) break;//If no item in list, return
         //Since list is sorted, if we don't need to wake the first element
         //we don't need to wake the other too
-        if(tick != sleeping_list->wakeup_time) break;
-        sleeping_list->p->flags.IRQsetSleep(false);//Wake thread
+        //if(tick != sleeping_list->wakeup_time) break;
+        if(ContextSwitchTimer::instance().getCurrentTick() < sleeping_list->wakeup_time) break;
+        if (sleeping_list->p != 0) //distinguish between context switches and sleeps
+            sleeping_list->p->flags.IRQsetSleep(false);//Wake thread
         sleeping_list=sleeping_list->next;//Remove from list
         result=true;
+        //update interrupt of context switch timer
+        ContextSwitchTimer::instance().setNextInterrupt(sleeping_list->wakeup_time);
     }
     return result;
 }
@@ -341,9 +350,12 @@ bool Thread::testTerminate()
     return const_cast<Thread*>(cur)->flags.isDeleting();
 }
 
-void Thread::sleep(unsigned int ms)
-{
-    if(ms==0) return;
+inline void Thread::tickSleepUntil(long long absTicks){
+    //absTicks: As it is in terms of real ticks of the kernel/timer, there's no 
+    //resolution issues here.
+    //This function does not care about setting the wakeup_time in the past
+    //as it should be based on the policy taken into account by IRQwakeThreads
+
     //The SleepData variable has to be in scope till Thread::yield() returns
     //as IRQaddToSleepingList() makes it part of a linked list till the
     //thread wakes up (i.e: after Thread::yield() returns)
@@ -353,30 +365,33 @@ void Thread::sleep(unsigned int ms)
     {
         FastInterruptDisableLock lock;
         d.p=const_cast<Thread*>(cur);
-        if(((ms*TICK_FREQ)/1000)>0) d.wakeup_time=getTick()+(ms*TICK_FREQ)/1000;
-        //If tick resolution is too low, wait one tick
-        else d.wakeup_time=getTick()+1;
+        d.wakeup_time = absTicks;
         IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
     }
     Thread::yield();
 }
 
+void Thread::nanoSleep(unsigned int ns){
+    if(ns==0) return; //To-Do: should be (ns &lt; resolution + epsilon)
+    long long ticks = ns * 0.084;//To-do: ns2tick fast conversion needed
+    tickSleepUntil(ContextSwitchTimer::instance().getCurrentTick() + ticks);
+}
+
+void Thread::nanoSleepUntil(long long absoluteTime){
+    //To-Do: The absolute time should be rounded w.r.t. the timer resolution
+    long long ticks = absoluteTime * 0.084;//To-do: ns2tick fast conversion needed
+    if (ticks <= ContextSwitchTimer::instance().getCurrentTick()) return;
+    tickSleepUntil(ticks);
+}
+
+void Thread::sleep(unsigned int ms)
+{
+    nanoSleep(ms * 1000000);
+}
+
 void Thread::sleepUntil(long long absoluteTime)
 {
-    //The SleepData variable has to be in scope till Thread::yield() returns
-    //as IRQaddToSleepingList() makes it part of a linked list till the
-    //thread wakes up (i.e: after Thread::yield() returns)
-    SleepData d;
-    //pauseKernel() here is not enough since even if the kernel is stopped
-    //the tick isr will wake threads, modifying the sleeping_list
-    {
-        FastInterruptDisableLock lock;
-        if(absoluteTime<=getTick()) return; //Wakeup time in the past, return
-        d.p=const_cast<Thread*>(cur);
-        d.wakeup_time=absoluteTime;
-        IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
-    }
-    Thread::yield();
+    nanoSleepUntil(absoluteTime * 1000000);
 }
 
 Thread *Thread::getCurrentThread()
