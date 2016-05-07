@@ -350,33 +350,17 @@ bool Thread::testTerminate()
     return const_cast<Thread*>(cur)->flags.isDeleting();
 }
 
-inline void Thread::tickSleepUntil(long long absTicks){
-    //absTicks: As it is in terms of real ticks of the kernel/timer, there's no 
-    //resolution issues here.
-    //This function does not care about setting the wakeup_time in the past
-    //as it should be based on the policy taken into account by IRQwakeThreads
-    
-    //pauseKernel() here is not enough since even if the kernel is stopped
-    //the tick isr will wake threads, modifying the sleeping_list
-    {
-        FastInterruptDisableLock lock;
-        SleepData d; 
-        d.p=const_cast<Thread*>(cur);
-        d.wakeup_time = absTicks;
-        IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
-    }
-    Thread::yield();
-}
-
-void Thread::nanoSleep(unsigned int ns){
-    if(ns==0) return; //To-Do: should be (ns &lt; resolution + epsilon)
-    long long ticks = ns * 0.084;//To-do: ns2tick fast conversion needed
+void Thread::nanoSleep(unsigned int ns)
+{
+    if(ns==0) return; //TODO: should be (ns &lt; resolution + epsilon)
+    long long ticks = ns * 0.084;//TODO: ns2tick fast conversion needed
     tickSleepUntil(ContextSwitchTimer::instance().getCurrentTick() + ticks);
 }
 
-void Thread::nanoSleepUntil(long long absoluteTime){
-    //To-Do: The absolute time should be rounded w.r.t. the timer resolution
-    long long ticks = absoluteTime * 0.084;//To-do: ns2tick fast conversion needed
+void Thread::nanoSleepUntil(long long absoluteTime)
+{
+    //TODO: The absolute time should be rounded w.r.t. the timer resolution
+    long long ticks = absoluteTime * 0.084;//TODO: ns2tick fast conversion needed
     if (ticks <= ContextSwitchTimer::instance().getCurrentTick()) return;
     tickSleepUntil(ticks);
 }
@@ -704,6 +688,25 @@ void Thread::threadLauncher(void *(*threadfunc)(void*), void *argv)
     Thread::yield();//Since the thread is now deleted, yield immediately.
     //Will never reach here
     errorHandler(UNEXPECTED);
+}
+
+void Thread::tickSleepUntil(long long absTicks)
+{
+    //absTicks: As it is in terms of real ticks of the kernel/timer, there's no 
+    //resolution issues here.
+    //This function does not care about setting the wakeup_time in the past
+    //as it should be based on the policy taken into account by IRQwakeThreads
+    
+    //pauseKernel() here is not enough since even if the kernel is stopped
+    //the tick isr will wake threads, modifying the sleeping_list
+    {
+        FastInterruptDisableLock lock;
+        SleepData d; 
+        d.p=const_cast<Thread*>(cur);
+        d.wakeup_time = absTicks;
+        IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
+    }
+    Thread::yield();
 }
 
 #ifdef WITH_PROCESSES
