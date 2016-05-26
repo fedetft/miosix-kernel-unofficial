@@ -693,6 +693,8 @@ public:
         T *cur;
     public:
         iterator(T *cur) : cur(cur) {}
+        iterator operator++() { cur = static_cast<T*>(cur->next); }
+        iterator operator--() { cur = static_cast<T*>(cur->prev); }
         iterator operator++(int) { cur = static_cast<T*>(cur->next); }
         iterator operator--(int) { cur = static_cast<T*>(cur->prev); }
         T* operator*() { return cur; }
