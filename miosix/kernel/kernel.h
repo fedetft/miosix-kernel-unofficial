@@ -35,6 +35,7 @@
 #include "kernel/scheduler/sched_types.h"
 #include "stdlib_integration/libc_integration.h"
 #include "stdlib_integration/libstdcpp_integration.h"
+#include "intrusive.h"
 #include <cstdlib>
 #include <new>
 #include <functional>
@@ -1059,7 +1060,7 @@ public:
  * This struct is used to make a list of sleeping threads.
  * It is used by the kernel, and should not be used by end users.
  */
-struct SleepData
+struct SleepData : public IntrusiveListItem
 {
     ///\internal Thread that is sleeping
     Thread *p;
@@ -1067,8 +1068,6 @@ struct SleepData
     ///\internal When this number becomes equal to the kernel tick,
     ///the thread will wake
     long long wakeup_time;
-    
-    SleepData *next;///<\internal Next thread in the list
 };
 
 /**
