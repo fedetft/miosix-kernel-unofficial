@@ -250,7 +250,7 @@ long long getTick()
         if(a==b) return a;
     }
     #else //USE_CSTIMER
-    return timer->getCurrentTick();
+    return timer->getCurrentTick()/CSQUANTUM;
     #endif //USE_CSTIMER
 }
 
