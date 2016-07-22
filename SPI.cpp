@@ -1,0 +1,52 @@
+#include "SPI.h"
+#include <miosix.h>
+
+using namespace std;
+using namespace miosix;
+
+SPI::SPI()
+{
+    FastInterruptDisableLock dLock;
+    CMU->HFPERCLKEN0|=CMU_HFPERCLKEN0_USART1;
+    USART1->CTRL=USART_CTRL_MSBF
+               | USART_CTRL_SYNC;
+    USART1->FRAME=USART_FRAME_STOPBITS_ONE //Should not even be needed
+                | USART_FRAME_PARITY_NONE
+                | USART_FRAME_DATABITS_EIGHT;
+    USART1->CLKDIV=((48000000/8000000)-1)<<8; //CC2520 max freq is 8MHz
+    USART1->IEN=0;
+    USART1->IRCTRL=0;
+    USART1->I2SCTRL=0;
+    enable();
+}
+
+unsigned char SPI::sendRecv(unsigned char data)
+{
+    USART1->TXDATA=data;
+    while((USART1->STATUS & USART_STATUS_RXDATAV)==0) ;
+    return USART1->RXDATA;
+}
+
+void SPI::enable()
+{
+    USART1->ROUTE=USART_ROUTE_LOCATION_LOC1
+                | USART_ROUTE_CLKPEN
+                | USART_ROUTE_TXPEN
+                | USART_ROUTE_RXPEN;
+    USART1->CMD=USART_CMD_CLEARRX
+              | USART_CMD_CLEARTX
+              | USART_CMD_TXTRIDIS
+              | USART_CMD_RXBLOCKDIS
+              | USART_CMD_MASTEREN
+              | USART_CMD_TXEN
+              | USART_CMD_RXEN;
+}
+
+void SPI::disable()
+{
+    USART1->CMD=USART_CMD_TXDIS | USART_CMD_RXDIS;
+    USART1->ROUTE=0;
+    internalSpi::mosi::mode(Mode::OUTPUT_LOW);
+    internalSpi::miso::mode(Mode::INPUT_PULL_DOWN); //To prevent it from floating
+    internalSpi::sck::mode(Mode::OUTPUT_LOW);
+}
