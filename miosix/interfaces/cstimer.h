@@ -3,8 +3,6 @@
 
 namespace miosix {
 
-#define CST_QUANTUM 42000//84000 ///FIXME: remove
-
 /**
  * This class is a low level interface to a hardware timer, that is used as
  * the basis for the Miosix timing infrastructure. In detail, it allows to
@@ -33,9 +31,17 @@ public:
     
     /**
      * Could be call both when the interrupts are enabled/disabled!
+     * TODO: investigate if it's possible to remove the possibility to call
+     * this with IRQ disabled and use IRQgetCurrentTick() instead
      * \return the current tick count of the timer
      */
     long long getCurrentTick() const;
+    
+    /**
+     * \return the current tick count of the timer.
+     * Can only be called with interrupts disabled or within an IRQ
+     */
+    long long IRQgetCurrentTick() const;
     
     /**
      * \return the timer frequency in Hz

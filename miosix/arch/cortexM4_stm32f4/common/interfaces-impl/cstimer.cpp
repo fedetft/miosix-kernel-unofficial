@@ -1,29 +1,55 @@
-#include "miosix.h"
+
 #include "interfaces/cstimer.h"
-#include "interfaces/portability.h"
+#include "interfaces/arch_registers.h"
 #include "kernel/kernel.h"
-#include "kernel/logging.h"
-#include <cstdlib>
+#include "kernel/scheduler/timer_interrupt.h"
+#include "../../../../../debugpin.h"
 
 using namespace miosix;
 
-namespace miosix {
-void IRQaddToSleepingList(SleepData *x);
-extern SleepData *sleeping_list;
-}
-
-namespace miosix_private {
-void ISR_preempt();
-}
+const unsigned int timerBits=32;
+const unsigned long long overflowIncrement=(1LL<<timerBits);
+const unsigned long long lowerMask=overflowIncrement-1;
+const unsigned long long upperMask=0xFFFFFFFFFFFFFFFFLL-lowerMask;
 
 static long long ms32time = 0; //most significant 32 bits of counter
 static long long ms32chkp = 0; //most significant 32 bits of check point
 static bool lateIrq=false;
-static SleepData csRecord;
 
 static inline long long nextInterrupt()
 {
     return ms32chkp | TIM2->CCR1;
+}
+
+static inline long long IRQgetTick()
+{
+    //THE PENDING BIT TRICK, version 2
+    //This algorithm is the main part that allows to extend in software a
+    //32bit timer to a 64bit one. The basic idea is this: the lower bits of the
+    //64bit timer are kept by the counter register of the timer, while the upper
+    //bits are kept in a software variable. When the hardware timer overflows, 
+    //an interrupt is used to update the upper bits.
+    //Reading the timer may appear to be doable by just an OR operation between
+    //the software variable and the hardware counter, but is actually way
+    //trickier than it seems, because user code may:
+    //1 disable interrupts,
+    //2 spend a little time with interrupts disabled,
+    //3 call this function.
+    //Now, if a timer overflow occurs while interrupts are disabled, the upper
+    //bits have not yet been updated, so we would return the wrong time.
+    //To fix this, we check the timer overflow pending bit, and if it is set
+    //we return the time adjusted accordingly. This almost works, the last
+    //issue to fix is that reading the timer counter and the pending bit
+    //is not an atomic operation, and the counter may roll over exactly at that
+    //point in time. To solve this, we read the timer a second time to see if
+    //it had rolled over.
+    //Note that this algorithm imposes a limit on the maximum time interrupts
+    //can be disabeld, equals to one hardware timer period minus the time
+    //between the two timer reads in this algorithm.
+    unsigned int counter=TIM2->CNT;
+    if((TIM2->SR & TIM_SR_UIF) && TIM2->CNT>=counter)
+        return (ms32time | static_cast<long long>(counter)) + overflowIncrement;
+    return ms32time | static_cast<long long>(counter);
 }
 
 void __attribute__((naked)) TIM2_IRQHandler()
@@ -35,53 +61,23 @@ void __attribute__((naked)) TIM2_IRQHandler()
 
 void __attribute__((used)) cstirqhnd()
 {
-    //IRQbootlog("TIM2-IRQ\r\n");
+    HighPin<debug1> h1;
     if(TIM2->SR & TIM_SR_CC1IF || lateIrq)
     {
-        //Checkpoint met
-        //The interrupt flag must be cleared unconditionally whether we are in the
-        //correct epoch or not otherwise the interrupt will happen even in unrelated
-        //epochs and slowing down the whole system.
         TIM2->SR = ~TIM_SR_CC1IF;
         if(ms32time==ms32chkp || lateIrq)
         {
             lateIrq=false;
-            long long tick = ContextSwitchTimer::instance().getCurrentTick();
-            
-            //Add next context switch time to the sleeping list iff this is a
-            //context switch
-            
-            if(tick >= csRecord.wakeup_time)
-            {
-                //Remove the cs item from the sleeping list manually
-                if(sleeping_list==&csRecord)
-                    sleeping_list=sleeping_list->next;
-                SleepData* slp = sleeping_list;
-                while(slp!=NULL)
-                {
-                    if(slp->next==&csRecord)
-                    {
-                        slp->next=slp->next->next;
-                        break;
-                    }
-                    slp = slp->next;
-                }
-                //Add next cs item to the list via IRQaddToSleepingList
-                //Note that the next timer interrupt is set by IRQaddToSleepingList
-                //according to the head of the list!
-                csRecord.wakeup_time += CST_QUANTUM;
-                IRQaddToSleepingList(&csRecord); //It would also set the next timer interrupt
-            }
-            miosix_private::ISR_preempt();
+            HighPin<debug2> h2;
+            IRQtimerInterrupt(nextInterrupt());
         }
 
     }
     //Rollover
-    //On the initial update SR = UIF (ONLY)
     if(TIM2->SR & TIM_SR_UIF)
     {
-        TIM2->SR = ~TIM_SR_UIF; //w0 clear
-        ms32time += 0x100000000;
+        TIM2->SR = ~TIM_SR_UIF;
+        ms32time += overflowIncrement;
     }
 }
 
@@ -99,9 +95,9 @@ ContextSwitchTimer& ContextSwitchTimer::instance()
 
 void ContextSwitchTimer::IRQsetNextInterrupt(long long tick)
 {
-    ms32chkp = tick & 0xFFFFFFFF00000000;
-    TIM2->CCR1 = static_cast<unsigned int>(tick & 0xFFFFFFFF);
-    if(getCurrentTick() > nextInterrupt())
+    ms32chkp = tick & upperMask;
+    TIM2->CCR1 = static_cast<unsigned int>(tick & lowerMask);
+    if(IRQgetTick() >= nextInterrupt())
     {
         NVIC_SetPendingIRQ(TIM2_IRQn);
         lateIrq=true;
@@ -116,22 +112,18 @@ long long ContextSwitchTimer::getNextInterrupt() const
 long long ContextSwitchTimer::getCurrentTick() const
 {
     bool interrupts=areInterruptsEnabled();
+    //TODO: optimization opportunity, if we can guarantee that no call to this
+    //function occurs before kernel is started, then we can use
+    //fastInterruptDisable())
     if(interrupts) disableInterrupts();
-    //If overflow occurs while interrupts disabled
-    /*
-     * counter should be checked before rollover interrupt flag
-     *
-     */
-    uint32_t counter = TIM2->CNT;
-    if((TIM2->SR & TIM_SR_UIF) && counter < 0x80000000)
-    {
-        long long result=(ms32time | counter) + 0x100000000ll;
-        if(interrupts) enableInterrupts();
-        return result;
-    }
-    long long result=ms32time | counter;
+    long long result=IRQgetTick();
     if(interrupts) enableInterrupts();
     return result;
+}
+
+long long ContextSwitchTimer::IRQgetCurrentTick() const
+{
+    return IRQgetTick();
 }
 
 ContextSwitchTimer::~ContextSwitchTimer() {}
@@ -140,6 +132,8 @@ ContextSwitchTimer::ContextSwitchTimer()
 {
     // TIM2 Source Clock (from APB1) Enable
     {
+        //NOTE: Not FastInterruptDisableLock as this is called before kernel
+        //is started
         InterruptDisableLock idl;
         RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
         RCC_SYNC();
@@ -162,16 +156,8 @@ ContextSwitchTimer::ContextSwitchTimer()
     TIM2->PSC = 0;
     TIM2->ARR = 0xFFFFFFFF;
     
-    // Other initializations
-    // Set the first checkpoint interrupt
-    csRecord.p = 0; //FIXME: remove these when removing direct sleeping_list access
-    csRecord.wakeup_time = CST_QUANTUM;
-    csRecord.next = sleeping_list;
-    sleeping_list = &csRecord;
-    // IRQaddToSleepingList(&csRecord); //Recursive Initialization error FIXME: why commented?
     // Enable TIM2 Counter
-    ms32time = 0;
-    TIM2->EGR = TIM_EGR_UG; //To enforce the timer to apply PSC (and other non-immediate settings)
+    TIM2->EGR = TIM_EGR_UG; //To enforce the timer to apply PSC
     TIM2->CR1 |= TIM_CR1_CEN;
     
     // The global variable SystemCoreClock from ARM's CMSIS allows to know

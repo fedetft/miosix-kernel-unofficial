@@ -31,7 +31,7 @@
 #include "kernel/error.h"
 #include "interfaces/bsp.h"
 #include "kernel/scheduler/scheduler.h"
-#include "kernel/scheduler/tick_interrupt.h"
+#include "kernel/scheduler/timer_interrupt.h"
 #include "core/interrupts.h"
 #include "kernel/process.h"
 #include <algorithm>
@@ -39,7 +39,6 @@
 #include <cstring>
 #include <cassert>
 #include "interfaces/cstimer.h"
-//#define CNTX_SWITCH_USE_SYSTICK
 
 /**
  * \internal
@@ -51,7 +50,7 @@
 void SysTick_Handler()   __attribute__((naked));
 void SysTick_Handler()
 {
-#ifdef CNTX_SWITCH_USE_SYSTICK
+#ifndef USE_CSTIMER
     saveContext();
     //Call ISR_preempt(). Name is a C++ mangled name.
     asm volatile("bl _ZN14miosix_private11ISR_preemptEv");
@@ -96,6 +95,7 @@ void TIM3_IRQHandler()
 
 namespace miosix_private {
 
+#ifndef USE_CSTIMER
 /**
  * \internal
  * Called by the timer interrupt, preempt to next thread
@@ -106,9 +106,9 @@ namespace miosix_private {
 void ISR_preempt() __attribute__((noinline));
 void ISR_preempt()
 {
-    IRQstackOverflowCheck();
-    miosix::IRQtickInterrupt();
+    miosix::IRQtimerInterrupt(0 /*TODO dummy parameter */);
 }
+#endif //USE_CSTIMER
 
 /**
  * \internal
@@ -407,12 +407,10 @@ void IRQportableStartKernel()
     NVIC_SetPriority(SVCall_IRQn,3);//High priority for SVC (Max=0, min=15)
     NVIC_SetPriority(SysTick_IRQn,3);//High priority for SysTick (Max=0, min=15)
     NVIC_SetPriority(MemoryManagement_IRQn,2);//Higher priority for MemoryManagement (Max=0, min=15)
-#ifdef CNTX_SWITCH_USE_SYSTICK
+#ifndef USE_CSTIMER
     SysTick->LOAD=SystemCoreClock/miosix::TICK_FREQ;
     SysTick->CTRL=SysTick_CTRL_ENABLE_Msk | SysTick_CTRL_TICKINT_Msk |
             SysTick_CTRL_CLKSOURCE_Msk;
-#else //USE ContextSwitchTimer class (TIM2)
-    miosix::ContextSwitchTimer::instance().IRQsetNextInterrupt(CST_QUANTUM);
 #endif
     #ifdef WITH_PROCESSES
     //Enable MPU

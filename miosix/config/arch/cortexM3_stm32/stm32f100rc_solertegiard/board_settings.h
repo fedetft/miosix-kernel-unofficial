@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2010 by Terraneo Federico                               *
+ *   Copyright (C) 2016 by Silvano Seva                                    *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,53 +25,61 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#ifndef TICK_INTERRUPT_H
-#define	TICK_INTERRUPT_H
+#ifndef BOARD_SETTINGS_H
+#define	BOARD_SETTINGS_H
 
-#include "config/miosix_settings.h"
-#include "scheduler.h"
+#include "util/version.h"
+
+/**
+ * \internal
+ * Versioning for board_settings.h for out of git tree projects
+ */
+#define BOARD_SETTINGS_VERSION 100
 
 namespace miosix {
 
-//These are a couple of global variables and a function that are part of the
-//internal implementation of the kernel and are defined in kernel.cpp
-//User code should not know about these nor try to use them.
-extern unsigned char kernel_running;///\internal Do not use outside the kernel
-extern volatile bool tick_skew;///\internal Do not use outside the kernel
-extern volatile Thread *cur;///\internal Do not use outside the kernel
-extern bool IRQwakeThreads();///\internal Do not use outside the kernel
+/**
+ * \addtogroup Settings
+ * \{
+ */
 
-inline void IRQtickInterrupt()
-{
-    bool woken=IRQwakeThreads();//Increment tick and wake threads,if any
-    (void)woken; //Avoid unused variable warning.
+/// Size of stack for main().
+/// The C standard library is stack-heavy (iprintf requires 1KB) but the
+/// STM32F100RB only has 8KB of RAM so the stack is only 1.5KB.
+const unsigned int MAIN_STACK_SIZE=1024+512;
 
-    #ifdef SCHED_TYPE_PRIORITY
-    //With the priority scheduler every tick causes a context switck
-    Scheduler::IRQfindNextThread();//If the kernel is running, preempt
-    if(kernel_running!=0) tick_skew=true;
-    #elif defined(SCHED_TYPE_CONTROL_BASED)
-    //Normally, with the control based scheduler, preemptions do not happen
-    //here, but in the auxiliary timer interrupt to take into account variable
-    //bursts. But there is one exception: when a thread wakes up from sleep
-    //and the idle thread is running.
-    if(woken && cur==ControlScheduler::IRQgetIdleThread())
-    {
-        Scheduler::IRQfindNextThread();
-        if(kernel_running!=0) tick_skew=true;
-    }
-    #elif defined(SCHED_TYPE_EDF)
-    //With the EDF scheduler a preemption happens only if a thread with a closer
-    //deadline appears. So by deafult there is no need to call the scheduler;
-    //only if some threads were woken, they may have closer deadlines
-    if(woken)
-    {
-        Scheduler::IRQfindNextThread();
-        if(kernel_running!=0) tick_skew=true;
-    }
-    #endif
-}
+/// Frequency of tick (in Hz). The frequency of the STM32F100RB timer in the
+/// stm32vldiscovery board can be divided by 1000. This allows to use a 1KHz
+/// tick and the minimun Thread::sleep value is 1ms
+/// For the priority scheduler this is also the context switch frequency
+const unsigned int TICK_FREQ=1000;
 
-}
+///\internal Aux timer run @ 100KHz
+///Note that since the timer is only 16 bits this imposes a limit on the
+///burst measurement of 655ms. If due to a pause_kernel() or
+///disable_interrupts() section a thread runs for more than that time, a wrong
+///burst value will be measured
+const unsigned int AUX_TIMER_CLOCK=100000;
+const unsigned int AUX_TIMER_MAX=0xffff; ///<\internal Aux timer is 16 bits
 
-#endif //TICK_INTERRUPT_H
+/// Serial port
+const unsigned int defaultSerial=1;
+const unsigned int defaultSerialSpeed=19200;
+const bool defaultSerialFlowctrl=false;
+#define SERIAL_1_DMA
+//#define SERIAL_2_DMA //Serial 1 is not used, so not enabling DMA
+//#define SERIAL_3_DMA //Serial 1 is not used, so not enabling DMA
+
+///\def STDOUT_REDIRECTED_TO_DCC
+///If defined, stdout is redirected to the debug communication channel, and
+///will be printed if OpenOCD is connected. If not defined, stdout will be
+///redirected throug USART1, as usual.
+//#define STDOUT_REDIRECTED_TO_DCC
+
+/**
+ * \}
+ */
+
+} //namespace miosix
+
+#endif	/* BOARD_SETTINGS_H */
