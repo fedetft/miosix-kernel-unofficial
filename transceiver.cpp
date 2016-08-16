@@ -151,7 +151,7 @@ void Transceiver::sendNow(void* pkt, int size)
 
 bool Transceiver::sendCca(void* pkt, int size)
 {
-
+    
 }
 
 void Transceiver::sendAt(void* pkt, int size, long long when)
@@ -199,7 +199,7 @@ unsigned char Transceiver::txPower(int dBm)
 	else             result=CC2520TxPower::P_m18;
 	return static_cast<unsigned char>(result);
 }
-
+/*
 std::tuple<bool, long long, int> Transceiver::recv(void *pkt, int size, long long timeout){
     if(state==CC2520State::IDLE){
         printf("Attivo la modalità RX\n");
@@ -258,7 +258,7 @@ std::tuple<bool, long long, int> Transceiver::recv(void *pkt, int size, long lon
 
     return std::tuple<bool,long long, int> (false,0,0,); 
 }
-
+*/
     
 unsigned char Transceiver::readReg(CC2520Register reg){
     transceiver::cs::low();
