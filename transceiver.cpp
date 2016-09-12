@@ -200,7 +200,7 @@ unsigned char Transceiver::txPower(int dBm)
 	return static_cast<unsigned char>(result);
 }
 
-std::tuple<bool, long long, int> Transceiver::recv(void *pkt, int size, long long timeout){
+std::tuple<bool, long long, int,int> Transceiver::recv(void *pkt, int size, long long timeout){
     if(state==CC2520State::IDLE){
         printf("Attivo la modalità RX\n");
         unsigned char status;
@@ -209,28 +209,31 @@ std::tuple<bool, long long, int> Transceiver::recv(void *pkt, int size, long lon
         status=spi.sendRecv(static_cast<unsigned char>(CC2520Command::SRXON)); //SRXON
         transceiver::cs::high();
         spiDelay();
-        printf("Status: -%u-\n",status);   
+        printf("Status: -%x-\n",status);   
     }else if(state == CC2520State::DEEPSLEEP){
         printf("Errore, il device è spento\n");
     }
     
-    printf("SDF register value -%u-%u-%u-\n",readReg(CC2520Register::EXCFLAG1),readReg(CC2520Register::EXCFLAG1),readReg(CC2520Register::EXCFLAG2));
-    
+    printStatus();
     
     unsigned char status;
     printf("receiving...\n"); 
     while(!transceiver::excChB::value());
-    printf("SDF signal received: register value -%u-\n",readReg(CC2520Register::EXCFLAG1));
+    printStatus();
+    printf("SDF signal received\n");
     writeReg(CC2520Register::EXCFLAG1,!32);
     
-    
-    
-    while(!transceiver::excChB::value());
+    //usleep(100000);//Per simulare la preemption lunga da parte di miosix. Provare a spostarla tra tutte le posizioni comprese tra i 2 while
+    status=readReg(CC2520Register::EXCFLAG1);
+    printf("%x",status);
+    //Questo if serve nel caso avvenga una lunga preemption
+    if(!(1&status)){
+        printf("IF\n");
+        while(!transceiver::excChB::value());
+    }    
     printf("Frame done signal received\n");
-    printf("SDF signal received: register value -%u-\n",readReg(CC2520Register::EXCFLAG1));
+    printStatus();
     writeReg(CC2520Register::EXCFLAG1,!1);
-    
-    
     
     
     
@@ -248,15 +251,30 @@ std::tuple<bool, long long, int> Transceiver::recv(void *pkt, int size, long lon
     printf("Dato letto:\n");
     char aux[200];
     // -2 perchè c'è il CRC o RSSI
-    for(int i=0;i<len-2;i++){
+    for(int i=0;i<len;i++){
         aux[i]=spi.sendRecv();
     }
     memDump(aux,len);
     printf("\n");
     transceiver::cs::high();
     spiDelay();
-
-    return std::tuple<bool,long long, int> (false,0,0,); 
+    printStatus();
+    
+    //Controllo validità CRC
+    printf("%x ",aux[len-1]);
+    if((aux[len-1]&0x80)){
+        printf("CRC is valid\n");
+    }else{
+        printf("CRC isn't valid\n");
+    }
+    
+    
+    //Recupero RSSI e lo converto dal complemento 2 all'unsigned
+    int rssi=aux[len-2];
+    if(rssi>128){
+    	rssi-=256;
+    }
+    return std::tuple<bool,long long, int,int> (false,0,rssi-76,0); 
 }
 
     
@@ -268,5 +286,9 @@ unsigned char Transceiver::readReg(CC2520Register reg){
     transceiver::cs::high();
     spiDelay();
     return status;
+}
+
+void Transceiver::printStatus(){   
+    printf("Register value -%x-%x-%x-\n",readReg(CC2520Register::EXCFLAG0),readReg(CC2520Register::EXCFLAG1),readReg(CC2520Register::EXCFLAG2));
 }
 

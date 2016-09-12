@@ -9,7 +9,8 @@ using namespace miosix;
 int main()
 {
 	Transceiver& rtx=Transceiver::instance();
-	TransceiverConfiguration tc(2450); 
+	TransceiverConfiguration tc(2450);
+        std::tuple<bool,long long, int,int> result;
         char packet[100]={0};
 	for(;;)
 	{
@@ -18,7 +19,8 @@ int main()
 		puts("on");
 		rtx.turnOn(tc);
 		
-                rtx.recv(packet,100,0);
+                result=rtx.recv(packet,100,0);
+                printf("RSSI: %d\n",std::get<2>(result));
                 
 		getchar();
 		ledOff();
