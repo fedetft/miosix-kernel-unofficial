@@ -29,7 +29,9 @@ SYMBOL TABLE:
 00000098 l    d  .text	00000000 .text
 10000000 l    d  .got	00000000 .got
 1000000c l    d  .dynamic	00000000 .dynamic
+00000000 l    df *ABS*	00000000 crt0.o
 00000000 l    df *ABS*	00000000 main.c
+00000000 l    df *ABS*	00000000 
 1000000c l     O *ABS*	00000000 _DYNAMIC
 10000000 l     O *ABS*	00000000 _GLOBAL_OFFSET_TABLE_
 00000098 g     F .text	00000000 _start
@@ -52,7 +54,7 @@ Contents of section .dynamic:
 Disassembly of section .text:
 
 00000098 <_start>:
-_start():
+$t():
   98:	f000 f802 	bl	a0 <main>
   9c:	f000 f80a 	bl	b4 <_exit>
 
@@ -68,12 +70,11 @@ main():
   b2:	bf00      	nop
 
 000000b4 <_exit>:
-_exit():
+$t():
   b4:	2302      	movs	r3, #2
   b6:	df00      	svc	0
 
 000000b8 <open>:
-open():
   b8:	2306      	movs	r3, #6
   ba:	df00      	svc	0
   bc:	4770      	bx	lr

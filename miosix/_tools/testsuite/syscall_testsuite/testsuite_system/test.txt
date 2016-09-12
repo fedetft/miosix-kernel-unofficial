@@ -7,10 +7,10 @@ start address 0x00000099
 
 Program Header:
     LOAD off    0x00000098 vaddr 0x00000098 paddr 0x00000098 align 2**3
-         filesz 0x00000022 memsz 0x00000022 flags r-x
-    LOAD off    0x000000c0 vaddr 0x10000000 paddr 0x10000000 align 2**3
+         filesz 0x0000001e memsz 0x0000001e flags r-x
+    LOAD off    0x000000b8 vaddr 0x10000000 paddr 0x10000000 align 2**3
          filesz 0x00000040 memsz 0x00000040 flags rw-
- DYNAMIC off    0x000000cc vaddr 0x1000000c paddr 0x1000000c align 2**2
+ DYNAMIC off    0x000000c4 vaddr 0x1000000c paddr 0x1000000c align 2**2
          filesz 0x00000028 memsz 0x00000028 flags rw-
 
 Dynamic Section:
@@ -19,33 +19,34 @@ private flags = 5000002: [Version5 EABI] [has entry point]
 
 Sections:
 Idx Name          Size      VMA       LMA       File off  Algn
-  0 .text         00000022  00000098  00000098  00000098  2**3
+  0 .text         0000001e  00000098  00000098  00000098  2**3
                   CONTENTS, ALLOC, LOAD, READONLY, CODE
-  1 .got          0000000c  10000000  10000000  000000c0  2**2
+  1 .got          0000000c  10000000  10000000  000000b8  2**2
                   CONTENTS, ALLOC, LOAD, DATA
-  2 .dynamic      00000028  1000000c  1000000c  000000cc  2**2
+  2 .dynamic      00000028  1000000c  1000000c  000000c4  2**2
                   CONTENTS, ALLOC, LOAD, DATA
-  3 .rodata       00000008  10000038  10000038  000000f8  2**3
+  3 .rodata       00000008  10000038  10000038  000000f0  2**3
                   CONTENTS, ALLOC, LOAD, READONLY, DATA
 SYMBOL TABLE:
 00000098 l    d  .text	00000000 .text
 10000000 l    d  .got	00000000 .got
 1000000c l    d  .dynamic	00000000 .dynamic
 10000038 l    d  .rodata	00000000 .rodata
+00000000 l    df *ABS*	00000000 crt0.o
 00000000 l    df *ABS*	00000000 main.c
+00000000 l    df *ABS*	00000000 
 1000000c l     O *ABS*	00000000 _DYNAMIC
+00000000 l     F *UND*	00000000 seek
 10000000 l     O *ABS*	00000000 _GLOBAL_OFFSET_TABLE_
-000000b4 g     F .text	00000000 system
+000000b0 g     F .text	00000000 system
 00000098 g     F .text	00000000 _start
-000000a0 g     F .text	00000010 main
-00000000       F *UND*	00000000 seek
-000000b0 g     F .text	00000000 _exit
+000000a0 g     F .text	0000000c main
+000000ac g     F .text	00000000 _exit
 
 
 Contents of section .text:
- 0098 00f002f8 00f008f8 024808b5 484400f0  .........H..HD..
- 00a8 05f808bd 38000000 022300df 092300df  ....8....#...#..
- 00b8 7047                                 pG              
+ 0098 00f002f8 00f006f8 01487844 00f004b8  .........HxD....
+ 00a8 92ffff0f 022300df 092300df 7047      .....#...#..pG  
 Contents of section .got:
  10000000 0c000010 00000000 00000000           ............    
 Contents of section .dynamic:
@@ -58,29 +59,26 @@ Contents of section .rodata:
 Disassembly of section .text:
 
 00000098 <_start>:
-_start():
+$t():
   98:	f000 f802 	bl	a0 <main>
-  9c:	f000 f808 	bl	b0 <_exit>
+  9c:	f000 f806 	bl	ac <_exit>
 
 000000a0 <main>:
 main():
-  a0:	4802      	ldr	r0, [pc, #8]	; (ac <main+0xc>)
-  a2:	b508      	push	{r3, lr}
-  a4:	4448      	add	r0, r9
-  a6:	f000 f805 	bl	b4 <system>
-  aa:	bd08      	pop	{r3, pc}
-  ac:	00000038 	andeq	r0, r0, r8, lsr r0
+  a0:	4801      	ldr	r0, [pc, #4]	; (a8 <main+0x8>)
+  a2:	4478      	add	r0, pc
+  a4:	f000 b804 	b.w	b0 <system>
+  a8:	0fffff92 	svceq	0x00ffff92
 
-000000b0 <_exit>:
-_exit():
-  b0:	2302      	movs	r3, #2
+000000ac <_exit>:
+$t():
+  ac:	2302      	movs	r3, #2
+  ae:	df00      	svc	0
+
+000000b0 <system>:
+  b0:	2309      	movs	r3, #9
   b2:	df00      	svc	0
-
-000000b4 <system>:
-system():
-  b4:	2309      	movs	r3, #9
-  b6:	df00      	svc	0
-  b8:	4770      	bx	lr
+  b4:	4770      	bx	lr
 
 Disassembly of section .got:
 
@@ -97,5 +95,6 @@ Disassembly of section .dynamic:
 Disassembly of section .rodata:
 
 10000038 <.rodata>:
+$d():
 10000038:	74736574 	ldrbtvc	r6, [r3], #-1396	; 0x574
 1000003c:	00000000 	andeq	r0, r0, r0

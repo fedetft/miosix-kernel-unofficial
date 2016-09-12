@@ -1,0 +1,136 @@
+
+Discarded input sections
+
+ .text          0x00000000        0x0 main.o
+ .data          0x00000000        0x0 main.o
+ .bss           0x00000000        0x0 main.o
+ .comment       0x00000000       0x12 main.o
+ .ARM.attributes
+                0x00000000       0x33 main.o
+ .data          0x00000000        0x0 crt0.o
+ .bss           0x00000000        0x0 crt0.o
+ .text.open     0x00000000        0x6 crt0.o
+ .text.close    0x00000000        0x6 crt0.o
+ .text.seek     0x00000000        0x6 crt0.o
+ .text.write    0x00000000        0x6 crt0.o
+ .text.read     0x00000000        0x6 crt0.o
+ .text.usleep   0x00000000        0x6 crt0.o
+ .ARM.attributes
+                0x00000000       0x21 crt0.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+*default*        0x00000000         0xffffffff
+
+Linker script and memory map
+
+                0x00000094                . = (0x0 + SIZEOF_HEADERS)
+
+.text           0x00000098       0x1e
+ *(.text)
+ .text          0x00000098        0x8 crt0.o
+                0x00000098                _start
+ *(.text.*)
+ .text.startup.main
+                0x000000a0        0xc main.o
+                0x000000a0                main
+ .text._exit    0x000000ac        0x4 crt0.o
+                0x000000ac                _exit
+ .text.system   0x000000b0        0x6 crt0.o
+                0x000000b0                system
+ *(.gnu.linkonce.t.*)
+
+.glue_7         0x000000b8        0x0
+ .glue_7        0x00000000        0x0 linker stubs
+
+.glue_7t        0x000000b8        0x0
+ .glue_7t       0x00000000        0x0 linker stubs
+
+.vfp11_veneer   0x000000b8        0x0
+ .vfp11_veneer  0x00000000        0x0 linker stubs
+
+.v4_bx          0x000000b8        0x0
+ .v4_bx         0x00000000        0x0 linker stubs
+
+.plt            0x000000b8        0x0
+ .plt           0x00000000        0x0 main.o
+
+.iplt           0x000000b8        0x0
+ .iplt          0x00000000        0x0 main.o
+
+.rel.dyn        0x000000b8        0x0
+ .rel.plt       0x00000000        0x0 main.o
+ .rel.iplt      0x00000000        0x0 main.o
+
+.rel.data
+ *(.rel.data .rel.data.* .rel.gnu.linkonce.d.*)
+
+.rel.got        0x000000b8        0x0
+ *(.rel.got)
+ .rel.got       0x00000000        0x0 main.o
+                0x10000000                . = 0x10000000
+
+.got            0x10000000        0xc
+ *(.got.plt)
+ .got.plt       0x10000000        0xc main.o
+                0x10000000                _GLOBAL_OFFSET_TABLE_
+ *(.igot.plt)
+ .igot.plt      0x00000000        0x0 main.o
+ *(.got)
+ .got           0x00000000        0x0 main.o
+ *(.igot)
+
+.dynamic        0x1000000c       0x28
+ *(.dynamic)
+ .dynamic       0x1000000c       0x28 main.o
+                0x1000000c                _DYNAMIC
+
+.rodata         0x10000038        0x8
+ *(.rodata)
+ *(.rodata.*)
+ .rodata.str1.4
+                0x10000038        0x8 main.o
+ *(.gnu.linkonce.r.*)
+
+.gnu.version_d  0x10000040        0x0
+ .gnu.version_d
+                0x00000000        0x0 main.o
+
+.gnu.version    0x10000040        0x0
+ .gnu.version   0x00000000        0x0 main.o
+
+.gnu.version_r  0x10000040        0x0
+ .gnu.version_r
+                0x00000000        0x0 main.o
+
+.data
+ *(.data)
+ *(.data.*)
+ *(.gnu.linkonce.d.*)
+
+.bss
+ *(.bss)
+ *(.bss.*)
+ *(.gnu.linkonce.b.*)
+ *(COMMON)
+
+.dynbss         0x10000040        0x0
+ .dynbss        0x00000000        0x0 main.o
+
+/DISCARD/
+ *(.interp)
+ *(.dynsym)
+ *(.dynstr)
+ *(.hash)
+ *(.comment)
+ *(.ARM.attributes)
+LOAD main.o
+LOAD crt0.o
+START GROUP
+LOAD /opt/arm-miosix-eabi/bin/../lib/gcc/arm-miosix-eabi/4.7.3/../../../../arm-miosix-eabi/lib/thumb/cm3/pie/single-pic-base/libstdc++.a
+LOAD /opt/arm-miosix-eabi/bin/../lib/gcc/arm-miosix-eabi/4.7.3/../../../../arm-miosix-eabi/lib/thumb/cm3/pie/single-pic-base/libc.a
+LOAD /opt/arm-miosix-eabi/bin/../lib/gcc/arm-miosix-eabi/4.7.3/../../../../arm-miosix-eabi/lib/thumb/cm3/pie/single-pic-base/libm.a
+LOAD /opt/arm-miosix-eabi/bin/../lib/gcc/arm-miosix-eabi/4.7.3/thumb/cm3/pie/single-pic-base/libgcc.a
+END GROUP
+OUTPUT(testsuite_system.elf elf32-littlearm)

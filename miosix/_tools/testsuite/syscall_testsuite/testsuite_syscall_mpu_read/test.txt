@@ -32,7 +32,9 @@ SYMBOL TABLE:
 10000000 l    d  .got	00000000 .got
 1000000c l    d  .dynamic	00000000 .dynamic
 10000038 l    d  .rodata	00000000 .rodata
+00000000 l    df *ABS*	00000000 crt0.o
 00000000 l    df *ABS*	00000000 main.c
+00000000 l    df *ABS*	00000000 
 1000000c l     O *ABS*	00000000 _DYNAMIC
 10000000 l     O *ABS*	00000000 _GLOBAL_OFFSET_TABLE_
 00000098 g     F .text	00000000 _start
@@ -44,8 +46,8 @@ SYMBOL TABLE:
 
 Contents of section .text:
  0098 00f002f8 00f010f8 064808b5 002240f2  .........H..."@.
- 00a8 02414844 00f00af8 00210a22 00f009f8  .AHD.....!."....
- 00b8 002008bd 38000000 022300df 062300df  . ..8....#...#..
+ 00a8 02417844 00f00af8 00210a22 00f009f8  .AxD.....!."....
+ 00b8 002008bd 8affff0f 022300df 062300df  . .......#...#..
  00c8 70470423 00df7047                    pG.#..pG        
 Contents of section .got:
  10000000 0c000010 00000000 00000000           ............    
@@ -59,7 +61,7 @@ Contents of section .rodata:
 Disassembly of section .text:
 
 00000098 <_start>:
-_start():
+$t():
   98:	f000 f802 	bl	a0 <main>
   9c:	f000 f810 	bl	c0 <_exit>
 
@@ -69,28 +71,26 @@ main():
   a2:	b508      	push	{r3, lr}
   a4:	2200      	movs	r2, #0
   a6:	f240 4102 	movw	r1, #1026	; 0x402
-  aa:	4448      	add	r0, r9
+  aa:	4478      	add	r0, pc
   ac:	f000 f80a 	bl	c4 <open>
   b0:	2100      	movs	r1, #0
   b2:	220a      	movs	r2, #10
   b4:	f000 f809 	bl	ca <read>
   b8:	2000      	movs	r0, #0
   ba:	bd08      	pop	{r3, pc}
-  bc:	00000038 	andeq	r0, r0, r8, lsr r0
+  bc:	0fffff8a 	svceq	0x00ffff8a
 
 000000c0 <_exit>:
-_exit():
+$t():
   c0:	2302      	movs	r3, #2
   c2:	df00      	svc	0
 
 000000c4 <open>:
-open():
   c4:	2306      	movs	r3, #6
   c6:	df00      	svc	0
   c8:	4770      	bx	lr
 
 000000ca <read>:
-read():
   ca:	2304      	movs	r3, #4
   cc:	df00      	svc	0
   ce:	4770      	bx	lr
@@ -110,6 +110,7 @@ Disassembly of section .dynamic:
 Disassembly of section .rodata:
 
 10000038 <.rodata>:
+$d():
 10000038:	7464722f 	strbtvc	r7, [r4], #-559	; 0x22f
 1000003c:	2e747365 	cdpcs	3, 7, cr7, cr4, cr5, {3}
 10000040:	00747874 	rsbseq	r7, r4, r4, ror r8

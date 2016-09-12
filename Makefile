@@ -18,6 +18,7 @@ SUBDIRS := $(KPATH)
 ##
 SRC :=                                  \
 main.cpp transceiver.cpp SPI.cpp
+#testsuite.cpp
 
 ##
 ## List here additional static libraries with relative path

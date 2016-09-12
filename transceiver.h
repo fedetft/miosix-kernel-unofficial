@@ -62,7 +62,7 @@ public:
 
 	void sendAt(void *pkt, int size, long long when);
         
-        //timeout fired, timestamp, ,effective size
+        //timeout fired, timestamp, rssi,effective size
 	std::tuple<bool, long long, int, int> recv(void *pkt, int size, long long timeout);
 
 private:
@@ -81,6 +81,8 @@ private:
 
 	SPI spi;
 	CC2520State state;
+        
+        void printStatus();
 };
 
 #endif //TRANSCEIVER_H

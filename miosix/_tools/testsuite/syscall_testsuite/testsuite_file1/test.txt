@@ -32,7 +32,9 @@ SYMBOL TABLE:
 10000000 l    d  .got	00000000 .got
 1000000c l    d  .dynamic	00000000 .dynamic
 10000038 l    d  .rodata	00000000 .rodata
+00000000 l    df *ABS*	00000000 crt0.o
 00000000 l    df *ABS*	00000000 main.c
+00000000 l    df *ABS*	00000000 
 1000000c l     O *ABS*	00000000 _DYNAMIC
 10000000 l     O *ABS*	00000000 _GLOBAL_OFFSET_TABLE_
 00000110 g     F .text	00000000 write
@@ -44,13 +46,13 @@ SYMBOL TABLE:
 
 
 Contents of section .text:
- 0098 00f002f8 00f030f8 f8b5164f 002409eb  ......0....O.$..
- 00a8 070313f8 012f0134 002afad1 4f443846  ...../.4.*..OD8F
- 00b8 40f20241 00f022f8 b0f1ff3f 064611d0  @..A.."....?.F..
- 00c8 4ff47a75 02e015f1 ff350dd0 30463946  O.zu.....5..0F9F
- 00d8 224600f0 19f8a042 f5d03046 00f011f8  "F.....B..0F....
- 00e8 0220f8bd 0120fce7 304600f0 0af82846  . ... ..0F....(F
- 00f8 f7e700bf 38000000 022300df 062300df  ....8....#...#..
+ 0098 00f002f8 00f030f8 f8b5154b 00247b44  ......0....K.${D
+ 00a8 13f8012f 0134002a fad1124f 40f20241  .../.4.*...O@..A
+ 00b8 7f443846 00f022f8 431c0646 10d04ff4  .D8F..".C..F..O.
+ 00c8 7a7501e0 013d0dd0 30463946 224600f0  zu...=..0F9F"F..
+ 00d8 1bf8a042 f6d03046 00f013f8 0220f8bd  ...B..0F..... ..
+ 00e8 0120f8bd 304600f0 0cf82846 f8bd00bf  . ..0F....(F....
+ 00f8 8effff0f 7cffff0f 022300df 062300df  ....|....#...#..
  0108 70470723 00df7047 032300df 7047      pG.#..pG.#..pG  
 Contents of section .got:
  10000000 0c000010 00000000 00000000           ............    
@@ -64,69 +66,68 @@ Contents of section .rodata:
 Disassembly of section .text:
 
 00000098 <_start>:
-_start():
+$t():
   98:	f000 f802 	bl	a0 <main>
   9c:	f000 f830 	bl	100 <_exit>
 
 000000a0 <main>:
 main():
   a0:	b5f8      	push	{r3, r4, r5, r6, r7, lr}
-  a2:	4f16      	ldr	r7, [pc, #88]	; (fc <main+0x5c>)
+  a2:	4b15      	ldr	r3, [pc, #84]	; (f8 <main+0x58>)
   a4:	2400      	movs	r4, #0
-  a6:	eb09 0307 	add.w	r3, r9, r7
-  aa:	f813 2f01 	ldrb.w	r2, [r3, #1]!
-  ae:	3401      	adds	r4, #1
-  b0:	2a00      	cmp	r2, #0
-  b2:	d1fa      	bne.n	aa <main+0xa>
-  b4:	444f      	add	r7, r9
-  b6:	4638      	mov	r0, r7
-  b8:	f240 4102 	movw	r1, #1026	; 0x402
+  a6:	447b      	add	r3, pc
+  a8:	f813 2f01 	ldrb.w	r2, [r3, #1]!
+  ac:	3401      	adds	r4, #1
+  ae:	2a00      	cmp	r2, #0
+  b0:	d1fa      	bne.n	a8 <main+0x8>
+  b2:	4f12      	ldr	r7, [pc, #72]	; (fc <main+0x5c>)
+  b4:	f240 4102 	movw	r1, #1026	; 0x402
+  b8:	447f      	add	r7, pc
+  ba:	4638      	mov	r0, r7
   bc:	f000 f822 	bl	104 <open>
-  c0:	f1b0 3fff 	cmp.w	r0, #4294967295	; 0xffffffff
-  c4:	4606      	mov	r6, r0
-  c6:	d011      	beq.n	ec <main+0x4c>
-  c8:	f44f 757a 	mov.w	r5, #1000	; 0x3e8
-  cc:	e002      	b.n	d4 <main+0x34>
-  ce:	f115 35ff 	adds.w	r5, r5, #4294967295	; 0xffffffff
-  d2:	d00d      	beq.n	f0 <main+0x50>
-  d4:	4630      	mov	r0, r6
-  d6:	4639      	mov	r1, r7
-  d8:	4622      	mov	r2, r4
-  da:	f000 f819 	bl	110 <write>
-  de:	42a0      	cmp	r0, r4
-  e0:	d0f5      	beq.n	ce <main+0x2e>
-  e2:	4630      	mov	r0, r6
-  e4:	f000 f811 	bl	10a <close>
-  e8:	2002      	movs	r0, #2
+  c0:	1c43      	adds	r3, r0, #1
+  c2:	4606      	mov	r6, r0
+  c4:	d010      	beq.n	e8 <main+0x48>
+  c6:	f44f 757a 	mov.w	r5, #1000	; 0x3e8
+  ca:	e001      	b.n	d0 <main+0x30>
+  cc:	3d01      	subs	r5, #1
+  ce:	d00d      	beq.n	ec <main+0x4c>
+  d0:	4630      	mov	r0, r6
+  d2:	4639      	mov	r1, r7
+  d4:	4622      	mov	r2, r4
+  d6:	f000 f81b 	bl	110 <write>
+  da:	42a0      	cmp	r0, r4
+  dc:	d0f6      	beq.n	cc <main+0x2c>
+  de:	4630      	mov	r0, r6
+  e0:	f000 f813 	bl	10a <close>
+  e4:	2002      	movs	r0, #2
+  e6:	bdf8      	pop	{r3, r4, r5, r6, r7, pc}
+  e8:	2001      	movs	r0, #1
   ea:	bdf8      	pop	{r3, r4, r5, r6, r7, pc}
-  ec:	2001      	movs	r0, #1
-  ee:	e7fc      	b.n	ea <main+0x4a>
-  f0:	4630      	mov	r0, r6
-  f2:	f000 f80a 	bl	10a <close>
-  f6:	4628      	mov	r0, r5
-  f8:	e7f7      	b.n	ea <main+0x4a>
-  fa:	bf00      	nop
-  fc:	00000038 	andeq	r0, r0, r8, lsr r0
+  ec:	4630      	mov	r0, r6
+  ee:	f000 f80c 	bl	10a <close>
+  f2:	4628      	mov	r0, r5
+  f4:	bdf8      	pop	{r3, r4, r5, r6, r7, pc}
+  f6:	bf00      	nop
+  f8:	0fffff8e 	svceq	0x00ffff8e
+  fc:	0fffff7c 	svceq	0x00ffff7c
 
 00000100 <_exit>:
-_exit():
+$t():
  100:	2302      	movs	r3, #2
  102:	df00      	svc	0
 
 00000104 <open>:
-open():
  104:	2306      	movs	r3, #6
  106:	df00      	svc	0
  108:	4770      	bx	lr
 
 0000010a <close>:
-close():
  10a:	2307      	movs	r3, #7
  10c:	df00      	svc	0
  10e:	4770      	bx	lr
 
 00000110 <write>:
-write():
  110:	2303      	movs	r3, #3
  112:	df00      	svc	0
  114:	4770      	bx	lr
@@ -146,6 +147,7 @@ Disassembly of section .dynamic:
 Disassembly of section .rodata:
 
 10000038 <.rodata>:
+$d():
 10000038:	656c6966 	strbvs	r6, [ip, #-2406]!	; 0x966
 1000003c:	69622e31 	stmdbvs	r2!, {r0, r4, r5, r9, sl, fp, sp}^
 10000040:	0000006e 	andeq	r0, r0, lr, rrx

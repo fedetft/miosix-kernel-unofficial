@@ -151,7 +151,7 @@ void Transceiver::sendNow(void* pkt, int size)
 
 bool Transceiver::sendCca(void* pkt, int size)
 {
-
+    
 }
 
 void Transceiver::sendAt(void* pkt, int size, long long when)
@@ -276,7 +276,7 @@ std::tuple<bool, long long, int,int> Transceiver::recv(void *pkt, int size, long
     }
     return std::tuple<bool,long long, int,int> (false,0,rssi-76,0); 
 }
-
+*/
     
 unsigned char Transceiver::readReg(CC2520Register reg){
     transceiver::cs::low();
