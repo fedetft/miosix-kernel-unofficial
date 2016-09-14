@@ -117,7 +117,7 @@ void *idleThread(void *argv)
         #ifndef JTAG_DISABLE_SLEEP
         //JTAG debuggers lose communication with the device if it enters sleep
         //mode, so to use debugging it is necessary to remove this instruction
-        
+#ifdef BOARD_efm32gg332f1024_wandstem
         bool sleep=false;
         {
             FastInterruptDisableLock lock;
@@ -129,6 +129,9 @@ void *idleThread(void *argv)
                 sleep=true;
         }
         if (sleep) miosix_private::sleepCpu();
+#else
+        miosix_private::sleepCpu();
+#endif
         
         #endif
     }
@@ -188,6 +191,7 @@ bool areInterruptsEnabled()
     return miosix_private::checkAreInterruptsEnabled();
 }
 
+#ifdef BOARD_efm32gg332f1024_wandstem
 void deepSleepLock()
 {
     atomicAdd(&deepSleepCounter,1);
@@ -197,7 +201,7 @@ void deepSleepUnlock()
 { 
     atomicAdd(&deepSleepCounter,-1);
 }
-
+#endif
 void startKernel()
 {
     #ifdef USE_CSTIMER
