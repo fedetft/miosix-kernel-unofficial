@@ -975,7 +975,7 @@ private:
      * timer) absTicks is in terms of aperiodic timer tick otherwise it is in
      * terms of kernel's tick!
      */
-    static void tickSleepUntil(long long absTicks);
+    //static void tickSleepUntil(long long absTicks);
 
     //Thread data
     SchedulerData schedData; ///< Scheduler data, only used by class Scheduler

@@ -37,11 +37,10 @@
 #include "process.h"
 #include "kernel/scheduler/scheduler.h"
 #include "interfaces/cstimer.h"
+#include "timeconversion.h"
 #include <stdexcept>
 #include <algorithm>
 #include <string.h>
-
-#define CSQUANTUM 84000 //FIXME: remove it please
 
 /*
 Used by assembler context switch macros
@@ -118,6 +117,8 @@ void *idleThread(void *argv)
         //JTAG debuggers lose communication with the device if it enters sleep
         //mode, so to use debugging it is necessary to remove this instruction
         
+//FIX ME: deepsleep has not been integrated fully so the code is surrounded with ifdef 
+#ifdef BOARD_efm32gg332f1024_wandstem
         bool sleep=false;
         {
             FastInterruptDisableLock lock;
@@ -129,6 +130,9 @@ void *idleThread(void *argv)
                 sleep=true;
         }
         if (sleep) miosix_private::sleepCpu();
+#else
+        miosix_private::sleepCpu();
+#endif
         
         #endif
     }
@@ -188,6 +192,8 @@ bool areInterruptsEnabled()
     return miosix_private::checkAreInterruptsEnabled();
 }
 
+//FIX ME: deepsleep has not been integrated fully so the code is surrounded with ifdef 
+#ifdef BOARD_efm32gg332f1024_wandstem
 void deepSleepLock()
 {
     atomicAdd(&deepSleepCounter,1);
@@ -197,7 +203,7 @@ void deepSleepUnlock()
 { 
     atomicAdd(&deepSleepCounter,-1);
 }
-
+#endif
 void startKernel()
 {
     #ifdef USE_CSTIMER
@@ -253,9 +259,9 @@ void startKernel()
     #ifdef USE_CSTIMER
     // Set the first checkpoint interrupt
     csRecord->p = nullptr;
-    csRecord->wakeup_time = CSQUANTUM;
+    csRecord->wakeup_time = preemptionPeriodNs;
     sleepingList->push_front(csRecord);
-    timer->IRQsetNextInterrupt(CSQUANTUM);
+    timer->IRQsetNextInterrupt(TimeConversion::ns2tick(preemptionPeriodNs));
     #endif //USE_CSTIMER
     miosix_private::IRQportableStartKernel();
     kernel_started=true;
@@ -284,7 +290,7 @@ long long getTick()
         if(a==b) return a;
     }
     #else //USE_CSTIMER
-    return timer->getCurrentTick()/CSQUANTUM;
+    return TimeConversion::tick2ns(timer->getCurrentTick())/preemptionPeriodNs;
     #endif //USE_CSTIMER
 }
 
@@ -312,7 +318,7 @@ void IRQaddToSleepingList(SleepData *x)
     //Upon any change to the sleepingList the ContextSwitchTimer should have
     //its interrupt set to the head of the list in order to keep it sync with
     //the list
-    timer->IRQsetNextInterrupt(sleepingList->front()->wakeup_time);
+    timer->IRQsetNextInterrupt(TimeConversion::ns2tick(sleepingList->front()->wakeup_time));
 #endif
 }
 
@@ -341,7 +347,7 @@ void IRQsetNextPreemption(long long preemptionTime)
     //Upon any change to the sleepingList the ContextSwitchTimer should have
     //its interrupt set to the head of the list in order to keep it sync with
     //the list
-    timer->IRQsetNextInterrupt(sleepingList->front()->wakeup_time);
+    timer->IRQsetNextInterrupt(TimeConversion::ns2tick(sleepingList->front()->wakeup_time));
 #endif
 }
 /**
@@ -464,16 +470,27 @@ bool Thread::testTerminate()
 void Thread::nanoSleep(unsigned int ns)
 {
     if(ns==0) return; //TODO: should be (ns &lt; resolution + epsilon)
-    long long ticks = ns * 0.084;//TODO: ns2tick fast conversion needed
-    tickSleepUntil(ContextSwitchTimer::instance().getCurrentTick() + ticks);
+    //TODO: Mutual Exclusion issue
+    nanoSleepUntil(TimeConversion::tick2ns(ContextSwitchTimer::instance().getCurrentTick()) + ns);
 }
 
 void Thread::nanoSleepUntil(long long absoluteTime)
 {
     //TODO: The absolute time should be rounded w.r.t. the timer resolution
-    long long ticks = absoluteTime * 0.084;//TODO: ns2tick fast conversion needed
-    if (ticks <= ContextSwitchTimer::instance().getCurrentTick()) return;
-    tickSleepUntil(ticks);
+    //This function does not care about setting the wakeup_time in the past
+    //as it should be based on the policy taken into account by IRQwakeThreads
+    
+    //pauseKernel() here is not enough since even if the kernel is stopped
+    //the tick isr will wake threads, modifying the sleepingList
+    {
+        FastInterruptDisableLock lock;
+        SleepData d; 
+        d.p=const_cast<Thread*>(cur);
+        d.wakeup_time = absoluteTime;
+        IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
+    }
+    Thread::yield();
+    
 }
 #endif
 
@@ -831,26 +848,6 @@ void Thread::threadLauncher(void *(*threadfunc)(void*), void *argv)
     //Will never reach here
     errorHandler(UNEXPECTED);
 }
-#ifdef USE_CSTIMER
-void Thread::tickSleepUntil(long long absTicks)
-{
-    //absTicks: As it is in terms of real ticks of the kernel/timer, there's no 
-    //resolution issues here.
-    //This function does not care about setting the wakeup_time in the past
-    //as it should be based on the policy taken into account by IRQwakeThreads
-    
-    //pauseKernel() here is not enough since even if the kernel is stopped
-    //the tick isr will wake threads, modifying the sleepingList
-    {
-        FastInterruptDisableLock lock;
-        SleepData d; 
-        d.p=const_cast<Thread*>(cur);
-        d.wakeup_time = absTicks;
-        IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
-    }
-    Thread::yield();
-}
-#endif
 
 #ifdef WITH_PROCESSES
 
