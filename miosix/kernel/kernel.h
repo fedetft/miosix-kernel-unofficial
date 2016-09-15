@@ -965,17 +965,6 @@ private:
      * \param argv argument passed to the entry point
      */
     static void threadLauncher(void *(*threadfunc)(void*), void *argv);
-    
-    /**
-     * Puts the thread to sleep until the given time.
-     * This is the base function for adding a thread to the sleeping list.
-     * Other functions such as nanoSleep, sleep and sleepUntil are base on
-     * appropriate calls to tickSleepUntil.
-     * \param absTicks: For a tickless kernel (i.e. it uses an external aperiodic
-     * timer) absTicks is in terms of aperiodic timer tick otherwise it is in
-     * terms of kernel's tick!
-     */
-    static void tickSleepUntil(long long absTicks);
 
     //Thread data
     SchedulerData schedData; ///< Scheduler data, only used by class Scheduler
