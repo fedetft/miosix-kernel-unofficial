@@ -29,9 +29,13 @@
 #include <cstdio>
 #include <cassert>
 #include <stdexcept>
+#include "myConfigRadio.h"
+
+#define L 5
 
 using namespace std;
 using namespace miosix;
+
 
 //
 // class FlooderSyncNode
@@ -55,24 +59,28 @@ bool FlooderSyncNode::synchronize()
     assert(timer.getValue()<wakeupTime);
     timer.absoluteWait(wakeupTime);
     
-    miosix::TransceiverConfiguration cfg(2450,0,false);
+    miosix::TransceiverConfiguration cfg(2450,0,true);
     transceiver.configure(cfg);
     transceiver.turnOn();
-    unsigned char packet[2];
+    unsigned char packet[L];
        
     assert(timer.getValue()<computedFrameStart-(rxTurnaroundTime+receiverWindow));
     bool timeout=false;
     ledOn();
+    RecvResult result;
     for(;;)
     {
         try {
-            auto result=transceiver.recv(packet,sizeof(packet),timeoutTime);
+            result=transceiver.recv(packet,sizeof(packet),timeoutTime);
+            printf("Status: %d %d %d\n",result.error,result.timestampValid,result.size);
+            memDump(packet,sizeof(packet));
             if(   result.error==RecvResult::OK && result.timestampValid==true
-               && result.size==2 && packet[0]==0x00 && packet[1]==0xff)
+               && result.size==L && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==static_cast<unsigned char>(PANID>>8) && packet[4]==static_cast<unsigned char>(PANID))
             {
                 measuredFrameStart=result.timestamp;
                 break;
             }
+            
         } catch(exception& e) {
             puts(e.what());
             break;
@@ -86,6 +94,11 @@ bool FlooderSyncNode::synchronize()
     ledOff();
     
     //TODO: glossy rebroadcast
+    if(packet[2]<0xff && hop==0){ //retransmit only once
+        packet[2]++;
+        hop=packet[2];
+        transceiver.sendAt(packet,result.size,delayRebroadcastTime);
+    }
     
     transceiver.turnOff();
     
@@ -122,17 +135,17 @@ void FlooderSyncNode::resynchronize()
 {
     puts("Resynchronize...");
     synchronizer.reset();
-    miosix::TransceiverConfiguration cfg(2450,0,false);
+    miosix::TransceiverConfiguration cfg(2450,0,true);
     transceiver.configure(cfg);
     transceiver.turnOn();
     ledOn();
-    unsigned char packet[2];
+    unsigned char packet[L];
     for(;;)
     {
         try {
             auto result=transceiver.recv(packet,sizeof(packet),numeric_limits<long long>::max());
             if(   result.error==RecvResult::OK && result.timestampValid==true
-               && result.size==2 && packet[0]==0x00 && packet[1]==0xff)
+               && result.size==L && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==0x77 && packet[4]==0x77)
             {
                 computedFrameStart=measuredFrameStart=result.timestamp;
                 break;

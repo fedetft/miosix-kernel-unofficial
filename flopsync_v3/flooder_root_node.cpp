@@ -27,6 +27,7 @@
  ***************************************************************************/
 
 #include "flooder_root_node.h"
+#include <cstdio>
 #include <stdexcept>
 
 using namespace std;
@@ -43,10 +44,11 @@ FlooderRootNode::FlooderRootNode(HardwareTimer& timer)
 
 bool FlooderRootNode::synchronize()
 {
-    miosix::TransceiverConfiguration cfg(2450,0,false);
+    miosix::TransceiverConfiguration cfg(2450,0,true);
     transceiver.configure(cfg);
     transceiver.turnOn();
-    const char packet[]={0x00,0xff};
+    const char packet[]={0xC2,0x02,0x00,0x77,0x77};
+    memDump(packet,sizeof(packet));
     try {
         transceiver.sendAt(packet,sizeof(packet),frameStart);
     } catch(exception& e) {
