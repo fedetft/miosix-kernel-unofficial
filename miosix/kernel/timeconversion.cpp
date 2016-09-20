@@ -41,18 +41,6 @@ static inline unsigned int lo(unsigned long long x) { return x & 0xffffffff; }
  */
 static inline unsigned int hi(unsigned long long x) { return x>>32; }
 
-/**
- * \param a 32 bit unsigned number
- * \param b 32 bit unsigned number
- * \return a * b as a 64 unsigned number 
- */
-static inline unsigned long long mul32x32to64(unsigned int a, unsigned int b)
-{
-    //Casts are to produce a 64 bit result. Compiles to a single asm instruction
-    //in processors having 32x32 multiplication with 64 bit result
-    return static_cast<unsigned long long>(a)*static_cast<unsigned long long>(b);
-}
-
 long long mul64x32d32(long long a, unsigned int bi, unsigned int bf)
 {
     /*
