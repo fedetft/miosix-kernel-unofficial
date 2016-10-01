@@ -38,7 +38,6 @@ namespace miosix {
 extern volatile Thread *cur;
 extern unsigned char kernel_running;
 static ContextSwitchTimer& timer = ContextSwitchTimer::instance();
-extern long long firstSleepItemTicks;
 extern IntrusiveList<SleepData> *sleepingList;
 
 //
@@ -202,13 +201,17 @@ void PriorityScheduler::IRQsetIdleThread(Thread *idleThread)
 }
 
 static void setNextPreemption(bool curIsIdleThread){
-    static long long preemptionPeriodTicks = TimeConversion::ns2tick(preemptionPeriodNs);
+    long long firstWakeupInList;
+    if (sleepingList->empty())
+        firstWakeupInList = LONG_LONG_MAX;
+    else
+        firstWakeupInList = sleepingList->front()->wakeup_time;
     if (curIsIdleThread){
-        timer.IRQsetNextInterrupt(firstSleepItemTicks);
+        timer.IRQsetNextInterrupt(firstWakeupInList);
     }else{
-        long long nextPeriodicPreemption = timer.IRQgetCurrentTick() + preemptionPeriodTicks;   
-        if (firstSleepItemTicks < nextPeriodicPreemption )
-            timer.IRQsetNextInterrupt(firstSleepItemTicks);
+        long long nextPeriodicPreemption = timer.IRQgetCurrentTick() + preemptionPeriodNs;   
+        if (firstWakeupInList < nextPeriodicPreemption )
+            timer.IRQsetNextInterrupt(firstWakeupInList);
         else
             timer.IRQsetNextInterrupt(nextPeriodicPreemption);
     }
