@@ -63,8 +63,6 @@ volatile Thread *cur=NULL;///<\internal Thread currently running
 static volatile bool exist_deleted=false;
 
 IntrusiveList<SleepData> *sleepingList=nullptr;///list of sleeping threads
-///Contains head of the sleeping list in terms of timer's ticks
-long long firstSleepItemTicks = LONG_LONG_MAX;
 
 ///\internal !=0 after pauseKernel(), ==0 after restartKernel()
 volatile int kernel_running=0;
@@ -245,7 +243,7 @@ bool isKernelRunning()
 
 long long getTick()
 {
-    return TimeConversion::tick2ns(ContextSwitchTimer::instance().getCurrentTick())/preemptionPeriodNs;
+    return ContextSwitchTimer::instance().getCurrentTick();
 }
 
 /**
@@ -268,7 +266,7 @@ void IRQaddToSleepingList(SleepData *x)
         while (it != sleepingList->end() && (*it)->wakeup_time < x->wakeup_time ) ++it;
         sleepingList->insert(it,x);
     }
-    firstSleepItemTicks = TimeConversion::ns2tick(sleepingList->front()->wakeup_time);
+    //firstSleepItemTicks = TimeConversion::ns2tick(sleepingList->front()->wakeup_time);
 }
 
 /**
@@ -298,10 +296,10 @@ bool IRQwakeThreads(long long currentTick)
             result = true;
         }
     }
-    if(sleepingList->empty()) 
-        firstSleepItemTicks = LONG_LONG_MAX;
-    else
-        firstSleepItemTicks = TimeConversion::ns2tick(sleepingList->front()->wakeup_time);
+//    if(sleepingList->empty()) 
+//        firstSleepItemTicks = LONG_LONG_MAX;
+//    else
+//        firstSleepItemTicks = TimeConversion::ns2tick(sleepingList->front()->wakeup_time);
     return result;
 }
 
@@ -373,7 +371,7 @@ void Thread::nanoSleep(long long ns)
 {
     if(ns==0) return; //TODO: should be (ns &lt; resolution + epsilon)
     //TODO: Mutual Exclusion issue
-    nanoSleepUntil(TimeConversion::tick2ns(ContextSwitchTimer::instance().getCurrentTick()) + ns);
+    nanoSleepUntil(ContextSwitchTimer::instance().getCurrentTick() + ns);
 }
 
 void Thread::nanoSleepUntil(long long absoluteTime)
