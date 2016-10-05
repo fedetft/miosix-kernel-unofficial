@@ -264,6 +264,8 @@ long long TimeConversion::ns2tick(long long ns)
      * readjust 1 iteration   288 cycles
      * readjust 2 iterations  439 cycles
      */
+    return convert(ns,toTick);    
+/*
     if(abs(ns-lastAdjustTimeNs)>adjustIntervalNs)
     {
         for(int i=0;i<10;i++)
@@ -280,6 +282,7 @@ long long TimeConversion::ns2tick(long long ns)
         #endif //TEST_ALGORITHM
     }
     return convert(ns+adjustOffsetNs,toTick);
+ */
 }
 
 TimeConversion::TimeConversion(unsigned int hz)

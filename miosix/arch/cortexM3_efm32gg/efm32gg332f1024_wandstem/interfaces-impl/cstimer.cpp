@@ -16,7 +16,6 @@ const unsigned long long upperMask=0xFFFFFFFFFFFFFFFFLL-lowerMask;
 
 static long long ms32time = 0; //most significant 32 bits of counter
 static long long ms32chkp = 0; //most significant 32 bits of check point
-static bool lateIrq=false;
 
 static TimeConversion *tc;
 
@@ -43,6 +42,14 @@ static inline long long IRQgetTick(){
     return ms32time | static_cast<long long>(counter);
 }
 
+static inline void callScheduler(){
+    TIMER1->IEN &= ~TIMER_IEN_CC1;
+    TIMER3->IEN &= ~TIMER_IEN_CC1;
+    TIMER1->IFC = TIMER_IFC_CC1;
+    TIMER3->IFC = TIMER_IFC_CC1;
+    IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
+}
+
 void __attribute__((naked)) TIMER3_IRQHandler()
 {
     saveContext();
@@ -63,25 +70,37 @@ void __attribute__((naked)) TIMER2_IRQHandler()
     restoreContext();
 }
 
+static inline void setupTimers(long long curTick,long long nextIntTick){
+    long long diffs = ms32chkp - ms32time;
+    long int diff = TIMER3->CC[1].CCV - static_cast<unsigned int>((curTick & 0xFFFF0000)>>16);
+    if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
+        if (diff==0){
+            TIMER1->IEN |= TIMER_IEN_CC1;
+            if (TIMER1->CNT > TIMER1->CC[1].CCV){
+                //FIX ME: What if CCV == 0xFFFF
+                callScheduler();
+            }
+        }else{
+            TIMER3->IEN |= TIMER_IEN_CC1; 
+        }
+    }else{
+        TIMER3->IEN |= TIMER_IEN_CC1; 
+    } 
+}
+
 void __attribute__((used)) cstirqhnd3(){
     //Checkpoint
-    if (lateIrq){
-        IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
-        lateIrq = false;
-    }else if (TIMER3->IF & TIMER_IF_CC1){
+    if (TIMER3->IF & TIMER_IF_CC1){
         TIMER3->IFC = TIMER_IFC_CC1;
-        if (ms32time == ms32chkp){
-            TIMER1->IFC = TIMER_IFC_CC1;
-            NVIC_ClearPendingIRQ(TIMER1_IRQn);
-            NVIC_EnableIRQ(TIMER1_IRQn);
+        long long diffs = ms32chkp - ms32time;
+        if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
+            TIMER3->IEN &= ~TIMER_IEN_CC1;
+            TIMER1->IEN |= TIMER_IEN_CC1;
             if (TIMER1->CNT >= TIMER1->CC[1].CCV){
-                TIMER1->IFC = TIMER_IFC_CC1;
-                NVIC_DisableIRQ(TIMER1_IRQn);
-                IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
+                callScheduler(); //WHat if CCV=0xFFFF
             }
         }
     }   
- 
     //rollover
     if (TIMER3->IF & TIMER_IF_OF){
         TIMER3->IFC = TIMER_IFC_OF;
@@ -89,12 +108,8 @@ void __attribute__((used)) cstirqhnd3(){
     }
 }
 void __attribute__((used)) cstirqhnd1(){
-    //Checkpoint
     if (TIMER1->IF & TIMER_IF_CC1){
-        TIMER1->IFC = TIMER_IFC_CC1;
-        NVIC_ClearPendingIRQ(TIMER1_IRQn);
-        NVIC_DisableIRQ(TIMER1_IRQn);
-        IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
+        callScheduler();
     }
 }
 
@@ -115,19 +130,25 @@ namespace miosix {
     }
     
     void ContextSwitchTimer::IRQsetNextInterrupt(long long ns){
+        // First off, clear and disable timers to prevent unnecessary IRQ
+        // when IRQsetNextInterrupt is called multiple times consecutively.
+        TIMER1->IEN &= ~TIMER_IEN_CC1;
+        TIMER3->IEN &= ~TIMER_IEN_CC1;
+        TIMER1->IFC = TIMER_IFC_CC1;
+        TIMER3->IFC = TIMER_IFC_CC1;
+        //
         long long tick = tc->ns2tick(ns);
-        ms32chkp = tick & upperMask;
-        TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16);
-        TIMER1->CC[1].CCV = static_cast<unsigned int>(tick & 0xFFFF);
-        /*
-        In order to prevent back to back interrupts due to a checkpoint
-        set in the past, raise lateIrq flag to indicate this IRQ should
-        be processed only once
-        */
-        if(IRQgetTick() >= nextInterrupt())
+        long long curTick = IRQgetTick();
+        if(curTick >= tick)
         {
-            NVIC_SetPendingIRQ(TIMER3_IRQn);
-            lateIrq=true;
+            // The interrupt is in the past => call timerInt immediately
+            callScheduler(); //TODO: It could cause multiple invocations of sched.
+        }else{
+            // Apply the new interrupt on to the timer channels
+            TIMER1->CC[1].CCV = static_cast<unsigned int>(tick & 0xFFFF);
+            TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16);
+            ms32chkp = tick & upperMask;
+            setupTimers(curTick, tick);
         }
     }
     
@@ -172,8 +193,8 @@ namespace miosix {
                 | TIMER_CTRL_SYNC;
         
         //Enable necessary interrupt lines
-        TIMER1->IEN = TIMER_IEN_CC1;
-        TIMER3->IEN = TIMER_IEN_OF | TIMER_IEN_CC1;
+        TIMER1->IEN = 0;
+        TIMER3->IEN = TIMER_IEN_OF;
 
         TIMER1->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
         TIMER3->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -183,13 +204,12 @@ namespace miosix {
         NVIC_ClearPendingIRQ(TIMER3_IRQn);
         NVIC_ClearPendingIRQ(TIMER1_IRQn);
         NVIC_EnableIRQ(TIMER3_IRQn);
-        NVIC_DisableIRQ(TIMER1_IRQn);
+        NVIC_EnableIRQ(TIMER1_IRQn);
         //Start timers
         TIMER1->CMD = TIMER_CMD_START;
         //Setup tick2ns conversion tool
         timerFreq = 48000000;
-        static TimeConversion stc(timerFreq);
-        tc = &stc;
+        tc = new TimeConversion(timerFreq);
     }
 
 }
