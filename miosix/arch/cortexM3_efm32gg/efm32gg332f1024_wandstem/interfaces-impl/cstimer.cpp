@@ -45,8 +45,6 @@ static inline long long IRQgetTick(){
 static inline void callScheduler(){
     TIMER1->IEN &= ~TIMER_IEN_CC1;
     TIMER3->IEN &= ~TIMER_IEN_CC1;
-    TIMER1->IFC = TIMER_IFC_CC1;
-    TIMER3->IFC = TIMER_IFC_CC1;
     IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
 }
 
@@ -144,8 +142,6 @@ namespace miosix {
         // when IRQsetNextInterrupt is called multiple times consecutively.
         TIMER1->IEN &= ~TIMER_IEN_CC1;
         TIMER3->IEN &= ~TIMER_IEN_CC1;
-        TIMER1->IFC = TIMER_IFC_CC1;
-        TIMER3->IFC = TIMER_IFC_CC1;
         //
         long long tick = tc->ns2tick(ns);
         long long curTick = IRQgetTick();
@@ -217,6 +213,12 @@ namespace miosix {
         NVIC_EnableIRQ(TIMER1_IRQn);
         //Start timers
         TIMER1->CMD = TIMER_CMD_START;
+        //Synchronization is required only when timers are to start.
+        //If the sync is not disabled after start, start/stop on another timer
+        //(e.g. TIMER0) will affect the behavior of context switch timer!
+        TIMER1->CTRL &= ~TIMER_CTRL_SYNC;
+        TIMER2->CTRL &= ~TIMER_CTRL_SYNC;
+        TIMER3->CTRL &= ~TIMER_CTRL_SYNC;
         //Setup tick2ns conversion tool
         timerFreq = 48000000;
         tc = new TimeConversion(timerFreq);
