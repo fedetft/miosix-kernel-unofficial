@@ -74,16 +74,25 @@ static inline void setupTimers(long long curTick,long long nextIntTick){
     long long diffs = ms32chkp - ms32time;
     long int diff = TIMER3->CC[1].CCV - static_cast<unsigned int>((curTick & 0xFFFF0000)>>16);
     if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
-        if (diff==0){
-            TIMER1->IEN |= TIMER_IEN_CC1;
-            if (TIMER1->CNT > TIMER1->CC[1].CCV){
-                //FIX ME: What if CCV == 0xFFFF
+        if (diff==0 || diff==-1){
+            
+            if (diff==-1){ //if TIM1 overflows before calculating diff
                 callScheduler();
+            }else{
+                TIMER1->IFC = TIMER_IFC_CC1;
+                TIMER1->IEN |= TIMER_IEN_CC1;
+                if (TIMER1->CNT > TIMER1->CC[1].CCV || /* TIM1 overflows after calculating diff */
+                        (TIMER3->CC[1].CCV - static_cast<unsigned int>((IRQgetTick() & 0xFFFF0000)>>16)==-1 &&
+                        TIMER1->CNT < TIMER1->CC[1].CCV)){
+                    callScheduler();
+                }
             }
         }else{
+            TIMER3->IFC = TIMER_IFC_CC1;
             TIMER3->IEN |= TIMER_IEN_CC1; 
         }
     }else{
+        TIMER3->IFC = TIMER_IFC_CC1;
         TIMER3->IEN |= TIMER_IEN_CC1; 
     } 
 }
@@ -95,6 +104,7 @@ void __attribute__((used)) cstirqhnd3(){
         long long diffs = ms32chkp - ms32time;
         if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
             TIMER3->IEN &= ~TIMER_IEN_CC1;
+            TIMER1->IFC = TIMER_IFC_CC1;
             TIMER1->IEN |= TIMER_IEN_CC1;
             if (TIMER1->CNT >= TIMER1->CC[1].CCV){
                 callScheduler(); //WHat if CCV=0xFFFF
