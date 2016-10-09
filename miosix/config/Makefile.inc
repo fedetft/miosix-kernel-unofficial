@@ -1461,6 +1461,7 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
         $(BOARD_INC)/interfaces-impl/bsp.cpp            \
         $(BOARD_INC)/interfaces-impl/spi.cpp            \
         $(BOARD_INC)/interfaces-impl/power_manager.cpp  \
+        $(BOARD_INC)/interfaces-impl/gpioirq.cpp        \
         $(BOARD_INC)/interfaces-impl/hardware_timer.cpp \
         $(BOARD_INC)/interfaces-impl/transceiver.cpp
 
