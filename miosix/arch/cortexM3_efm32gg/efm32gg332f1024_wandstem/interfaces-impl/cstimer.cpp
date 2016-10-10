@@ -100,7 +100,7 @@ void __attribute__((used)) cstirqhnd3(){
     //Checkpoint
     if (TIMER3->IF & TIMER_IF_CC1){
         TIMER3->IFC = TIMER_IFC_CC1;
-        if (TIMER3->CNT >= TIMER3->CC[1].CCV + 1){
+        if (static_cast<unsigned short>(TIMER3->CNT) >= static_cast<unsigned short>(TIMER3->CC[1].CCV) + 1){
             // Should happen if and only if most significant 32 bits have been matched
             TIMER3->IEN &= ~ TIMER_IEN_CC1;
             // Enable TIM1 since TIM3 has been already matched
