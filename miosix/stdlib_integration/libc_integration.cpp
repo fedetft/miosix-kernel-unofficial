@@ -869,10 +869,9 @@ int getdents(unsigned int fd, struct dirent *dirp, unsigned int count)
  */
 clock_t _times_r(struct _reent *ptr, struct tms *tim)
 {
-    long long t=miosix::getTick();
-    t*=CLOCKS_PER_SEC;
-    t/=miosix::TICK_FREQ;
-    t&=0xffffffffull;
+    long long t=miosix::getTime();
+    t/=1000000000LL/CLOCKS_PER_SEC;
+    t&=0xffffffffLL;
     tim->tms_utime=t;
     tim->tms_stime=0;  //Miosix doesn't separate user/system time
     tim->tms_cutime=0; //child processes simply don't exist
