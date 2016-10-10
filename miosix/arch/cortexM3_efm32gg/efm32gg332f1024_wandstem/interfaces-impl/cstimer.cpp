@@ -3,9 +3,6 @@
 #include "kernel/kernel.h"
 #include "kernel/scheduler/timer_interrupt.h"
 #include "kernel/timeconversion.h"
-#include "../../../../../debugpin.h"
-#include "CMSIS/Include/core_cm3.h"
-#include "bsp_impl.h"
 
 using namespace miosix;
 
@@ -31,7 +28,6 @@ static inline unsigned int IRQread32Timer(){
     if(high==high2){
         return (high<<16)|low;
     }
-    HighPin<debug2> pin;
     return high2<<16|TIMER1->CNT;
 }
 
@@ -46,6 +42,8 @@ static inline long long IRQgetTick(){
 static inline void callScheduler(){
     TIMER1->IEN &= ~TIMER_IEN_CC1;
     TIMER3->IEN &= ~TIMER_IEN_CC1;
+    TIMER1->IFC = TIMER_IFC_CC1;
+    TIMER3->IFC = TIMER_IFC_CC1;
     long long tick = tc->tick2ns(IRQgetTick());
     IRQtimerInterrupt(tick);
 }
@@ -70,65 +68,56 @@ void __attribute__((naked)) TIMER2_IRQHandler()
     restoreContext();
 }
 
-static inline void setupTimers(long long curTick,long long nextIntTick){
-    long long diffs = ms32chkp - ms32time;
-    long int diff = TIMER3->CC[1].CCV - TIMER3->CNT;
-    if (diffs == 0 || (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
-        if (diff==0 || diff==-1){
-            if (diff==-1){ //if TIM1 overflows before calculating diff
-                callScheduler();
-            }else{
-                TIMER1->IFC = TIMER_IFC_CC1;
-                TIMER1->IEN |= TIMER_IEN_CC1;
-                if (TIMER1->CNT > TIMER1->CC[1].CCV || /* TIM1 overflows after calculating diff */
-                        (TIMER3->CC[1].CCV - static_cast<unsigned int>((IRQgetTick() & 0xFFFF0000)>>16)==-1 &&
-                        TIMER1->CNT < TIMER1->CC[1].CCV)){
-                    
-                    callScheduler();
-                }
-            }
-        }else{
-            TIMER3->CC[1].CCV--;
+static inline void setupTimers(){
+    // We assume that this function is called only when the checkpoint is in future
+    if (ms32chkp == ms32time){
+        // If the most significant 32bit matches, enable TIM3
+        TIMER3->IFC = TIMER_IFC_CC1;
+        TIMER3->IEN |= TIMER_IEN_CC1;
+        if (static_cast<unsigned short>(TIMER3->CNT) >= static_cast<unsigned short>(TIMER3->CC[1].CCV) + 1){
+            // If TIM3 matches by the time it is being enabled, disable it right away
             TIMER3->IFC = TIMER_IFC_CC1;
-            TIMER3->IEN |= TIMER_IEN_CC1;
-            if (TIMER3->CNT == TIMER3->CC[1].CCV){
-                TIMER1->IFC = TIMER_IFC_CC1;
-                TIMER1->IEN |= TIMER_IEN_CC1;
-                TIMER3->IEN &= ~TIMER_IEN_CC1;
-            }else if (TIMER3->CNT > TIMER3->CC[1].CCV){
-                callScheduler();
-            }
-        }
-    }else{
-        TIMER3->IFC = TIMER_IFC_CC1;
-        TIMER3->IEN |= TIMER_IEN_CC1; 
-    }
-}
-
-void __attribute__((used)) cstirqhnd3(){
-    
-    //Checkpoint
-    if (TIMER3->IF & TIMER_IF_CC1){
-        
-        TIMER3->IFC = TIMER_IFC_CC1;
-        long long diffs = ms32chkp - ms32time;
-        if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
             TIMER3->IEN &= ~TIMER_IEN_CC1;
+            // Enable TIM1 since TIM3 has been already matched
             TIMER1->IFC = TIMER_IFC_CC1;
             TIMER1->IEN |= TIMER_IEN_CC1;
             if (TIMER1->CNT >= TIMER1->CC[1].CCV){
-                callScheduler(); //WHat if CCV=0xFFFF
+                // If TIM1 matches by the time it is being enabled, call the scheduler right away
+                callScheduler();
             }
         }
-    }   
+    }
+    // If the most significant 32bit aren't match wait for TIM3 to overflow!
+}
+
+void __attribute__((used)) cstirqhnd3(){
     //rollover
     if (TIMER3->IF & TIMER_IF_OF){
         TIMER3->IFC = TIMER_IFC_OF;
         ms32time += overflowIncrement;
+        setupTimers();
     }
+    //Checkpoint
+    if (TIMER3->IF & TIMER_IF_CC1){
+        TIMER3->IFC = TIMER_IFC_CC1;
+        if (TIMER3->CNT >= TIMER3->CC[1].CCV + 1){
+            // Should happen if and only if most significant 32 bits have been matched
+            TIMER3->IEN &= ~ TIMER_IEN_CC1;
+            // Enable TIM1 since TIM3 has been already matched
+            TIMER1->IFC = TIMER_IFC_CC1;
+            TIMER1->IEN |= TIMER_IEN_CC1;
+            if (TIMER1->CNT >= TIMER1->CC[1].CCV){
+                // If TIM1 matches by the time it is being enabled, call the scheduler right away
+                TIMER1->IFC = TIMER_IFC_CC1;
+                callScheduler();
+            }
+        }
+    }   
 }
 void __attribute__((used)) cstirqhnd1(){
     if (TIMER1->IF & TIMER_IF_CC1){
+        TIMER1->IFC = TIMER_IFC_CC1;
+        // Should happen if and only if most significant 48 bits have been matched
         callScheduler();
     }
 }
@@ -164,9 +153,9 @@ namespace miosix {
         }else{
             // Apply the new interrupt on to the timer channels
             TIMER1->CC[1].CCV = static_cast<unsigned int>(tick & 0xFFFF);
-            TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16);
+            TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16) - 1;
             ms32chkp = tick & upperMask;
-            setupTimers(curTick, tick);
+            setupTimers();
         }
     }
     
