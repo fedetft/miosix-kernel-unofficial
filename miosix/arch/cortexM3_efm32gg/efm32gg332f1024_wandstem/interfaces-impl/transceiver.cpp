@@ -28,11 +28,14 @@
 
 #include "transceiver.h"
 #include "cc2520_constants.h"
+#include "gpioirq.h"
 #include "config/miosix_settings.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cassert>
-#include <miosix.h>
+#include <kernel/scheduler/scheduler.h>
+
+#define LEGACY_HW_TIMER_IN_TICKS //FIXME: revert!
 
 using namespace std;
 
@@ -144,7 +147,7 @@ public:
 // class TransceiverConfiguration
 //
 
-int TransceiverConfiguration::setChannel(int channel)
+void TransceiverConfiguration::setChannel(int channel)
 {
     if(channel<11 || channel>26) throw range_error("Channel not in range");
     frequency=2405+5*(channel-11);
@@ -174,6 +177,11 @@ void Transceiver::turnOn()
         waitXosc();
     }
     
+    configure();
+}
+
+void Transceiver::configure()
+{
     //
     // Configure transceiver as per given configuration class
     //
@@ -230,6 +238,7 @@ void Transceiver::turnOn()
     writeReg(CC2520Register::ADCTEST2,0x03);
 
     state=CC2520State::IDLE;
+    idle();
 }
 
 void Transceiver::turnOff()
@@ -240,6 +249,8 @@ void Transceiver::turnOff()
     transceiver::reset::low();
     pm.disableTransceiverPowerDomain();
 }
+
+bool Transceiver::isTurnedOn() const { return state!=CC2520State::DEEPSLEEP; }
 
 void Transceiver::idle()
 {
@@ -420,7 +431,18 @@ CC2520StatusBitmask Transceiver::commandStrobe(CC2520Command cmd)
 
 Transceiver::Transceiver()
     : pm(PowerManager::instance()), spi(Spi::instance()),
-      timer(getTransceiverTimer()), state(CC2520State::DEEPSLEEP), config() {}
+      timer(getTransceiverTimer()), state(CC2520State::DEEPSLEEP),
+      waiting(nullptr)
+{
+    registerGpioIrq(internalSpi::miso::getPin(),GpioIrqEdge::RISING,
+    [this]{
+        if(!waiting) return;
+        waiting->IRQwakeup();
+        if(waiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+            Scheduler::IRQfindNextThread();
+        waiting=nullptr;
+    });
+}
 
 void Transceiver::startRxAndWaitForRssi()
 {
@@ -713,8 +735,22 @@ void Transceiver::clearAllExceptions()
 
 void Transceiver::waitXosc()
 {
-    //TODO: implement it using interrupts
-    while(internalSpi::miso::value()==0) ;
+    //The simplest possible implementation is
+    //while(internalSpi::miso::value()==0) ;
+    //but it is too energy hungry
+    
+    auto misoPin=internalSpi::miso::getPin();
+    FastInterruptDisableLock dLock;
+    waiting=Thread::IRQgetCurrentThread();
+    IRQenableGpioIrq(misoPin);
+    do {
+        Thread::IRQwait();
+        {
+            FastInterruptEnableLock eLock(dLock);
+            Thread::yield();
+        }
+    } while(waiting);
+    IRQdisableGpioIrq(misoPin);
 }
 
 unsigned char Transceiver::txPower(int dBm)

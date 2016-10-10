@@ -29,6 +29,7 @@
 #ifndef TRANSCEIVER_H
 #define TRANSCEIVER_H
 
+#include <miosix.h>
 #include <limits>
 #include "power_manager.h"
 #include "spi.h"
@@ -62,7 +63,7 @@ public:
      * channel number
      * \param channel IEEE 802.15.4 channel number (from 11 to 26)
      */
-    int setChannel(int channel);
+    void setChannel(int channel);
 
     int frequency;      ///< TX/RX frequency, between 2394 and 2507
     int txPower;        ///< TX power in dBm
@@ -120,11 +121,22 @@ public:
      * Turn the thransceiver ON (i.e: bring it out of deep sleep)
      */
     void turnOn();
+    
+    /**
+     * \internal this member function is used for restoring the transceiver
+     * state during deep sleep
+     */
+    void configure();
 
     /**
      * Turn the transceiver OFF (i.e: bring it to deep sleep)
      */
     void turnOff();
+    
+    /**
+     * \return true if the transceiver is turned on
+     */
+    bool isTurnedOn() const;
     
     /**
      * Put the transceiver to idle state.
@@ -331,6 +343,7 @@ private:
     HardwareTimer& timer;
     CC2520State state;
     TransceiverConfiguration config;
+    miosix::Thread *waiting;
 };
 
 } //namespace miosix

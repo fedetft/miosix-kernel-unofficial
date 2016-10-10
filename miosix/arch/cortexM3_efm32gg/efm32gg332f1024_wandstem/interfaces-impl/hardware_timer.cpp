@@ -31,7 +31,10 @@
 #include "hardware_timer.h"
 #include <miosix.h>
 #include <kernel/scheduler/scheduler.h>
+#include "gpioirq.h"
 #include "config/miosix_settings.h"
+
+#define LEGACY_HW_TIMER_IN_TICKS //FIXME: revert!
 
 using namespace miosix;
 
@@ -71,6 +74,7 @@ static inline long long readRtc()
  */
 static WaitResult waitImpl(long long value, bool eventSensitive)
 {
+    auto eventPin=transceiver::excChB::getPin();
     RTC->COMP0=value & 0xffffff;
     while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0) ;
     
@@ -83,8 +87,7 @@ static WaitResult waitImpl(long long value, bool eventSensitive)
     if(eventSensitive)
     {
         //To avoid race condition, first enable irq, then check for event
-        GPIO->IFC=1<<8;
-        GPIO->IEN |= 1<<8;
+        IRQenableGpioIrq(eventPin);
         //Event occurred. Note that here we assume as event model a device
         //that raises the pin and holds it until some action such as writing
         //to its registers to clear the pin, as is the case with the cc2520
@@ -93,8 +96,7 @@ static WaitResult waitImpl(long long value, bool eventSensitive)
         //briefly would cause a race condition
         if(miosix::transceiver::excChB::value()==1)
         {
-            GPIO->IFC=1<<8;
-            GPIO->IEN &= ~(1<<8);
+            IRQdisableGpioIrq(eventPin);
             RTC->IFC=RTC_IFC_COMP0;
             RTC->IEN &= ~RTC_IEN_COMP0;
             return WaitResult::EVENT;
@@ -105,11 +107,7 @@ static WaitResult waitImpl(long long value, bool eventSensitive)
     //NOTE: the corner case where the wakeup is now is considered "in the past"
     if(value<=readRtc())
     {
-        if(eventSensitive)
-        {
-            GPIO->IFC=1<<8;
-            GPIO->IEN &= ~(1<<8);
-        }
+        if(eventSensitive) IRQdisableGpioIrq(eventPin);
         RTC->IFC=RTC_IFC_COMP0;
         RTC->IEN &= ~RTC_IEN_COMP0;
         return WaitResult::WAKEUP_IN_THE_PAST;
@@ -127,7 +125,7 @@ static WaitResult waitImpl(long long value, bool eventSensitive)
     RTC->IEN &= ~RTC_IEN_COMP0;
     if(eventSensitive)
     {
-        GPIO->IEN &= ~(1<<8);
+        IRQdisableGpioIrq(eventPin);
         if(eventOccurred) return WaitResult::EVENT;
     }
     return WaitResult::WAIT_COMPLETED;
@@ -177,22 +175,10 @@ void __attribute__((used)) RTChandlerImpl()
 }
 
 /**
- * Event timestamping pin interrupt
- */
-void __attribute__((naked)) GPIO_EVEN_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z16GPIO8HandlerImplv");
-    restoreContext();
-}
-
-/**
  * Event timestamping pin interrupt actual implementation
  */
-void __attribute__((used)) GPIO8HandlerImpl()
-{
-    GPIO->IFC=1<<8;
-    
+void GPIO8Handler()
+{   
     timestampEvent=readRtc();
     eventOccurred=true;
     
@@ -223,6 +209,16 @@ long long Rtc::getValue() const
         FastInterruptDisableLock dLock;
         result=readRtc();
     }
+    #ifndef LEGACY_HW_TIMER_IN_TICKS
+    return tc.tick2ns(result);
+    #else //LEGACY_HW_TIMER_IN_TICKS
+    return result;
+    #endif //LEGACY_HW_TIMER_IN_TICKS
+}
+
+long long int Rtc::IRQgetValue() const
+{
+    long long result=readRtc();
     #ifndef LEGACY_HW_TIMER_IN_TICKS
     return tc.tick2ns(result);
     #else //LEGACY_HW_TIMER_IN_TICKS
@@ -337,13 +333,7 @@ Rtc::Rtc() : tc(frequency)
     // channel isn't necessary, as one RTC tick is more than 1400 CPU cycles)
     //
     
-    //the relevant pin is transceiver::excChB, which is PA8
-    GPIO->INSENSE |= 1<<0;
-    GPIO->EXTIPSELH &= ~0x7;
-    GPIO->EXTIRISE |= 1<<8;
-    //NOTE: interrupt not yet enabled as we're not setting GPIO->IEN
-    NVIC_EnableIRQ(GPIO_EVEN_IRQn);
-    NVIC_SetPriority(GPIO_EVEN_IRQn,10); //Low priority
+    registerGpioIrq(transceiver::excChB::getPin(),GpioIrqEdge::RISING,GPIO8Handler);
 }
 
 } //namespace miosix

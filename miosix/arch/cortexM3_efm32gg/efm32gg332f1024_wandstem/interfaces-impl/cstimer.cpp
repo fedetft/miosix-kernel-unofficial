@@ -3,9 +3,6 @@
 #include "kernel/kernel.h"
 #include "kernel/scheduler/timer_interrupt.h"
 #include "kernel/timeconversion.h"
-#include "../../../../../debugpin.h"
-#include "CMSIS/Include/core_cm3.h"
-#include "bsp_impl.h"
 #include "cstimer_impl.h"
 #include "high_resolution_timer_base.h"
 
@@ -13,18 +10,14 @@ using namespace miosix;
 
 static TimeConversion *tc;
 
-
 void __attribute__((naked)) TIMER2_IRQHandler()
 {
     saveContext();
     asm volatile("bl _Z10cstirqhnd2v");
     restoreContext();
 }
-void __attribute__((used)) cstirqhnd2(){}
 
-//
-// class ContextSwitchTimer
-//
+void __attribute__((used)) cstirqhnd2(){}
 
 namespace miosix {
     

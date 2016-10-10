@@ -64,173 +64,77 @@ inline void interruptGPIOTimerRoutine(){
 static inline void callScheduler(){
     TIMER1->IEN &= ~TIMER_IEN_CC1;
     TIMER3->IEN &= ~TIMER_IEN_CC1;
+    TIMER1->IFC = TIMER_IFC_CC1;
+    TIMER3->IFC = TIMER_IFC_CC1;
     long long tick = tc->tick2ns(IRQgetTick());
     IRQtimerInterrupt(tick);
 }
 
-static inline void setupTimers(long long curTick,long long nextIntTick){
-    long long diffs = ms32chkp[1] - ms32time;
-    long int diff = TIMER3->CC[1].CCV - TIMER3->CNT;
-    if (diffs == 0 || (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
-        if (diff==0 || diff==-1){
-            if (diff==-1){ //if TIM1 overflows before calculating diff
-                callScheduler();
-            }else{
-                TIMER1->IFC = TIMER_IFC_CC1;
-                TIMER1->IEN |= TIMER_IEN_CC1;
-                if (TIMER1->CNT > TIMER1->CC[1].CCV || /* TIM1 overflows after calculating diff */
-                        (TIMER3->CC[1].CCV - static_cast<unsigned int>((IRQgetTick() & 0xFFFF0000)>>16)==-1 &&
-                        TIMER1->CNT < TIMER1->CC[1].CCV)){
-                    
-                    callScheduler();
-                }
-            }
-        }else{
-            TIMER3->CC[1].CCV--;
+static inline void setupTimers(){
+    // We assume that this function is called only when the checkpoint is in future
+    if (ms32chkp[1] == ms32time){
+        // If the most significant 32bit matches, enable TIM3
+        TIMER3->IFC = TIMER_IFC_CC1;
+        TIMER3->IEN |= TIMER_IEN_CC1;
+        if (static_cast<unsigned short>(TIMER3->CNT) >= static_cast<unsigned short>(TIMER3->CC[1].CCV) + 1){
+            // If TIM3 matches by the time it is being enabled, disable it right away
             TIMER3->IFC = TIMER_IFC_CC1;
-            TIMER3->IEN |= TIMER_IEN_CC1;
-            if (TIMER3->CNT == TIMER3->CC[1].CCV){
-                TIMER1->IFC = TIMER_IFC_CC1;
-                TIMER1->IEN |= TIMER_IEN_CC1;
-                TIMER3->IEN &= ~TIMER_IEN_CC1;
-            }else if (TIMER3->CNT > TIMER3->CC[1].CCV){
-                callScheduler();
-            }
-        }
-    }else{
-        TIMER3->IFC = TIMER_IFC_CC1;
-        TIMER3->IEN |= TIMER_IEN_CC1; 
-    }
-}
-/*
-void __attribute__((naked)) TIMER3_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd3v");
-    restoreContext();
-}
-
-
- //This routine has to manage the timer1 interrupt disable/enable to guarantee efficiency
- 
-void __attribute__((used)) cstirqhnd3(){
-    //Context Switch - Checkpoint
-    if (lateIrq){
-        IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
-        lateIrq = false;
-    }else if (TIMER3->IF & TIMER_IF_CC1){
-        TIMER3->IFC = TIMER_IFC_CC1;
-        if (ms32time == ms32chkp[1]){
-	    TIMER1->IFC = TIMER_IFC_CC1;
-	    NVIC_ClearPendingIRQ(TIMER1_IRQn);
-            NVIC_EnableIRQ(TIMER1_IRQn);
-	    //TIMER1->IEN |= TIMER_IEN_CC1;
-            if (TIMER1->CNT >= TIMER1->CC[1].CCV){
-		TIMER1->IFC = TIMER_IFC_CC1;
-		NVIC_DisableIRQ(TIMER1_IRQn);
-                //TIMER1->IEN &= ~TIMER_IEN_CC1;
-                IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
-            }
-        }
-    }
-    
-//    if(TIMER3->IF & TIMER_IF_CC0){
-//        TIMER3->IFC = TIMER_IFC_CC0;
-//        if (ms32time == ms32chkp[0]){
-//	    //global++;
-//            TIMER1->IFC = TIMER_IFC_CC0;
-//	    TIMER1->IEN |= TIMER_IEN_CC0;
-//            NVIC_ClearPendingIRQ(TIMER1_IRQn);
-//            NVIC_EnableIRQ(TIMER1_IRQn);
-//            if (TIMER1->CNT >= TIMER1->CC[0].CCV){
-//                TIMER1->IEN &= ~TIMER_IEN_CC0;
-//		TIMER1->IFC = TIMER_IFC_CC0;
-//                interruptGPIOTimerRoutine();
-//		//global+=10;
-//            }
-//        }
-//    }
- 
-    //Rollover
-    if (TIMER3->IF & TIMER_IF_OF){
-        TIMER3->IFC = TIMER_IFC_OF;
-        ms32time += overflowIncrement;
-    }
-}
-    
-void __attribute__((used)) cstirqhnd1(){
-    //Context Switch - Checkpoint
-    if (TIMER1->IF & TIMER_IF_CC1){
-	TIMER1->IFC = TIMER_IFC_CC1;
-        //TIMER1->IEN &= ~TIMER_IEN_CC1;
-        NVIC_ClearPendingIRQ(TIMER1_IRQn);
-	NVIC_DisableIRQ(TIMER1_IRQn);
-        IRQtimerInterrupt(tc->tick2ns(IRQgetTick()));
-    }
-
-//    if (TIMER1->IF & TIMER_IF_CC2){
-//	//global+=100;
-//        TIMER1->IEN &= ~TIMER_IEN_CC2;
-//	TIMER1->IFC = TIMER_IFC_CC2;
-//        NVIC_ClearPendingIRQ(TIMER1_IRQn);
-//        interruptGPIOTimerRoutine();
-//    }
-	
-}
-
-void __attribute__((naked)) TIMER1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd1v");
-    restoreContext();
-}
-void __attribute__((naked)) TIMER2_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd2v");
-    restoreContext();
-}
-
-void __attribute__((used)) cstirqhnd2(){}
-*/
-void __attribute__((naked)) TIMER3_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd3v");
-    restoreContext();
-}
-
-void __attribute__((naked)) TIMER1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd1v");
-    restoreContext();
-}
-
-void __attribute__((used)) cstirqhnd3(){
-    
-    //Checkpoint
-    if (TIMER3->IF & TIMER_IF_CC1){
-        
-        TIMER3->IFC = TIMER_IFC_CC1;
-        long long diffs = ms32chkp[1] - ms32time;
-        if (diffs == 0|| (diffs==1 && (TIMER3->IF & TIMER_IF_OF)) ){
             TIMER3->IEN &= ~TIMER_IEN_CC1;
+            // Enable TIM1 since TIM3 has been already matched
             TIMER1->IFC = TIMER_IFC_CC1;
             TIMER1->IEN |= TIMER_IEN_CC1;
             if (TIMER1->CNT >= TIMER1->CC[1].CCV){
-                callScheduler(); //WHat if CCV=0xFFFF
+                // If TIM1 matches by the time it is being enabled, call the scheduler right away
+                callScheduler();
             }
         }
-    }   
+    }
+    // If the most significant 32bit aren't match wait for TIM3 to overflow!
+}
+
+void __attribute__((naked)) TIMER3_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z10cstirqhnd3v");
+    restoreContext();
+}
+
+void __attribute__((naked)) TIMER1_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z10cstirqhnd1v");
+    restoreContext();
+}
+
+void __attribute__((used)) cstirqhnd3(){
     //rollover
     if (TIMER3->IF & TIMER_IF_OF){
         TIMER3->IFC = TIMER_IFC_OF;
         ms32time += overflowIncrement;
+        setupTimers();
     }
+    //Checkpoint
+    if (TIMER3->IF & TIMER_IF_CC1){
+        TIMER3->IFC = TIMER_IFC_CC1;
+        if (static_cast<unsigned short>(TIMER3->CNT) >= static_cast<unsigned short>(TIMER3->CC[1].CCV) + 1){
+            // Should happen if and only if most significant 32 bits have been matched
+            TIMER3->IEN &= ~ TIMER_IEN_CC1;
+            // Enable TIM1 since TIM3 has been already matched
+            TIMER1->IFC = TIMER_IFC_CC1;
+            TIMER1->IEN |= TIMER_IEN_CC1;
+            if (TIMER1->CNT >= TIMER1->CC[1].CCV){
+                // If TIM1 matches by the time it is being enabled, call the scheduler right away
+                TIMER1->IFC = TIMER_IFC_CC1;
+                callScheduler();
+            }
+        }
+    } 
 }
+
 void __attribute__((used)) cstirqhnd1(){
     if (TIMER1->IF & TIMER_IF_CC1){
+        TIMER1->IFC = TIMER_IFC_CC1;
+        // Should happen if and only if most significant 48 bits have been matched
         callScheduler();
     }
 }
@@ -417,9 +321,9 @@ bool HighResolutionTimerBase::IRQsetNextInterrupt1(long long tick){
     }else{
 	// Apply the new interrupt on to the timer channels
 	TIMER1->CC[1].CCV = static_cast<unsigned int>(tick & 0xFFFF);
-	TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16);
+	TIMER3->CC[1].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16)-1;
 	ms32chkp[1] = tick & upperMask;
-	setupTimers(curTick, tick);
+	setupTimers();
 	return true;
     }
 }
