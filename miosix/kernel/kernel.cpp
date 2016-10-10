@@ -41,7 +41,6 @@
 #include <stdexcept>
 #include <algorithm>
 #include <string.h>
-
 /*
 Used by assembler context switch macros
 This variable is set by miosix::IRQfindNextThread in file kernel.cpp
@@ -241,7 +240,7 @@ bool isKernelRunning()
     return (kernel_running==0) && kernel_started;
 }
 
-long long getTick()
+long long getTime()
 {
     return ContextSwitchTimer::instance().getCurrentTick();
 }
