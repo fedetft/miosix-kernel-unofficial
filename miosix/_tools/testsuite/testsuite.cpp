@@ -765,21 +765,22 @@ static void test_2()
 tests:
 Thread::sleep()
 Thread::sleepUntil()
-getTick()
+getTime()
 also tests creation of multiple instances of the same thread
 */
 
 static void t3_p1(void *argv)
 {
-    const int SLEEP_TIME=100;
+    const int SLEEP_TIME=100; // in ms
     for(;;)
     {
         if(Thread::testTerminate()) break;
         //Test that Thread::sleep sleeps the desired number of ticks
-        long long x=getTick();
+        long long x1=getTime(); //getTime returns passed time in ns
         Thread::sleep(SLEEP_TIME);
-        if(abs(((SLEEP_TIME*TICK_FREQ)/1000)-(getTick()-x))>5)
-            fail("Thread::sleep() or getTick()");
+        long long x2=getTime();
+        if(llabs((x2-x1)/1000000-SLEEP_TIME)>5) //Max tolerated error is 5ms
+            fail("Thread::sleep() or getTime()");
     }
 }
 
@@ -848,16 +849,19 @@ static void test_3()
     if(t3_deleted==false) fail("multiple instances (4)");
     //Testing Thread::sleepUntil()
     long long tick;
-    const int period=static_cast<int>(TICK_FREQ*0.01); //10ms
+        
+    const int period=10000000;//10ms
     {
         InterruptDisableLock lock; //Making these two operations atomic.
-        tick=getTick();
+        tick=getTime();
         tick+=period;
     }
     for(int i=0;i<4;i++)
     {
-        Thread::sleepUntil(tick);
-        if(tick!=getTick()) fail("Thread::sleepUntil()");
+        //tick is in number of ns passed, wakeup time should not differ by > 1ms
+        Thread::nanoSleepUntil(tick);
+        long long t2 = getTime();
+        if(tick/1000000!=t2/1000000) fail("Thread::sleepUntil()");
         tick+=period;
     }
     pass();
@@ -897,7 +901,7 @@ static void t4_p1(void *argv)
 static void t4_p2(void *argv)
 {
     const int period=static_cast<int>(TICK_FREQ*0.03);
-    long long tick=getTick();
+    long long tick=getTime();
     for(int i=0;i<10;i++)
     {
         long long prevTick=tick;
@@ -905,7 +909,7 @@ static void t4_p2(void *argv)
         Thread::setPriority(Priority(tick)); //Change deadline
         Thread::sleepUntil(prevTick); //Make sure the task is run periodically
         delayMs(14);
-        if(getTick()>tick) fail("Deadline missed (A)\n");
+        if(getTime()>tick) fail("Deadline missed (A)\n");
     }
 }
 #endif //SCHED_TYPE_EDF
@@ -924,7 +928,7 @@ static void test_4()
     //Check IRQgetPriority
     if(p->IRQgetPriority()!=0) fail("IRQgetPriority");
     //Check that tick is not incremented and t4_v1 is not updated
-    long long tick=getTick();
+    long long tick=getTime();
     t4_v1=false;
     for(int i=0;i<4;i++)
     {
@@ -946,7 +950,7 @@ static void test_4()
 
     fastDisableInterrupts();//
     //Check that tick is not incremented and t4_v1 is not updated
-    tick=getTick();
+    tick=getTime();
     t4_v1=false;
     for(int i=0;i<4;i++)
     {
@@ -3009,11 +3013,11 @@ void t20_t2(void* arg)
     t20_v1=0;
     eq->post(t20_f1);
     eq->post(t20_f1);
-    unsigned long long t1=getTick();
+    unsigned long long t1=getTime();
     eq->post(bind(t20_f2,10,4)); //This should block
-    unsigned long long t2=getTick();
+    unsigned long long t2=getTime();
     //The other thread sleep for 50ms before calling run()
-    if((t2-t1)<static_cast<unsigned long long>(TICK_FREQ*0.04))
+    if((t2-t1)/1000000 < 40)
         fail("Not blocked");
     Thread::sleep(10);
     if(t20_v1!=14) fail("Not called");

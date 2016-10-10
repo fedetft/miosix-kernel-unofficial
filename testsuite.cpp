@@ -30,15 +30,16 @@
 * development to check for regressions.
 *************************************************************************/
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <math.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
 #include <stdexcept>
 #include <algorithm>
 #include <vector>
 #include <set>
 #include <cassert>
+#include <functional>
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -46,7 +47,6 @@
 #include <pthread.h>
 #include <errno.h>
 #include <dirent.h>
-#include <tr1/functional>
 #include <ext/atomicity.h>
 
 #include "miosix.h"
@@ -69,7 +69,7 @@
 #include "testsuite/mpu_testsuite/includes.h"
 #endif //WITH_PROCESSES
 
-using namespace std::tr1;
+using namespace std;
 using namespace miosix;
 
 // A reasonably small stack value for spawning threads during the test.
@@ -776,11 +776,10 @@ static void t3_p1(void *argv)
     {
         if(Thread::testTerminate()) break;
         //Test that Thread::sleep sleeps the desired number of ticks
-        long long x1=getTick(); //getTick returns # passed quantums
+        long long x1=getTime(); //getTick returns passed time in ns
         Thread::sleep(SLEEP_TIME);
-        long long x2=getTick();
-        //if(abs(((SLEEP_TIME*TICK_FREQ)/1000)-(getTick()-x))>5)
-        if (abs((x2-x1)*preemptionPeriodNs/1000000-SLEEP_TIME)>5) //Max tolerated error is 5ms
+        long long x2=getTime();
+        if(llabs((x2-x1)/1000000-SLEEP_TIME)>5) //Max tolerated error is 5ms
             fail("Thread::sleep() or getTick()");
     }
 }
@@ -850,19 +849,19 @@ static void test_3()
     if(t3_deleted==false) fail("multiple instances (4)");
     //Testing Thread::sleepUntil()
     long long tick;
-    //const int period=static_cast<int>(TICK_FREQ*0.01); //10ms
+        
     const int period=10000000;//10ms
     {
         InterruptDisableLock lock; //Making these two operations atomic.
-        tick=getTick()*preemptionPeriodNs;
+        tick=getTime();
         tick+=period;
     }
     for(int i=0;i<4;i++)
     {
-        //tick is in number of quantums passed while sleepUntil requires ms
+        //tick is in number of ns passed, wakeup time should not differ by > 1ms
         Thread::nanoSleepUntil(tick);
-        long long t2 = getTick();
-        if(tick!=t2*preemptionPeriodNs) fail("Thread::sleepUntil()");
+        long long t2 = getTime();
+        if(tick/1000000!=t2/1000000) fail("Thread::sleepUntil()");
         tick+=period;
     }
     pass();
@@ -929,7 +928,7 @@ static void test_4()
     //Check IRQgetPriority
     if(p->IRQgetPriority()!=0) fail("IRQgetPriority");
     //Check that tick is not incremented and t4_v1 is not updated
-    long long tick=getTick();
+    long long tick=getTime();
     t4_v1=false;
     for(int i=0;i<4;i++)
     {
@@ -951,7 +950,7 @@ static void test_4()
 
     fastDisableInterrupts();//
     //Check that tick is not incremented and t4_v1 is not updated
-    tick=getTick();
+    tick=getTime();
     t4_v1=false;
     for(int i=0;i<4;i++)
     {
@@ -3014,11 +3013,11 @@ void t20_t2(void* arg)
     t20_v1=0;
     eq->post(t20_f1);
     eq->post(t20_f1);
-    unsigned long long t1=getTick();
+    unsigned long long t1=getTime()/1000000;
     eq->post(bind(t20_f2,10,4)); //This should block
-    unsigned long long t2=getTick();
+    unsigned long long t2=getTime()/1000000;
     //The other thread sleep for 50ms before calling run()
-    if((t2-t1)<static_cast<unsigned long long>(TICK_FREQ*0.04))
+    if((t2-t1) < 40)
         fail("Not blocked");
     Thread::sleep(10);
     if(t20_v1!=14) fail("Not called");
