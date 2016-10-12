@@ -16,6 +16,8 @@
 #include "kernel/scheduler/timer_interrupt.h"
 #include "high_resolution_timer_base.h"
 #include "kernel/timeconversion.h"
+#include "gpio_timer.h"
+
 using namespace miosix;
 
 const unsigned int timerBits=32;
@@ -51,12 +53,12 @@ inline void interruptGPIOTimerRoutine(){
 	expansion::gpio10::high();
     }else if(TIMER1->CC[2].CTRL & TIMER_CC_CTRL_MODE_INPUTCAPTURE){
 	//Reactivating the thread that is waiting for the event.
-	if(HighResolutionTimerBase::tWaitingGPIO)
+	if(GPIOtimer::tWaitingGPIO)
         {
-            HighResolutionTimerBase::tWaitingGPIO->IRQwakeup();
-            if(HighResolutionTimerBase::tWaitingGPIO->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+            GPIOtimer::tWaitingGPIO->IRQwakeup();
+            if(GPIOtimer::tWaitingGPIO->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
                 Scheduler::IRQfindNextThread();
-            HighResolutionTimerBase::tWaitingGPIO=nullptr;
+            GPIOtimer::tWaitingGPIO=nullptr;
         }
     }
 }
@@ -114,7 +116,7 @@ void __attribute__((used)) cstirqhnd3(){
         setupTimers();
     }
     //Checkpoint
-    if (TIMER3->IF & TIMER_IF_CC1){
+    if ((TIMER3->IEN & TIMER_IEN_CC1) && (TIMER3->IF & TIMER_IF_CC1)){
         TIMER3->IFC = TIMER_IFC_CC1;
         if (static_cast<unsigned short>(TIMER3->CNT) >= static_cast<unsigned short>(TIMER3->CC[1].CCV) + 1){
             // Should happen if and only if most significant 32 bits have been matched
@@ -129,13 +131,37 @@ void __attribute__((used)) cstirqhnd3(){
             }
         }
     } 
+    
+    //This if is to manage the GPIOtimer in OUTPUT Mode
+    if((TIMER3->IEN & TIMER_IEN_CC2) && (TIMER3->IF & TIMER_IF_CC2)){
+	if (ms32time == ms32chkp[2]){
+	    TIMER3->IFC = TIMER_IFC_CC2;
+	    TIMER3->IEN &= ~TIMER_IEN_CC2;
+	    greenLed::high();
+	
+	    TIMER1->IFC = TIMER_IFC_CC2;
+	    TIMER1->IEN |= TIMER_IEN_CC2;
+	    if (TIMER1->CNT >= TIMER1->CC[2].CCV){
+		TIMER1->IEN &= ~TIMER_IEN_CC2;
+		TIMER1->IFC = TIMER_IFC_CC2;
+		interruptGPIOTimerRoutine();
+	    }
+	}
+    }
 }
 
 void __attribute__((used)) cstirqhnd1(){
-    if (TIMER1->IF & TIMER_IF_CC1){
+    if ((TIMER1->IEN & TIMER_IEN_CC1) && (TIMER1->IF & TIMER_IF_CC1)){
         TIMER1->IFC = TIMER_IFC_CC1;
         // Should happen if and only if most significant 48 bits have been matched
         callScheduler();
+    }
+    
+    //This if is used to manage the case of GPIOTimer, both INPUT and OUTPUT mode
+    if ((TIMER1->IEN & TIMER_IEN_CC2) && (TIMER1->IF & TIMER_IF_CC2)){
+        TIMER1->IEN &= ~TIMER_IEN_CC2;
+	TIMER1->IFC = TIMER_IFC_CC2;
+        interruptGPIOTimerRoutine();
     }
 }
 
@@ -213,9 +239,9 @@ HighResolutionTimerBase::HighResolutionTimerBase() {
     
 }
 
-Thread* HighResolutionTimerBase::tWaitingGPIO=nullptr;
-
-HighResolutionTimerBase::~HighResolutionTimerBase() {}
+HighResolutionTimerBase::~HighResolutionTimerBase() {
+    delete tc;
+}
 
 long long HighResolutionTimerBase::IRQgetCurrentTick(){
     return IRQgetTick();
@@ -248,9 +274,12 @@ void HighResolutionTimerBase::setCCInterrupt2Tim1(bool enable){
         TIMER1->IEN&=~TIMER_IEN_CC2;
 }
 
-//	In this function I prepare the timer, but i don't enable the timer.
+// In this function I prepare the timer, but i don't enable the timer.
+// Set true to get the input mode: wait for the raising of the pin and timestamp the time in which occurs
+// Set false to get the output mode: When the time set is reached, raise the pin!
 void HighResolutionTimerBase::setModeGPIOTimer(bool input){    
     if(input){
+	//Connect TIMER1->CC2 to PIN PE12, meaning GPIO10 on wandstem
 	TIMER1->ROUTE=TIMER_ROUTE_CC2PEN
                 | TIMER_ROUTE_LOCATION_LOC1;
 	//Configuro la modalità input
@@ -258,7 +287,7 @@ void HighResolutionTimerBase::setModeGPIOTimer(bool input){
                           TIMER_CC_CTRL_ICEDGE_RISING |
                           TIMER_CC_CTRL_INSEL_PIN; 
 	
-	//Configuro PRS Timer 3 deve essere un consumer, timer1 producer, TIMER3 keeps the most significative part
+	//Config PRS: Timer3 has to be a consumer, Timer1 a producer, TIMER3 keeps the most significative part
 	//TIMER1->CC2 as producer, i have to specify the event i'm interest in    
 	PRS->CH[0].CTRL|=PRS_CH_CTRL_SOURCESEL_TIMER1
 			|PRS_CH_CTRL_SIGSEL_TIMER1CC2;
@@ -330,7 +359,7 @@ bool HighResolutionTimerBase::IRQsetNextInterrupt1(long long tick){
 
 bool HighResolutionTimerBase::IRQsetNextInterrupt2(long long tick){
     ms32chkp[2] = tick & upperMask;
-    TIMER3->CC[2].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16);
+    TIMER3->CC[2].CCV = static_cast<unsigned int>((tick & 0xFFFF0000)>>16)-1;
     TIMER1->CC[2].CCV = static_cast<unsigned int>(tick & 0xFFFF);
     /*
     In order to prevent back to back interrupts due to a checkpoint
@@ -339,8 +368,7 @@ bool HighResolutionTimerBase::IRQsetNextInterrupt2(long long tick){
     */
     if(IRQgetCurrentTick() >= IRQgetSetTimeCCV2())
     {
-        NVIC_SetPendingIRQ(TIMER3_IRQn);
-	// TIMER3->IFS=TIMER_IFS_CC2; ???
+	//TIMER3->IFS=TIMER_IFS_CC2;
         lateIrq=true;
 	return false;
     }
