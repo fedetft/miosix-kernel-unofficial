@@ -1,18 +1,36 @@
 #include <cstdlib>
 #include <cstdio>
 #include "miosix.h"
-#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/gpio_timer.h"
-#include <e20/e20.h>
-#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
+//#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/gpio_timer.h"
+//#include <e20/e20.h>
+//#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
+#include "debugpin.h"
+#include "/home/fabiuz/NetBeansProjects/miosix-kernel-unofficial/miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
 
 using namespace std;
 using namespace miosix;
 
-FixedEventQueue<100,12> queue;
+//FixedEventQueue<100,12> queue;
 int global=0;
+
+void ContextSwitchTest1(){
+    initDebugPins();
+    for (;;){
+	HighPin<debug2> hp;
+    }
+}
+static void ContextSwitchTest2(void* v){
+    initDebugPins();
+    for (long long i=1;;i+=5){
+	HighPin<debug2> hp;
+	Thread::sleepUntil(i);
+    }
+}
+
 
 int main(int argc, char** argv) {
     printf("Hello world\n");
+    
     /*expansion::gpio0::mode(Mode::OUTPUT); //i have to enable and configure each single GPIO on the board
     expansion::gpio10::mode(Mode::INPUT);
     testPin::low();
@@ -181,11 +199,11 @@ int main(int argc, char** argv) {
     TIMER3->CTRL |= TIMER_CTRL_CLKSEL_TIMEROUF
                  |  TIMER_CTRL_SYNC;
     
-    //TIMER1->CC[1].CCV=10;
-    //TIMER3->CC[1].CCV=834;
-    //TIMER1->CC[1].CTRL=TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    //TIMER3->CC[1].CTRL=TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    TIMER3->IEN=TIMER_IEN_OF;
+    TIMER1->CC[2].CCV=10;
+    TIMER2->CC[2].CCV=834;
+    TIMER1->CC[2].CTRL=TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    TIMER2->CC[2].CTRL=TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    //TIMER3->IEN=TIMER_IEN_OF;
     
     //NVIC_SetPriority(TIMER1_IRQn,5); //Low priority    
     //NVIC_ClearPendingIRQ(TIMER1_IRQn);
@@ -196,14 +214,18 @@ int main(int argc, char** argv) {
     
     TIMER1->CMD = TIMER_CMD_START;
     
-    /*printf("TIMER1->IF=%lu\n",TIMER1->IF);
-    for(;TIMER3->CNT<1000;) 
-        if((TIMER3->CNT)%100==0)
-            printf("TIMER3: %lu\n",TIMER3->CNT);
-    printf("\nFine loop\n");
-    queue.runOne();
     printf("TIMER1->IF=%lu\n",TIMER1->IF);
-    queue.runOne();
+    for(;TIMER3->CNT<1000;) 
+        if((TIMER3->CNT)%100==0){
+            printf("TIMER3: %lu,TIMER1->IF=%lu\n",TIMER3->CNT,TIMER3->IF);
+	    if(TIMER3->CNT==900){
+		TIMER3->IEN=TIMER_IEN_CC2;
+	    }
+	}
+    printf("\nFine loop\n");
+    //queue.runOne();
+    printf("TIMER1->IF=%lu\n",TIMER1->IF);
+    //queue.runOne();
     */
     //delayMs(10000);
     //printf("%u\n",ms32time);
@@ -217,147 +239,87 @@ int main(int argc, char** argv) {
     
     
     
-    /* Test per GPIOTimer trigger
+    // Test per GPIOTimer trigger OUTPUT mode
+    //ContextSwitchTest2(0);
+    Thread *t=Thread::create(ContextSwitchTest2,512);
+    
     expansion::gpio0::mode(Mode::INPUT);
     expansion::gpio10::mode(Mode::OUTPUT);
     expansion::gpio10::low();
     
-    printf(" %lu %d %d %lu %lu\n",TIMER3->CNT ,expansion::gpio0::value(),global,TIMER1->IF,TIMER1->IEN);
-    expansion::gpio10::high();
-    printf(" %lu %d %d %lu %lu\n",TIMER3->CNT ,expansion::gpio0::value(),global,TIMER1->IF,TIMER1->IEN);
-    TIMER1->IFC=1;
-    expansion::gpio10::low();
     GPIOtimer& g=GPIOtimer::instance();
+    HighResolutionTimerBase& h=HighResolutionTimerBase::instance();
     bool flag=true,exit=false;
-    for(int i=0;i<3;i++){
+    
+    //	Test cases  in tick:
+    //	#	    Dec				Hex			    Late
+    //	0	    1				0x0000001		    true
+    //	1	    40000			0x00009C40		    true
+    //	2 relative  step of 100			step of 0x64		    false/true about 130 lates
+    //	3	    200000000			0x0BEBC200		    false
+    //	4	    2000000000			0x77359400		    false
+    //	5	    4294950912			0xFFFFC000		    false
+    //	6	    4294967296			0x100000000		    true
+    //	7	    4294975487			0x100006FFF		    true
+    long long values[8];
+    values[0]=0x00000001;
+    values[1]=0x00009C40;
+    values[2]=0x00000064;
+    values[3]=0x0BEBC200;
+    values[4]=0x77359400;
+    values[5]=0xFFFFC000; //Mettere 0xFFFFC000 per farlo funzionare, perchè????????????
+    values[6]=0x100000000;
+    values[7]=0x10A001FFF;
+    bool result;
+    for(int i=0,j=0;i<8;i++){
 	
-	if(i==0){
-	    printf("Inizio ciclo for %d\n",i);
-	    g.waitTrigger(336870919);//536870919//1000000000
-	}else if(i==1){
-	    printf("Inizio ciclo for %d\n",i);
-	    g.waitTrigger(336870919);
+	if(i==0||i==1||i==3||i==4||i==5||i==6||i==7){
+	    printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],h.getCurrentTick());
+	    result=g.absoluteWaitTrigger(values[i]);
 	}else{
-	    printf("Inizio ciclo for %d\n",i);
-	    g.waitTrigger(4300000000);
-	}
-	exit=false;
-	while(!exit){
-	    printf(" %lu %d %d %lu %lu\n",TIMER3->CNT ,expansion::gpio0::value(),global,TIMER1->IF,TIMER1->IEN);
-	    if(expansion::gpio0::value()){
-		exit=true;
+	    if(j==0){
+		printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],h.getCurrentTick());
 	    }
-	    getchar();
+	    if(j<1000){
+		result=g.waitTrigger(values[i]+j);
+		j++;
+		if(j<1000){
+		    i--;
+		}else{
+		    printf("Number of late time %llu\n",GPIOtimer::aux1);
+		}
+	    }
+	}
+	{
+	    
+	    while(1){
+	    if(expansion::gpio0::value()){break;}
+	    }
+	}
+	
+	
+	if(i==0||(i==1&&j==0)||i==3||i==4||i==5||i==6||i==7){
+	    printf("--------Fine ciclo. result: %d\n",result);
+	}else{
+	    if(result==0){
+		GPIOtimer::aux1++;
+	    }
 	}
 	expansion::gpio10::low();
     }
-    */
     
+    
+    /*
     GPIOtimer& g=GPIOtimer::instance();
+    delayMs(2000);
     printf("Inizio...\n");
-    WaitResult w=g.absoluteWaitTimeoutOrEvent(536870919);
-    delayMs(19);
-    printf("End...\n");
+    WaitResult w=g.absoluteWaitTimeoutOrEvent(536870919); //Only event
+    printf("End... %d\n",w);
+    */
+    //ContextSwitchTest2();
     
     
-    
-    
-    
+    printf("\n\n\n\n,.-\n");
     return 0;
 }
 
-inline void interruptGPIOTimerRoutine(){
-    if(TIMER1->CC[2].CTRL & TIMER_CC_CTRL_MODE_OUTPUTCOMPARE){
-	expansion::gpio10::high();
-    }else if(TIMER1->CC[2].CTRL & TIMER_CC_CTRL_MODE_INPUTCAPTURE){
-	//Reactivating the thread that is waiting for the event.
-	if(HighResolutionTimerBase::tWaiting)
-        {
-            HighResolutionTimerBase::tWaiting->IRQwakeup();
-            if(HighResolutionTimerBase::tWaiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
-                Scheduler::IRQfindNextThread();
-            HighResolutionTimerBase::tWaiting=nullptr;
-        }
-    }
-}
-
-void __attribute__((naked)) TIMER3_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd3v");
-    restoreContext();
-}
-
-/*
- This routine has to manage the timer1 interrupt disable/enable to guarantee efficiency
- */
-void __attribute__((used)) cstirqhnd3(){
-    //Checkpoint
-    if (lateIrq){
-        IRQtimerInterrupt(TimeConversion::tick2ns(HighResolutionTimerBase::instance().IRQgetCurrentTick()));
-        lateIrq = false;
-    }else if (TIMER3->IF & TIMER_IF_CC1){
-        TIMER3->IFC = TIMER_IFC_CC1;
-        if (ms32time == ms32chkp[1]){
-            TIMER1->IFC = TIMER_IFC_CC1;
-	    TIMER1->IEN= TIMER_IEN_CC1;
-            NVIC_ClearPendingIRQ(TIMER1_IRQn);
-            NVIC_EnableIRQ(TIMER1_IRQn);
-            if (TIMER1->CNT >= TIMER1->CC[1].CCV){
-                TIMER1->IEN &= ~TIMER_IEN_CC1;
-		TIMER1->IFC = TIMER_IFC_CC1;
-                IRQtimerInterrupt(TimeConversion::tick2ns(HighResolutionTimerBase::instance().IRQgetCurrentTick()));
-            }
-        }
-    }
-    
-    if(TIMER3->IF & TIMER_IF_CC0){
-        TIMER3->IFC = TIMER_IFC_CC0;
-        if (ms32time == ms32chkp[0]){
-	    //global++;
-            TIMER1->IFC = TIMER_IFC_CC0;
-	    TIMER1->IEN= TIMER_IEN_CC0;
-            NVIC_ClearPendingIRQ(TIMER1_IRQn);
-            NVIC_EnableIRQ(TIMER1_IRQn);
-            if (TIMER1->CNT >= TIMER1->CC[0].CCV){
-                TIMER1->IEN &= ~TIMER_IEN_CC0;
-		TIMER1->IFC = TIMER_IFC_CC0;
-                interruptGPIOTimerRoutine();
-		//global+=10;
-            }
-        }
-    }
-    
-    if(!(TIMER1->IEN & (TIMER_IEN_CC0 | TIMER_IEN_CC1 | TIMER_IEN_CC2))){
-	NVIC_DisableIRQ(TIMER1_IRQn);
-    }
- 
-    //rollover
-    if (TIMER3->IF & TIMER_IF_OF){
-        TIMER3->IFC = TIMER_IFC_OF;
-        ms32time += overflowIncrement;
-    }
-}
-    
-void __attribute__((used)) cstirqhnd1(){
-    //Checkpoint
-    if (TIMER1->IF & TIMER_IF_CC1){
-        TIMER1->IEN &= ~TIMER_IEN_CC1;
-	TIMER1->IFC = TIMER_IFC_CC1;
-        NVIC_ClearPendingIRQ(TIMER1_IRQn);
-        IRQtimerInterrupt(TimeConversion::tick2ns(HighResolutionTimerBase::instance().IRQgetCurrentTick()));
-    }
-
-    if (TIMER1->IF & TIMER_IF_CC2){
-	//global+=100;
-        TIMER1->IEN &= ~TIMER_IEN_CC2;
-	TIMER1->IFC = TIMER_IFC_CC2;
-        NVIC_ClearPendingIRQ(TIMER1_IRQn);
-        interruptGPIOTimerRoutine();
-    }
-    
-    if(!(TIMER1->IEN & (TIMER_IEN_CC0 | TIMER_IEN_CC1 | TIMER_IEN_CC2))){
-	NVIC_DisableIRQ(TIMER1_IRQn);
-    }
-	
-}
