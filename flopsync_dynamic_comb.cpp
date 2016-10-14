@@ -44,8 +44,9 @@ int main()
 {   
     HardwareTimer& timer=Rtc::instance();
 //     Synchronizer *sync=new FLOPSYNC2; //The new FLOPSYNC, FLOPSYNC 2
-     Synchronizer *sync=new ControllerFlopsync;
-    FlooderSyncNode flooder(timer,*sync);
+    Synchronizer *sync=new ControllerFlopsync;
+    //the third parameter is the node ID
+    FlooderSyncNode flooder(timer,*sync,2);
 
 //     Clock *clock=new MonotonicClock(*sync,flooder);
 //     else clock=new NonMonotonicClock(*sync,flooder);

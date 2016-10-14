@@ -71,6 +71,12 @@ const unsigned long long piggybackingTime=static_cast<unsigned long long>((0*8*h
 ////Time to transfer full packet
 const unsigned long long frameTime=static_cast<unsigned long long>((8*8*hz)/channelbps+0.5f);
 
+//Time to transfer full sync packet, 13 byte @250000kbit/s, in tick 32768tick/s
+const unsigned long long fullSyncPacketTime=13*8/250000*hz;
+
+//Time to wait before forwarding the packet, 500microseconds chosen by default, expressed in tick.
+const unsigned long long rebroadcastGapTime=static_cast<unsigned long long>(0.000800*hz); 
+
 //
 ////Time to wait before forwarding the packet
 const unsigned long long delayRebroadcastTime=static_cast<unsigned long long>(0.0005f*hz+0.5f); 

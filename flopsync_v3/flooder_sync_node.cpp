@@ -67,15 +67,15 @@ bool FlooderSyncNode::synchronize()
     assert(timer.getValue()<computedFrameStart-(rxTurnaroundTime+receiverWindow));
     bool timeout=false;
     ledOn();
+    
     RecvResult result;
     for(;;)
     {
         try {
             result=transceiver.recv(packet,sizeof(packet),timeoutTime);
-            printf("Status: %d %d %d\n",result.error,result.timestampValid,result.size);
-            memDump(packet,sizeof(packet));
+            
             if(   result.error==RecvResult::OK && result.timestampValid==true
-               && result.size==L && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==static_cast<unsigned char>(PANID>>8) && packet[4]==static_cast<unsigned char>(PANID))
+               && result.size==L && (hop==packet[2]+1) && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==static_cast<unsigned char>(PANID>>8) && packet[4]==static_cast<unsigned char>(PANID))
             {
                 measuredFrameStart=result.timestamp;
                 break;
@@ -93,11 +93,11 @@ bool FlooderSyncNode::synchronize()
     }
     ledOff();
     
-    //TODO: glossy rebroadcast
-    if(packet[2]<0xff && hop==0){ //retransmit only once
+    if(packet[2]<0xff && hop==packet[2]+1){ //retransmit only once if my id is following the count
         packet[2]++;
-        hop=packet[2];
-        transceiver.sendAt(packet,result.size,delayRebroadcastTime);
+        transceiver.sendAt(packet,result.size,result.timestamp+fullSyncPacketTime+rebroadcastGapTime);        
+        printf("[my ID %d]Status: %d %d %d. Packet forwarded:\n",hop, result.error,result.timestampValid,result.size);
+        memDump(packet,sizeof(packet));
     }
     
     transceiver.turnOff();
@@ -126,8 +126,6 @@ bool FlooderSyncNode::synchronize()
     timeout? printf("e=%d u=%d w=%d ---> miss\n",e,clockCorrection,receiverWindow):
                     printf("e=%d u=%d w=%d\n",e,clockCorrection,receiverWindow);
     
-    //Correct frame start considering hops
-//     measuredFrameStart-=hop*(frameTime+piggybackingTime+delayRebroadcastTime);
     return false;
 }
 
@@ -145,7 +143,7 @@ void FlooderSyncNode::resynchronize()
         try {
             auto result=transceiver.recv(packet,sizeof(packet),numeric_limits<long long>::max());
             if(   result.error==RecvResult::OK && result.timestampValid==true
-               && result.size==L && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==0x77 && packet[4]==0x77)
+               && result.size==L && packet[0]==0xC2 && packet[1]==0x02 && hop==packet[2]+1 && packet[3]==0x77 && packet[4]==0x77)
             {
                 computedFrameStart=measuredFrameStart=result.timestamp;
                 break;
@@ -158,6 +156,4 @@ void FlooderSyncNode::resynchronize()
     clockCorrection=0;
     receiverWindow=w;
     missPackets=0;
-    //Correct frame start considering hops
-//     measuredFrameStart-=hop*(frameTime+piggybackingTime+delayRebroadcastTime);
 }
