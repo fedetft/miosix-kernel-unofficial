@@ -13,7 +13,7 @@ using namespace miosix;
 //FixedEventQueue<100,12> queue;
 int global=0;
 
-void ContextSwitchTest1(){
+static void ContextSwitchTest1(){
     initDebugPins();
     for (;;){
 	HighPin<debug2> hp;
@@ -21,9 +21,9 @@ void ContextSwitchTest1(){
 }
 static void ContextSwitchTest2(void* v){
     initDebugPins();
-    for (long long i=1;;i+=5){
+    for (long long i=1;;i+=1000000){
 	HighPin<debug2> hp;
-	Thread::sleepUntil(i);
+	Thread::nanoSleepUntil(i);
     }
 }
 
@@ -241,71 +241,79 @@ int main(int argc, char** argv) {
     
     // Test per GPIOTimer trigger OUTPUT mode
     //ContextSwitchTest2(0);
-    Thread *t=Thread::create(ContextSwitchTest2,512);
-    
+    //Thread *t=Thread::create(ContextSwitchTest2,512);
+  
     expansion::gpio0::mode(Mode::INPUT);
     expansion::gpio10::mode(Mode::OUTPUT);
     expansion::gpio10::low();
     
+//    for(;;){
+//	expansion::gpio10::high();
+//	expansion::gpio10::low();
+//     }
+//    
     GPIOtimer& g=GPIOtimer::instance();
     HighResolutionTimerBase& h=HighResolutionTimerBase::instance();
-    bool flag=true,exit=false;
     
     //	Test cases  in tick:
     //	#	    Dec				Hex			    Late
-    //	0	    1				0x0000001		    true
+    //	0	    1				0x00000001		    true
     //	1	    40000			0x00009C40		    true
     //	2 relative  step of 100			step of 0x64		    false/true about 130 lates
     //	3	    200000000			0x0BEBC200		    false
     //	4	    2000000000			0x77359400		    false
-    //	5	    4294950912			0xFFFFC000		    false
-    //	6	    4294967296			0x100000000		    true
-    //	7	    4294975487			0x100006FFF		    true
-    long long values[8];
-    values[0]=0x00000001;
+    //	5	    2499936257			0x95020001		    
+    //	6	    4294950912			0xFFFFC000		    false
+    //	7	    4294967296			0x100000000		    true
+    //	8	    4294975487			0x100006FFF		    true
+    const int N=12;
+    long long values[12];
+    values[0]=0x0000001;
     values[1]=0x00009C40;
-    values[2]=0x00000064;
-    values[3]=0x0BEBC200;
-    values[4]=0x77359400;
-    values[5]=0xFFFFC000; //Mettere 0xFFFFC000 per farlo funzionare, perchè????????????
-    values[6]=0x100000000;
-    values[7]=0x10A001FFF;
+    values[2]=0x000000C8;
+    values[3]=0x0BEB0001;
+    values[4]=0x37359400;
+    values[5]=0x5502D241;
+    values[6]=0x59E10001;
+    values[7]=0x60A176C1;
+    values[8]=0x65A176C1;
+    values[9]=0xFAFFC000;
+    values[10]=0x100000000;
+    values[11]=0x10A001FFF;
     bool result;
-    for(int i=0,j=0;i<8;i++){
+    for(int i=0,j=0;i<N;i++){
 	
-	if(i==0||i==1||i==3||i==4||i==5||i==6||i==7){
+	if(i==0||i==1||i>=3){
 	    printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],h.getCurrentTick());
-	    result=g.absoluteWaitTrigger(values[i]);
-	}else{
-	    if(j==0){
-		printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],h.getCurrentTick());
-	    }
-	    if(j<1000){
-		result=g.waitTrigger(values[i]+j);
-		j++;
-		if(j<1000){
-		    i--;
-		}else{
-		    printf("Number of late time %llu\n",GPIOtimer::aux1);
-		}
-	    }
-	}
-	{
+	    result=g.absoluteSyncWaitTrigger(values[i]);
 	    
-	    while(1){
-	    if(expansion::gpio0::value()){break;}
-	    }
-	}
-	
-	
-	if(i==0||(i==1&&j==0)||i==3||i==4||i==5||i==6||i==7){
-	    printf("--------Fine ciclo. result: %d\n",result);
 	}else{
-	    if(result==0){
-		GPIOtimer::aux1++;
-	    }
+//	    if(j==0){
+//		printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i]+j,h.getCurrentTick());
+//	    }
+//	    if(j<2500){
+//		result=g.syncWaitTrigger(values[i]+j);
+//		if(!result){
+//		    GPIOtimer::aux1++;
+//		    printf("%d\n",j);
+//		}
+//		j++;
+//		if(j<2500){
+//		    i--;
+//		}else{
+//		    printf("Number of late time %llu\n",GPIOtimer::aux1);
+//		}
+//	    }
 	}
-	expansion::gpio10::low();
+	
+	if(i==0||(i==1&&j==0)||i>=3){
+	    printf("--------Fine ciclo. result: %d\n",result);
+	}	
+    }
+    
+    //Trying with a periodic scheduling to see if the timing is really precise
+    for(long long i=h.getCurrentTick()+100000;;i+=48000){ //@48Mhz with values it 1ms
+	g.absoluteSyncWaitTrigger(i);
     }
     
     
