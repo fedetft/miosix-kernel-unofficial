@@ -1,9 +1,6 @@
 #include <cstdlib>
 #include <cstdio>
 #include "miosix.h"
-//#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/gpio_timer.h"
-//#include <e20/e20.h>
-//#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
 #include "debugpin.h"
 #include "/home/fabiuz/NetBeansProjects/miosix-kernel-unofficial/miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
 
@@ -25,6 +22,12 @@ static void ContextSwitchTest2(void* v){
 	HighPin<debug2> hp;
 	Thread::nanoSleepUntil(i);
     }
+}
+
+static void raisePin(void* v){
+    //printf("%llu\n",*(long long*)v);
+    Thread::nanoSleepUntil(*(long long*)v);
+    expansion::gpio0::high();
 }
 
 
@@ -236,13 +239,10 @@ int main(int argc, char** argv) {
         printf("%lu %llu %d %llu\n",TIMER3->CNT,c.getCurrentTick()>>32,global,ms32time);
     }*/
     
-    
-    
-    
     // Test per GPIOTimer trigger OUTPUT mode
     //ContextSwitchTest2(0);
     //Thread *t=Thread::create(ContextSwitchTest2,512);
-  
+    
     expansion::gpio0::mode(Mode::INPUT);
     expansion::gpio10::mode(Mode::OUTPUT);
     expansion::gpio10::low();
@@ -253,7 +253,6 @@ int main(int argc, char** argv) {
 //     }
 //    
     GPIOtimer& g=GPIOtimer::instance();
-    HighResolutionTimerBase& h=HighResolutionTimerBase::instance();
     
     //	Test cases  in tick:
     //	#	    Dec				Hex			    Late
@@ -266,25 +265,27 @@ int main(int argc, char** argv) {
     //	6	    4294950912			0xFFFFC000		    false
     //	7	    4294967296			0x100000000		    true
     //	8	    4294975487			0x100006FFF		    true
-    const int N=12;
-    long long values[12];
+    const int N=14;
+    long long values[N];
     values[0]=0x0000001;
     values[1]=0x00009C40;
     values[2]=0x000000C8;
     values[3]=0x0BEB0001;
-    values[4]=0x37359400;
-    values[5]=0x5502D241;
-    values[6]=0x59E10001;
-    values[7]=0x60A176C1;
-    values[8]=0x65A176C1;
-    values[9]=0xFAFFC000;
-    values[10]=0x100000000;
-    values[11]=0x10A001FFF;
+    values[4]=0x1000FFFF;
+    values[5]=0x1C00FFC0;
+    values[6]=0x37359400;
+    values[7]=0x5502D241;
+    values[8]=0x59E10001;
+    values[9]=0x60A176C1;
+    values[10]=0x65A176C1;
+    values[11]=0xFAFFC000;
+    values[12]=0x100000000;//Try with 0xFFFFFFFF too
+    values[13]=0x10A001FFF;
     bool result;
     for(int i=0,j=0;i<N;i++){
 	
 	if(i==0||i==1||i>=3){
-	    printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],h.getCurrentTick());
+	    printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],g.getValue());
 	    result=g.absoluteSyncWaitTrigger(values[i]);
 	    
 	}else{
@@ -312,18 +313,27 @@ int main(int argc, char** argv) {
     }
     
     //Trying with a periodic scheduling to see if the timing is really precise
-    for(long long i=h.getCurrentTick()+100000;;i+=48000){ //@48Mhz with values it 1ms
+    for(long long i=g.getValue()+100000;;i+=480000){ //@48Mhz with values it 1ms
 	g.absoluteSyncWaitTrigger(i);
     }
     
     
     /*
+    bool w;
+    expansion::gpio0::mode(Mode::OUTPUT);
+    expansion::gpio0::low();
     GPIOtimer& g=GPIOtimer::instance();
     delayMs(2000);
     printf("Inizio...\n");
-    WaitResult w=g.absoluteWaitTimeoutOrEvent(536870919); //Only event
-    printf("End... %d\n",w);
+    for(long long i=5000000000;;i+=10000000000){
+	Thread::create(raisePin,2048,3,(void*)&i);
+	w=g.waitTimeoutOrEvent(1536870919+i);
+	printf("%d\n",w);
+	expansion::gpio0::low();
+	Thread::sleep(4);
+    }
     */
+    
     //ContextSwitchTest2();
     
     
