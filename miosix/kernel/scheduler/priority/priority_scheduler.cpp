@@ -29,7 +29,6 @@
 #include "kernel/error.h"
 #include "kernel/process.h"
 #include "interfaces/cstimer.h"
-#include "kernel/timeconversion.h"
 
 #ifdef SCHED_TYPE_PRIORITY
 namespace miosix {
