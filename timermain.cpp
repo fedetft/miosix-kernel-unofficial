@@ -7,9 +7,6 @@
 using namespace std;
 using namespace miosix;
 
-//FixedEventQueue<100,12> queue;
-int global=0;
-
 static void ContextSwitchTest1(){
     initDebugPins();
     for (;;){
@@ -280,15 +277,16 @@ int main(int argc, char** argv) {
     values[13]=0x100000000;//Try with 0xFFFFFFFF too
     values[14]=0x10A001FFF;
     bool result;
-    /*int c=0;
-    for(long long i=48000;;){ 
+    int c=0;
+    expansion::gpio1::mode(Mode::OUTPUT);
+    for(long long i=24000;;){ 
 	result=g.absoluteSyncWaitTrigger(g.getValue()+i);
 	if(result){
 	    HighPin<debug1> hp;
 	    c++;
 	}
-    }*/
-    printf("Times of wakeupinthe past %d\n",c);
+    }
+    printf("Times of wakeupinthepast %d\n",c);
     for(int i=0,j=0;i<N;i++){
 	
 	if(i==0||i==1||i>=3){
