@@ -10,15 +10,6 @@ using namespace miosix;
 
 static TimeConversion *tc;
 
-void __attribute__((naked)) TIMER2_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z10cstirqhnd2v");
-    restoreContext();
-}
-
-void __attribute__((used)) cstirqhnd2(){}
-
 namespace miosix {
     
     ContextSwitchTimer& ContextSwitchTimer::instance()

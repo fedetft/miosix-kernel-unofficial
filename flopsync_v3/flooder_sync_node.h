@@ -79,7 +79,7 @@ public:
     unsigned long long getComputedFrameStart() const
     {
         //Correct frame start considering hops
-        return computedFrameStart-hop*(frameTime+piggybackingTime+delayRebroadcastTime);
+        return computedFrameStart-hop*(fullSyncPacketTime+rebroadcastGapTime);
     }
     
     /**

@@ -18,17 +18,23 @@
 
 namespace miosix {
 
+enum class WaitResult
+{
+    WAKEUP_IN_THE_PAST,
+    WAIT_COMPLETED,
+    EVENT,
+    WAITING
+};
+    
 class HighResolutionTimerBase {
 public:
-    static Thread *tWaitingGPIO;
     
     static HighResolutionTimerBase& instance();
     
     /**
      * \return the timer frequency in Hz
      */
-    unsigned int getTimerFrequency() const
-    {
+    unsigned int getTimerFrequency() const{
         return timerFreq;
     }
     
@@ -37,17 +43,17 @@ public:
      * Can be called with interrupts disabled or within an interrupt.
      * \param tick the time when the interrupt will be fired, in timer ticks
      */
-    bool IRQsetNextInterrupt0(long long tick);
-    bool IRQsetNextInterrupt1(long long tick);
-    bool IRQsetNextInterrupt2(long long tick);
+    WaitResult IRQsetNextRadioInterrupt(long long tick);
+    void IRQsetNextInterrupt1(long long tick);
+    WaitResult IRQsetNextGPIOInterrupt(long long tick);
     
     /**
      * \return the time when the next interrupt will be fired.
      * That is, the last value passed to setNextInterrupt().
      */
-    long long IRQgetSetTimeCCV0();
-    long long IRQgetSetTimeCCV1();
-    long long IRQgetSetTimeCCV2();
+    long long IRQgetSetTimeCCV0() const;
+    long long IRQgetSetTimeCCV1() const;
+    long long IRQgetSetTimeCCV2() const;
     /**
      * Could be call both when the interrupts are enabled/disabled!
      * TODO: investigate if it's possible to remove the possibility to call
@@ -60,7 +66,9 @@ public:
     void setCCInterrupt1(bool enable);
     void setCCInterrupt2(bool enable);
     void setCCInterrupt2Tim1(bool enable);
+    void setCCInterrupt0Tim2(bool enable);
     void setModeGPIOTimer(bool input);
+    void setModeRadioTimer(bool input);
     /**
      * \return the current tick count of the timer.
      * Can only be called with interrupts disabled or within an IRQ
