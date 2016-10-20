@@ -246,12 +246,7 @@ int main(int argc, char** argv) {
     expansion::gpio0::mode(Mode::INPUT);
     expansion::gpio10::mode(Mode::OUTPUT);
     expansion::gpio10::low();
-    
-//    for(;;){
-//	expansion::gpio10::high();
-//	expansion::gpio10::low();
-//     }
-//    
+      
     GPIOtimer& g=GPIOtimer::instance();
     
     //	Test cases  in tick:
@@ -265,23 +260,35 @@ int main(int argc, char** argv) {
     //	6	    4294950912			0xFFFFC000		    false
     //	7	    4294967296			0x100000000		    true
     //	8	    4294975487			0x100006FFF		    true
-    const int N=14;
+    //Trying with a periodic scheduling to see if the timing is really precise
+    initDebugPins();
+    const int N=15;
     long long values[N];
-    values[0]=0x0000001;
-    values[1]=0x00009C40;
-    values[2]=0x000000C8;
-    values[3]=0x0BEB0001;
-    values[4]=0x1000FFFF;
-    values[5]=0x1C00FFC0;
-    values[6]=0x37359400;
-    values[7]=0x5502D241;
-    values[8]=0x59E10001;
-    values[9]=0x60A176C1;
-    values[10]=0x65A176C1;
-    values[11]=0xFAFFC000;
-    values[12]=0x100000000;//Try with 0xFFFFFFFF too
-    values[13]=0x10A001FFF;
+    values[0]= 0x00000001;
+    values[1]= 0x00009C40;
+    values[2]= 0x000000C8;
+    values[3]= 0x0BEB0001;
+    values[4]= 0x1000FFFF;
+    values[5]= 0x1C00FFC0;
+    values[6]= 0x37359400;
+    values[7]= 0x5302D241;
+    values[8]= 0x56E10001;
+    values[9]= 0x5AA176C1;
+    values[10]=0x5CA10000;
+    values[11]=0x5FA176C1;
+    values[12]=0xFAFFC000;
+    values[13]=0x100000000;//Try with 0xFFFFFFFF too
+    values[14]=0x10A001FFF;
     bool result;
+    /*int c=0;
+    for(long long i=48000;;){ 
+	result=g.absoluteSyncWaitTrigger(g.getValue()+i);
+	if(result){
+	    HighPin<debug1> hp;
+	    c++;
+	}
+    }*/
+    printf("Times of wakeupinthe past %d\n",c);
     for(int i=0,j=0;i<N;i++){
 	
 	if(i==0||i==1||i>=3){
@@ -312,8 +319,10 @@ int main(int argc, char** argv) {
 	}	
     }
     
+    Thread::sleep(1000);
+    
     //Trying with a periodic scheduling to see if the timing is really precise
-    for(long long i=g.getValue()+100000;;i+=480000){ //@48Mhz with values it 1ms
+    for(long long i=g.getValue()+100000;;i+=24000){ //@48Mhz with values it 1ms
 	g.absoluteSyncWaitTrigger(i);
     }
     
