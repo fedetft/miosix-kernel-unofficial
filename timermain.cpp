@@ -22,7 +22,7 @@ static void ContextSwitchTest2(void* v){
 }
 
 static void raisePin(void* v){
-    //printf("%llu\n",*(long long*)v);
+    printf("%llu\n",*(long long*)v);
     Thread::nanoSleepUntil(*(long long*)v);
     expansion::gpio0::high();
 }
@@ -241,8 +241,6 @@ int main(int argc, char** argv) {
     //Thread *t=Thread::create(ContextSwitchTest2,512);
     
     expansion::gpio0::mode(Mode::INPUT);
-    expansion::gpio10::mode(Mode::OUTPUT);
-    expansion::gpio10::low();
       
     GPIOtimer& g=GPIOtimer::instance();
     
@@ -279,18 +277,19 @@ int main(int argc, char** argv) {
     bool result;
     int c=0;
     expansion::gpio1::mode(Mode::OUTPUT);
-    for(long long i=24000;;){ 
-	result=g.absoluteSyncWaitTrigger(g.getValue()+i);
-	if(result){
-	    HighPin<debug1> hp;
-	    c++;
-	}
-    }
-    printf("Times of wakeupinthepast %d\n",c);
+//    for(long long i=24000;;){ 
+//	result=g.absoluteSyncWaitTrigger(g.getValue()+i);
+//	if(result){
+//	    HighPin<debug1> hp;
+//	    c++;
+//	}
+//    }
+//    printf("Times of WAKEUP_IN_THE_PAST %d\n",c);
+    
     for(int i=0,j=0;i<N;i++){
 	
 	if(i==0||i==1||i>=3){
-	    printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i],g.getValue());
+	    printf("---------Test #%d(%d), set time:%lld, now:%lld\n",i,j,values[i],g.getValue());
 	    result=g.absoluteSyncWaitTrigger(values[i]);
 	    
 	}else{
@@ -317,30 +316,39 @@ int main(int argc, char** argv) {
 	}	
     }
     
-    Thread::sleep(1000);
+    printf("Sleeping for 5 seconds\n");
+    Thread::sleep(5000);
     
+    /*
     //Trying with a periodic scheduling to see if the timing is really precise
     for(long long i=g.getValue()+100000;;i+=24000){ //@48Mhz with values it 1ms
 	g.absoluteSyncWaitTrigger(i);
-    }
+    }*/
     
     
-    /*
+    
     bool w;
     expansion::gpio0::mode(Mode::OUTPUT);
     expansion::gpio0::low();
-    GPIOtimer& g=GPIOtimer::instance();
+    //GPIOtimer& g=GPIOtimer::instance();
     delayMs(2000);
-    printf("Inizio...\n");
-    for(long long i=5000000000;;i+=10000000000){
+    printf("Start event timestamp test...\n");
+    const long long sec=1000000000;
+    long long t=getTime();
+    for(long long i=t;i<t+10*sec;i+=sec){
 	Thread::create(raisePin,2048,3,(void*)&i);
-	w=g.waitTimeoutOrEvent(1536870919+i);
-	printf("%d\n",w);
+	w=g.waitTimeoutOrEvent(16000000);
 	expansion::gpio0::low();
 	Thread::sleep(4);
     }
-    */
     
+    return 0;
+    //Retry with output 
+    expansion::gpio0::mode(Mode::INPUT);
+    printf("Retry with output\n");
+    for(long long i=g.getValue()+100000;;i+=24000){ //@48Mhz with values it 1ms
+	g.absoluteSyncWaitTrigger(i);
+    }
     //ContextSwitchTest2();
     
     
