@@ -242,7 +242,7 @@ bool isKernelRunning()
 
 long long getTime()
 {
-    return ContextSwitchTimer::instance().getCurrentTick();
+    return ContextSwitchTimer::instance().getCurrentTime();
 }
 
 /**
@@ -370,7 +370,7 @@ void Thread::nanoSleep(long long ns)
 {
     if(ns==0) return; //TODO: should be (ns &lt; resolution + epsilon)
     //TODO: Mutual Exclusion issue
-    nanoSleepUntil(ContextSwitchTimer::instance().getCurrentTick() + ns);
+    nanoSleepUntil(ContextSwitchTimer::instance().getCurrentTime() + ns);
 }
 
 void Thread::nanoSleepUntil(long long absoluteTime)
