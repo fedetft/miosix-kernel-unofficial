@@ -233,7 +233,7 @@ int main(int argc, char** argv) {
     
     /*for(;;){
         //printf("\n",);
-        printf("%lu %llu %d %llu\n",TIMER3->CNT,c.getCurrentTick()>>32,global,ms32time);
+        printf("%lu %llu %d %llu\n",TIMER3->CNT,c.getCurrentTime()>>32,global,ms32time);
     }*/
     
     // Test per GPIOTimer trigger OUTPUT mode
@@ -294,7 +294,7 @@ int main(int argc, char** argv) {
 	    
 	}else{
 //	    if(j==0){
-//		printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i]+j,h.getCurrentTick());
+//		printf("---------Test #%d(%d), set time:%llu, now:%llu\n",i,j,values[i]+j,h.getCurrentTime());
 //	    }
 //	    if(j<2500){
 //		result=g.syncWaitTrigger(values[i]+j);
