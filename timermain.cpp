@@ -2,7 +2,7 @@
 #include <cstdio>
 #include "miosix.h"
 #include "debugpin.h"
-#include "/home/fabiuz/NetBeansProjects/miosix-kernel-unofficial/miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/high_resolution_timer_base.cpp"
+#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/gpio_timer.h"
 
 using namespace std;
 using namespace miosix;
@@ -22,7 +22,7 @@ static void ContextSwitchTest2(void* v){
 }
 
 static void raisePin(void* v){
-    printf("%llu\n",*(long long*)v);
+    //printf("%llu\n",*(long long*)v);
     Thread::nanoSleepUntil(*(long long*)v);
     expansion::gpio0::high();
 }
@@ -339,16 +339,19 @@ int main(int argc, char** argv) {
 	Thread::create(raisePin,2048,3,(void*)&i);
 	w=g.waitTimeoutOrEvent(16000000);
 	expansion::gpio0::low();
+	printf("%lld ",g.getExtEventTimestamp());
+	delayMs(5);
+	printf("= %lld\n",g.getExtEventTimestamp());
 	Thread::sleep(4);
     }
     
-    return 0;
     //Retry with output 
     expansion::gpio0::mode(Mode::INPUT);
     printf("Retry with output\n");
     for(long long i=g.getValue()+100000;;i+=24000){ //@48Mhz with values it 1ms
 	g.absoluteSyncWaitTrigger(i);
     }
+    
     //ContextSwitchTest2();
     
     
