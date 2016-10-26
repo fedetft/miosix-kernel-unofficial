@@ -23,22 +23,22 @@ using namespace miosix;
 using namespace std;
 
 /*
- * 
+ * Main of the master in Ping Pong test
  */
 int main(int argc, char** argv) {
     GPIOtimer& g=GPIOtimer::instance();
     printf("Inizio test master:\n\n");
     bool w;
-    const long long offset=192000000; //4 seconds
+    const long long offset=384000000; //4 seconds
+    long long timestamp,oldtimestamp=0;
     for(long long i=offset;;i+=offset){
 	//printf("1 wait to trigger...\n");
-	//g.absoluteSyncWaitTrigger(i);
-	printf("Sleeping...\n");
-	delayMs(1000);
-	printf("2 waiting event...\n");
-	w=g.waitTimeoutOrEvent(i+i);
-	printf("Now: %lld Timestamp: %lld (both in ticks) is valid? %d CCVB: %lld\n",g.getValue(),g.getExtEventTimestamp(),
-		w,g.getExtEventTimestamp());
+	g.absoluteSyncWaitTrigger(i);
+	//printf("2 waiting event...\n");
+	w=g.waitTimeoutOrEvent(i);
+	timestamp=g.getExtEventTimestamp();
+	printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
+	oldtimestamp=timestamp;
     }
     return 0;
 }

@@ -20,21 +20,25 @@
 using namespace std;
 using namespace miosix;
 
-using namespace std;
-
 /*
- * 
+ * Main of the slave in Ping Pong test
  */
 int main(int argc, char** argv) {
     GPIOtimer& g=GPIOtimer::instance();
-    printf("Inizio test slave:\n\n");
+    printf("Start test (slave):\n\n");
     const long long offset=192000000; //4 seconds
-    for(long long i=offset;;i+=offset){
-	printf("1 waiting for event...");
-	g.waitTimeoutOrEvent(i);
-	printf("2 wait to trigger...");
-	g.absoluteSyncWaitTrigger(g.getExtEventTimestamp()+48000);
-	printf("Now: %lld Timestamp: %lld (both in ticks)\n",g.getValue(),g.getExtEventTimestamp());
+    long long timestamp,oldtimestamp=0; 
+    for(;;){
+	//printf("1. waiting for event...");
+	g.waitTimeoutOrEvent(offset);
+	timestamp=g.getExtEventTimestamp();
+	//printf("Sleeping...\n");
+	//delayMs(1000);
+	//printf("2. wait to trigger...");
+	g.absoluteSyncWaitTrigger(timestamp+24000000);
+	printf("Now: %lld Received at: %lld (both in ticks)\n",g.getValue(),timestamp);
+	printf("%lld\n",timestamp-oldtimestamp);
+	oldtimestamp=timestamp;
     }
     return 0;
 }
