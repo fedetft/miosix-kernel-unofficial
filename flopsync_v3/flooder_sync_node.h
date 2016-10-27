@@ -29,7 +29,7 @@
 #define	FLOODER_SYNC_NODE_H
 
 #include "interfaces-impl/transceiver.h"
-#include "interfaces-impl/timer.h"
+#include "interfaces-impl/timer_interface.h"
 #include "synchronizer.h"
 #include "protocol_constants.h"
 #include "flooding_scheme.h"

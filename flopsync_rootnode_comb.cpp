@@ -27,7 +27,7 @@
 
 #include <cstdio>
 #include "interfaces-impl/transceiver.h"
-#include "interfaces-impl/timer.h"
+#include "interfaces-impl/timer_interface.h"
 
 #include "flopsync_v3/protocol_constants.h"
 #include "flopsync_v3/flooder_root_node.h"

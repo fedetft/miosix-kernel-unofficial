@@ -30,7 +30,7 @@
 #include <limits>
 #include <miosix.h>
 #include "interfaces-impl/transceiver.h"
-#include "interfaces-impl/timer.h"
+#include "interfaces-impl/timer_interface.h"
 
 #include "flopsync_v3/protocol_constants.h"
 #include "flopsync_v3/flooder_sync_node.h"
@@ -46,7 +46,7 @@ int main()
 //     Synchronizer *sync=new FLOPSYNC2; //The new FLOPSYNC, FLOPSYNC 2
     Synchronizer *sync=new ControllerFlopsync;
     //the third parameter is the node ID
-    FlooderSyncNode flooder(timer,*sync,2);
+    FlooderSyncNode flooder(timer,*sync,1);
 
 //     Clock *clock=new MonotonicClock(*sync,flooder);
 //     else clock=new NonMonotonicClock(*sync,flooder);

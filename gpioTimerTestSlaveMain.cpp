@@ -15,7 +15,7 @@
 #include <cstdio>
 #include "miosix.h"
 #include "debugpin.h"
-#include "miosix/arch/cortexM3_efm32gg/efm32gg332f1024_wandstem/interfaces-impl/gpio_timer.h"
+#include "interfaces-impl/gpio_timer.h"
 
 using namespace std;
 using namespace miosix;
