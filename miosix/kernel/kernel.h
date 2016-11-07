@@ -1057,7 +1057,7 @@ public:
      */
     bool operator() (Thread* a, Thread *b)
     {
-        return a->getPriority() < b->getPriority();
+        return a->getPriority().mutexLessOp(b->getPriority());
     }
 };
 
