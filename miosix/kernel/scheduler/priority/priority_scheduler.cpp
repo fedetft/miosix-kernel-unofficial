@@ -29,7 +29,6 @@
 #include "kernel/error.h"
 #include "kernel/process.h"
 #include "interfaces/cstimer.h"
-
 #ifdef SCHED_TYPE_PRIORITY
 namespace miosix {
 
@@ -214,16 +213,12 @@ static void IRQsetNextPreemption(bool curIsIdleThread){
     else
         firstWakeupInList = sleepingList->front()->wakeup_time;
     
-    if (curIsIdleThread){
-        timer.IRQsetNextInterrupt(firstWakeupInList);
-        nextPeriodicPreemption = LONG_LONG_MAX;
-    }else{
-        nextPeriodicPreemption = timer.IRQgetCurrentTime() + preemptionPeriodNs;   
-        if (firstWakeupInList < nextPeriodicPreemption )
-            timer.IRQsetNextInterrupt(firstWakeupInList);
-        else
-            timer.IRQsetNextInterrupt(nextPeriodicPreemption);
-    }
+    if (curIsIdleThread)
+        nextPeriodicPreemption = firstWakeupInList;
+    else
+        nextPeriodicPreemption = std::min(firstWakeupInList, timer.IRQgetCurrentTime() + preemptionPeriodNs);
+    
+    timer.IRQsetNextInterrupt(nextPeriodicPreemption);
 }
 
 unsigned int PriorityScheduler::IRQfindNextThread()
