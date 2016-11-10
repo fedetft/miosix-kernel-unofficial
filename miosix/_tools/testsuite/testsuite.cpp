@@ -621,7 +621,6 @@ static void t1_f1(Thread *p)
     // In this case t1_v1 will remain false and the test will fail.
     // The Thread::sleep(5) is added to make this possibility as unlikely as
     //possible.
-
     //If the thread exists, it should modify t1_v1, and exist() must return true
     for(int i=0;i<10;i++) //testing 10 times
     {
@@ -635,6 +634,7 @@ static void t1_f1(Thread *p)
         if(t1_v1==false) fail("thread not created");
         if(Thread::exists(p)==false) fail("Thread::exists (1)");
     }
+    
     p->terminate();
     #ifndef SCHED_TYPE_EDF
     Thread::yield();//Give time to the second thread to terminate
@@ -662,6 +662,7 @@ static void test_1()
     test_name("thread creation/deletion");
     //Testing getStackBottom()
     const unsigned int *y=Thread::getStackBottom();
+    
     if(*y!=STACK_FILL) fail("getStackBottom() (1)");
     y--;//Now should point to last word of watermark
     if(*y!=WATERMARK_FILL) fail("getStackBottom() (2)");
@@ -671,6 +672,7 @@ static void test_1()
     //Testing argv passing
     p=Thread::create(t1_p3,STACK_SMALL,0,reinterpret_cast<void*>(0xdeadbeef));
     Thread::sleep(5);
+    
     if(Thread::exists(p)) fail("thread not deleted (2)");
     pass();
 }
@@ -1143,7 +1145,7 @@ class Sequence
 static Sequence seq;
 static Mutex t6_m1;
 static FastMutex t6_m1a;
-
+#ifndef SCHED_TYPE_CONTROL_BASED
 static void t6_p1(void *argv)
 {
     t6_m1.lock();
@@ -1177,7 +1179,7 @@ static void t6_p3(void *argv)
         fail("priority inheritance (3)");
     t6_m1.unlock();
 }
-
+#endif
 static void t6_p4(void *argv)
 {
     t6_m1.lock();
@@ -1333,6 +1335,7 @@ static void test_6()
     Thread::setPriority(priorityAdapter(0));
     #endif //SCHED_TYPE_EDF
     seq.clear();
+    #ifndef SCHED_TYPE_CONTROL_BASED
     //Create first thread
     Thread::create(t6_p1,STACK_SMALL,priorityAdapter(0),NULL);
     Thread::sleep(20);
@@ -1363,6 +1366,7 @@ static void test_6()
     t6_m1.unlock();
 
     Thread::sleep(350);//Ensure all threads are deleted
+    #endif
     //
     // Testing tryLock
     //
@@ -1399,6 +1403,7 @@ static void test_6()
     //
     // Testing full priority inheritance algorithm
     //
+    #ifndef SCHED_TYPE_CONTROL_BASED
     Thread *t3;
     Thread *t4;
     {
@@ -1464,7 +1469,7 @@ static void test_6()
     t3->join();
     t4->join();
     Thread::sleep(10);
-    
+    #endif
     //
     // Testing recursive mutexes
     //
