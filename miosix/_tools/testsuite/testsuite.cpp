@@ -30,7 +30,6 @@
 * development to check for regressions.
 *************************************************************************/
 
-#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
