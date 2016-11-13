@@ -8,10 +8,14 @@ using namespace std;
 using namespace miosix;
 
 const static int N=100;
-const static long long timeInterval=384000000;
+const static long long timeInterval = 24000000;
+const static long long timeout = 96000000;
 
+/**
+ * Red led means that the device is waiting the packet
+ */
 int main(){
-    printf("\SENDER MASTER\n");
+    printf("\tSENDER MASTER\n");
     Transceiver& rtx=Transceiver::instance();
     TransceiverConfiguration tc(2450); 
     rtx.configure(tc);
@@ -26,17 +30,21 @@ int main(){
     long long oldTimestamp=0;
     rtx.turnOn();
     for(long long i=96000000;;i+=timeInterval){
-	ledOn();
+	try{
+            rtx.sendAt(packet,N,i);
+            ledOn();
+            result=rtx.recv(packetAux,N,tim.getValue()+timeout);
+            ledOff();
 
-	//rtx.sendNow(packet,100);
-	rtx.sendAt(packet,N,i);
-	result=rtx.recv(packetAux,N,tim.getValue()+timeInterval);
-	ledOff();
-	
-	printf("received at:%lld, roundtrip: %lld, temporal roundtrip: %lld\n",result.timestamp,result.timestamp-i, result.timestamp-oldTimestamp);
-	oldTimestamp=result.timestamp;
+            //printf("received at:%lld, roundtrip: %lld, temporal roundtrip: %lld\n",result.timestamp,result.timestamp-i, result.timestamp-oldTimestamp);
+            printf("%lld\n",result.timestamp-i);
+            oldTimestamp=result.timestamp;
+        }catch(exception& e){
+            puts(e.what());
+        }
+        
 	//NOTE: this sleep is very important, if we call turnOff and turnOn immediately, the system stops
-	Thread::sleep(100);
+	Thread::sleep(2);
     }
     rtx.turnOff();
 }
