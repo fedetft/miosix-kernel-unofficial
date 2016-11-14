@@ -52,6 +52,7 @@ bool TransceiverTimer::absoluteWaitTrigger(long long tick){
     if(b.IRQsetNextTransceiverInterrupt(tick)==WaitResult::WAKEUP_IN_THE_PAST){
 	return true;
     }
+    b.setModeTransceiverTimer(false);
     do {
 	tWaiting=Thread::IRQgetCurrentThread();
 	Thread::IRQwait();
@@ -65,9 +66,11 @@ bool TransceiverTimer::absoluteWaitTrigger(long long tick){
 
 bool TransceiverTimer::absoluteWaitTimeoutOrEvent(long long tick){
     FastInterruptDisableLock dLock;
-    if(tick<b.getCurrentTick()){
-	return true;
+    if(b.IRQsetTransceiverTimeout(tick)==WaitResult::WAKEUP_IN_THE_PAST){
+	HighResolutionTimerBase::aux=1;
+        return true;
     }
+    b.setModeTransceiverTimer(true);
     b.cleanBufferTrasceiver();
     b.enableCC0Interrupt(false);
     b.enableCC0InterruptTim2(true);
@@ -81,8 +84,10 @@ bool TransceiverTimer::absoluteWaitTimeoutOrEvent(long long tick){
     } while(tWaiting && tick>b.getCurrentTick());
     
     if(tWaiting==nullptr){
+        HighResolutionTimerBase::aux=2;
 	return false;
     }else{
+        HighResolutionTimerBase::aux=3;
 	return true;
     }
 }
@@ -102,7 +107,6 @@ long long TransceiverTimer::ns2tick(long long ns){
 unsigned int TransceiverTimer::getTickFrequency() const{
     return b.getTimerFrequency();
 }
-
 	    
 long long TransceiverTimer::getExtEventTimestamp() const{
     return b.IRQgetSetTimeTransceiver()-stabilizingTime;
@@ -110,9 +114,7 @@ long long TransceiverTimer::getExtEventTimestamp() const{
 	 
 const int TransceiverTimer::stabilizingTime=7;
 
-TransceiverTimer::TransceiverTimer():b(HighResolutionTimerBase::instance()),tc(b.getTimerFrequency()) {
-    b.setModeTransceiverTimer();
-}
+TransceiverTimer::TransceiverTimer():b(HighResolutionTimerBase::instance()),tc(b.getTimerFrequency()) {}
 
 TransceiverTimer& TransceiverTimer::instance(){
     static TransceiverTimer instance;

@@ -8,10 +8,15 @@ using namespace std;
 using namespace miosix;
 
 const static int N=100;
-const static long long timeInterval=48000000;
+const static long long timeInterval=480000;
 
+/*
+ * This is a simple sender to test the transceiver and the precise timing of 
+ * timer skew and transmission delay
+ * To avoid the skew due to the temperature, use interval lower or equa 10ms.
+ */
 int main(){
-    printf("\SENDER MASTER\n");
+    printf("\tSENDER Simple MASTER\n");
     Transceiver& rtx=Transceiver::instance();
     TransceiverConfiguration tc(2450); 
     rtx.configure(tc);
@@ -27,13 +32,16 @@ int main(){
     for(long long i=96000000;;i+=timeInterval){
 	ledOn();
 
-	//rtx.sendNow(packet,100);
-	rtx.sendAt(packet,N,i);
+	try{
+            rtx.sendAt(packet,N,i);
+        }catch(exception& e){
+            puts(e.what());
+        }
 	ledOff();
 	
-	printf("Sent at:%lld\n",i);
+	//printf("Sent at:%lld value return %d\n",i, HighResolutionTimerBase::aux);
 	//NOTE: this sleep is very important, if we call turnOff and turnOn immediately, the system stops
-	Thread::sleep(100);
+	Thread::sleep(2);
     }
     rtx.turnOff();
 }
