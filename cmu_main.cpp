@@ -1,55 +1,31 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
-
-/* 
- * File:   cmu_main.cpp
- * Author: fabiuz
- *
- * Created on November 13, 2016, 5:08 PM
- */
-
 #include <cstdlib>
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces/arch_registers.h"
 #include "kernel/kernel.h"
 #include "kernel/scheduler/timer_interrupt.h"
+#include "miosix/e20/e20.h"
 
 using namespace std;
 using namespace miosix;
 
-int value=-1,i=0;
+int value=-1;
 Thread *tWaiting=nullptr;
-/*
- * 
- */
+
+FixedEventQueue<100,12> queue;
+
 int main(int argc, char** argv) {
-    CMU->CALCTRL=CMU_CALCTRL_DOWNSEL_LFXO|CMU_CALCTRL_UPSEL_HFXO;
+    CMU->CALCTRL=CMU_CALCTRL_DOWNSEL_LFXO|CMU_CALCTRL_UPSEL_HFXO|CMU_CALCTRL_CONT;
     //due to hardware timer characteristic, the real counter trigger at value+1
-    //tick of LFCO to yield the maximun from to up counter
+    //tick of LFCO to yield the maximum from to up counter
     CMU->CALCNT=700; 
     //enable interrupt
     CMU->IEN=CMU_IEN_CALRDY;
     NVIC_SetPriority(CMU_IRQn,3);
     NVIC_ClearPendingIRQ(CMU_IRQn);
     NVIC_EnableIRQ(CMU_IRQn);
-    
-    while(1){
-        CMU->CMD=CMU_CMD_CALSTART;
-        { 
-            FastInterruptDisableLock dLock;
-            tWaiting=Thread::IRQgetCurrentThread();
-            Thread::IRQwait();
-            {
-                FastInterruptEnableLock eLock(dLock);
-                Thread::yield();
-            }
-        }
-        printf("Status: %lu, value=%d\n",CMU->STATUS,value);
-    }
+    CMU->CMD=CMU_CMD_CALSTART;
+    queue.run();
     return 0;
 }
 
@@ -61,19 +37,18 @@ void __attribute__((naked)) CMU_IRQHandler()
 }
 
 void __attribute__((used)) cmuhandler(){
-    greenLed::high();
+    static float y;
+    static bool first=true;
     if(CMU->IF & CMU_IF_CALRDY){
-        CMU->IFC=CMU_IFC_CALRDY | 0xFF;
-        delayMs(i++);
-        if(i>=400) i=0;
-        greenLed::low();
-        value=CMU->CALCNT;
-        //Reactivating the thread that is waiting for the event.
-        if(tWaiting){
-            tWaiting->IRQwakeup();
-            if(tWaiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
-                Scheduler::IRQfindNextThread();
-            tWaiting=nullptr;
-        }
+	if(first){
+	    y=CMU->CALCNT;
+	    first=false;
+	}else{
+	    y=0.8f*y+0.2f*CMU->CALCNT;
+	}
+        CMU->IFC=CMU_IFC_CALRDY;
+	bool hppw;
+	queue.IRQpost([&](){printf("%f\n",y);},hppw);
+	if(hppw) Scheduler::IRQfindNextThread();
     }
 }
