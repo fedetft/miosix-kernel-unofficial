@@ -355,12 +355,15 @@ inline void Thread::tickSleepUntil(long long absTicks){
     //resolution issues here.
     //This function does not care about setting the wakeup_time in the past
     //as it should be based on the policy taken into account by IRQwakeThreads
-    
+
+    //The SleepData variable has to be in scope till Thread::yield() returns
+    //as IRQaddToSleepingList() makes it part of a linked list till the
+    //thread wakes up (i.e: after Thread::yield() returns)
+    SleepData d;
     //pauseKernel() here is not enough since even if the kernel is stopped
     //the tick isr will wake threads, modifying the sleeping_list
     {
         FastInterruptDisableLock lock;
-        SleepData d; 
         d.p=const_cast<Thread*>(cur);
         d.wakeup_time = absTicks;
         IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
