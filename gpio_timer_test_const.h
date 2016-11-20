@@ -16,6 +16,9 @@
 
 //Common
 const long long timeout = 1000000000000LL;
+const long long t10ms = 480000;
+const long long t1ms = 48000;
+const long long t1s = 48000000;
 
 //Master
 const long long startMaster = 48000000;
