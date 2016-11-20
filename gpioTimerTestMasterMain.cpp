@@ -14,30 +14,28 @@
 #include <cstdlib>
 #include <cstdio>
 #include "miosix.h"
-#include "debugpin.h"
 #include "interfaces-impl/gpio_timer.h"
+#include "gpio_timer_test_const.h"
 
 using namespace std;
 using namespace miosix;
-
-long long largeNumber= 1000000000000LL;
 
 /*
  * Main of the master in Ping Pong test
  */
 int main(int argc, char** argv) {
     GPIOtimer& g=GPIOtimer::instance();
-    printf("Inizio test master:\n\n");
+    printf("Inizio test (master):\n\n");
     bool w;
-    const long long offset=192000000; //4 seconds
     long long timestamp,oldtimestamp=0;
-    for(long long i=offset;;i+=offset){
-	//printf("1 wait to trigger...\n");
-	g.absoluteSyncWaitTrigger(i);
-	//printf("2 waiting event...\n");
-	w=g.waitTimeoutOrEvent(1000000000000LL);
+    for(long long i=startMaster;;i+=offsetBetweenPing){
+	
+        g.absoluteSyncWaitTrigger(i);
+	
+        w=g.waitTimeoutOrEvent(timeout);
 	timestamp=g.getExtEventTimestamp();
-	printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
+	//printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
+        printf("%lld\n",timestamp-i);
 	oldtimestamp=timestamp;
     }
     return 0;
