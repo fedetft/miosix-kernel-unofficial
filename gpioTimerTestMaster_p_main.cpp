@@ -15,6 +15,7 @@
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces-impl/gpio_timer.h"
+#include "interfaces-impl/gpioirq.h"
 #include "gpio_timer_test_p_const.h"
 
 using namespace std;
@@ -40,16 +41,18 @@ int main(int argc, char** argv) {
     }
     */
     printf("Second part\n");
-    long long base=96000000;
+    GPIO->INSENSE |= GPIO_INSENSE_PRS;
+    registerGpioIrq(expansion::gpio10::getPin(),GpioIrqEdge::RISING,[](){});
+    long long base=1000*65536;
     long long diff;
     for(long long i=0;i<65536;i++){
-        if(!g.absoluteSyncWaitTrigger(base+i*240000+i)){
+        if(!g.absoluteSyncWaitTrigger(base+i*(65536*4)+i)){
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
-            diff=timestamp-(base+i*240000+i);
-            if(diff<t1ms-1||diff>t1ms+1){
-                printf("%lld %lld\n",i,diff);
-            }
+            diff=timestamp-(base+i*(65536*4)+i);
+	    //if(diff<t1ms-2||diff>t1ms-1){
+		printf("%lld %lld\n",i,diff);
+            //}
         }else{
             printf("Wake in the past\n");
         }

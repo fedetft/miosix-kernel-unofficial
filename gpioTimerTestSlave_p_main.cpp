@@ -15,6 +15,7 @@
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces-impl/gpio_timer.h"
+#include "interfaces-impl/gpioirq.h"
 #include "gpio_timer_test_const.h"
 
 using namespace std;
@@ -26,12 +27,14 @@ using namespace miosix;
 int main(int argc, char** argv) {
     GPIOtimer& g=GPIOtimer::instance();
     printf("Start test (slave):\n\n");
+    GPIO->INSENSE |= GPIO_INSENSE_PRS;
+    registerGpioIrq(expansion::gpio10::getPin(),GpioIrqEdge::RISING,[](){});
     //in tick, stay below 0.1 second to avoid (great) dependencies on the temperature and intrinsic quartz skew.
     long long timestamp,oldtimestamp=0; 
     for(;;){
 	g.waitTimeoutOrEvent(timeout);
 	timestamp=g.getExtEventTimestamp();
-	g.absoluteSyncWaitTrigger(timestamp+t1ms);
+	g.absoluteSyncWaitTrigger(timestamp+delay);
     }
     return 0;
 }
