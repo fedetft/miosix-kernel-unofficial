@@ -41,8 +41,7 @@ int main(int argc, char** argv) {
     }
     */
     printf("Second part\n");
-    GPIO->INSENSE |= GPIO_INSENSE_PRS;
-    registerGpioIrq(expansion::gpio10::getPin(),GpioIrqEdge::RISING,[](){});
+    
     long long base=1000*65536;
     long long diff;
     for(long long i=0;i<65536;i++){
@@ -51,7 +50,7 @@ int main(int argc, char** argv) {
             timestamp=g.getExtEventTimestamp();
             diff=timestamp-(base+i*(65536*4)+i);
 	    //if(diff<t1ms-2||diff>t1ms-1){
-		printf("%lld %lld\n",i,diff);
+		printf("%lld\n",diff);
             //}
         }else{
             printf("Wake in the past\n");
