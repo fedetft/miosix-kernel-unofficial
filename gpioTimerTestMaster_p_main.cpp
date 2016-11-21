@@ -1,21 +1,33 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
+/***************************************************************************
+ *   Copyright (C) 2016 by Fabiano Riccardi                                *
+ *                                                                         *
+ *   This program is free software; you can redistribute it and/or modify  *
+ *   it under the terms of the GNU General Public License as published by  *
+ *   the Free Software Foundation; either version 2 of the License, or     *
+ *   (at your option) any later version.                                   *
+ *                                                                         *
+ *   This program is distributed in the hope that it will be useful,       *
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+ *   GNU General Public License for more details.                          *
+ *                                                                         *
+ *   As a special exception, if other files instantiate templates or use   *
+ *   macros or inline functions from this file, or you compile this file   *
+ *   and link it with other works to produce a work based on this file,    *
+ *   this file does not by itself cause the resulting work to be covered   *
+ *   by the GNU General Public License. However the source code for this   *
+ *   file must still be made available in accordance with the GNU General  *
+ *   Public License. This exception does not invalidate any other reasons  *
+ *   why a work based on this file might be covered by the GNU General     *
+ *   Public License.                                                       *
+ *                                                                         *
+ *   You should have received a copy of the GNU General Public License     *
+ *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
+ ***************************************************************************/
 
-/* 
- * File:   gpioTimerTestMasterMain.cpp
- * Author: fabiuz
- * 
- * Created on October 25, 2016, 11:33 AM
- */
-
-#include <cstdlib>
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces-impl/gpio_timer.h"
-#include "interfaces-impl/gpioirq.h"
 #include "gpio_timer_test_p_const.h"
 
 using namespace std;
@@ -29,7 +41,7 @@ int main(int argc, char** argv) {
     printf("Inizio test (master):\n\n");
     bool w;
     long long timestamp;
-    /*for(long long i=0;i<sizeof(noticeableValues)/sizeof(noticeableValues[0]);i++){
+    for(long long i=0;i<sizeof(noticeableValues)/sizeof(noticeableValues[0]);i++){
         if(!g.absoluteSyncWaitTrigger(noticeableValues[i])){
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
@@ -39,19 +51,19 @@ int main(int argc, char** argv) {
             printf("Wake in the past\n");
         }
     }
-    */
-    printf("Second part\n");
     
-    long long base=1000*65536;
+    printf("Second part (you should see nothing until end test): \n");
+    
+    long long base=g.getValue()+1000*65536;
     long long diff;
     for(long long i=0;i<65536;i++){
         if(!g.absoluteSyncWaitTrigger(base+i*(65536*4)+i)){
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
             diff=timestamp-(base+i*(65536*4)+i);
-	    //if(diff<t1ms-2||diff>t1ms-1){
+	    if(diff<delay||diff>delay+1){
 		printf("%lld\n",diff);
-            //}
+            }
         }else{
             printf("Wake in the past\n");
         }
