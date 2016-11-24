@@ -7,29 +7,24 @@
 
 using namespace miosix;
 
-int error=0;
-int diffs[10000];
+static int error=0;
+static int diffs[10000];
 
 // return the difference between Rtc and hrt
 int readRtc(){
     GPIOtimer g=GPIOtimer::instance();
-    long long rtcTime,time1,hrtIdeal;
-    int a=0,b=0,d=0,e=0;
-    int prev;
     Rtc& rtc=Rtc::instance();
-   
+    long long rtcTime,time1,hrtIdeal;
+    unsigned int e=0;
     {
         FastInterruptDisableLock dLock;
-        prev=loopback32KHzIn::value();
-        a=RTC->CNT;
+        int prev=loopback32KHzIn::value();
         //Wait for descend
         for(;;){
                 int curr=loopback32KHzIn::value();
                 if(curr==0 && prev==1) break;
                 prev=curr;
         }
-        d=TIMER2->CNT;
-        b=RTC->CNT;
         TIMER2->CC[2].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
                                         | TIMER_CC_CTRL_FILT_DISABLE
                                         | TIMER_CC_CTRL_INSEL_PIN
@@ -41,11 +36,9 @@ int readRtc(){
         e=TIMER2->CC[2].CCV;
         rtcTime=rtc.IRQgetValue();
         time1=g.getValue();
-        time1=((time1 & 0xFFFFFFFFFFFF0000LL) | e) - error;
-        hrtIdeal=rtcTime*48000000/32768;
     }
-    //printf("RTC: %lld, HRT: %lld, HRT ideal: %lld, diff: %lld\n",rtcTime,time1,hrtIdeal,time1-hrtIdeal);
-        
+    time1=((time1 & 0xFFFFFFFFFFFF0000LL) | e) - error;
+    hrtIdeal=rtcTime*48000000/32768;
     return time1-hrtIdeal;
 }
 
@@ -62,52 +55,51 @@ void correct()
 {
     Rtc& rtc=Rtc::instance();
     GPIOtimer g=GPIOtimer::instance();
-    long long rtcTime,time1,time2,t1,t2;
-    int a=0,b=0,c=0,d=0,e=0;
-    int prev;
+    long long time2,c;
+    unsigned int e=0;
     {
         FastInterruptDisableLock dLock;
-
-        prev=loopback32KHzIn::value();
-        a=RTC->CNT;
-        //Wait for descend
+        int prev=loopback32KHzIn::value();
+        //Wait for falling edge
         for(;;)
         {
                 int curr=loopback32KHzIn::value();
                 if(curr==0 && prev==1) break;
                 prev=curr;
         }
-        d=TIMER2->CNT;
-        b=RTC->CNT;
+	//
         TIMER2->CC[2].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
                             | TIMER_CC_CTRL_FILT_DISABLE
                             | TIMER_CC_CTRL_INSEL_PIN
                             | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-        //Wait to raise
+        //Wait for rising edge
         while((TIMER2->IF & TIMER_IF_CC2)==0) ;
         TIMER2->CC[2].CTRL=0;
         TIMER2->IFC=TIMER_IFC_CC2;
         e=TIMER2->CC[2].CCV;
         c=rtc.IRQgetValue();
-        time2=g.getValue();
-        t2=c;
-        time2=(time2 & 0xFFFFFFFFFFFF0000LL) | e;
-        error=time2-t2*48000000/32768;
+        time2=g.getValue(); //FIXME: IRQ
     }
-    printf("Correzione\n\n");
+    time2=(time2 & 0xFFFFFFFFFFFF0000LL) | e;
+    error=time2-(c*48000000+16384)/32768;
 }
 
 void doAll(){
     while(1){
         correct();
         //read a number of values
-        for(int i=0;i<1000;i++){
+	long long now=getTime();
+        for(int i=0;i<10000;i++){
+	    ledOn();
             diffs[i]=readRtc();
+	    ledOff();
+	    now+=1000000;
+	    Thread::nanoSleepUntil(now);
         }
-        for(int i=0;i<1000;i++){
-            printf("%d\n",diffs[i]);
+        for(int i=0;i<10000;i++){
+            printf("%d ",diffs[i]);
         }
-        Thread::sleep(10000);
+	printf("\n");
     }
 }
 

@@ -11,14 +11,13 @@ using namespace miosix;
 
 int value=-1;
 Thread *tWaiting=nullptr;
-
 FixedEventQueue<100,12> queue;
 
 int main(int argc, char** argv) {
     CMU->CALCTRL=CMU_CALCTRL_DOWNSEL_LFXO|CMU_CALCTRL_UPSEL_HFXO|CMU_CALCTRL_CONT;
     //due to hardware timer characteristic, the real counter trigger at value+1
     //tick of LFCO to yield the maximum from to up counter
-    CMU->CALCNT=700; 
+    CMU->CALCNT=1; 
     //enable interrupt
     CMU->IEN=CMU_IEN_CALRDY;
     NVIC_SetPriority(CMU_IRQn,3);
@@ -38,11 +37,12 @@ void __attribute__((naked)) CMU_IRQHandler()
 
 void __attribute__((used)) cmuhandler(){
     static float y;
+    static int i=0;
     static bool first=true;
     if(CMU->IF & CMU_IF_CALRDY){
 	if(first){
 	    y=CMU->CALCNT;
-	    first=false;
+	    //first=false;
 	}else{
 	    y=0.8f*y+0.2f*CMU->CALCNT;
 	}

@@ -2,14 +2,12 @@
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces-impl/transceiver.h"
+#include "pingpong_const.h"
 
 using namespace std;
 using namespace miosix;
 
 const static int N=100;
-const static long long delay = 480000;
-const static long long timeout = 24000000;          //< same as timeInterval in the master
-const static long long firstTimeout = 1440000000LL; //< longer timout to allow the reset and the turning on of master 
 
 /**
  * Red led means that the device is waiting the packet
@@ -29,20 +27,28 @@ int main(){
         try{
             ledOn();
             RecvResult result;
+	    memset(packet,0,N);
             if(firstTime){
                 result=rtx.recv(packet,N,tim.getValue()+firstTimeout);
                 firstTime=false;
             }else{
                 result=rtx.recv(packet,N,tim.getValue()+timeout);
             }
+	    //Little change before retransmit
+	    for(int i=0;i<N;i++){
+		packet[i]+=10;
+	    }
+	    
+	    if(result.error==RecvResult::OK){
+		rtx.sendAt(packet,N,result.timestamp+delay);
+	    }
+	    //printf("%d\n",result.error);
             //memDump(packet,100);
             ledOff();
-            rtx.sendAt(packet,N,result.timestamp+delay);
-
-            printf("%lld %d %d, diff=%lld\n", result.timestamp, result.size, result.timestampValid,result.timestamp-oldTimestamp);
+            
+            //printf("%lld %d %d, diff=%lld\n", result.timestamp, result.size, result.timestampValid,result.timestamp-oldTimestamp);
             oldTimestamp=result.timestamp;
 
-            Thread::sleep(1);
         }catch(exception& e){
             puts(e.what());
         }
