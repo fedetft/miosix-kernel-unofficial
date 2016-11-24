@@ -25,12 +25,13 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#ifndef GPIO_TIMER_TEST_CONST_H
-#define GPIO_TIMER_TEST_CONST_H
+#ifndef PINGPONG_CONST_H
+#define PINGPONG_CONST_H
 
 //Common
-const static long long timeout = 24000000;          //< same as timeInterval in the master
-const static long long firstTimeout = 1440000000LL; //< longer timout to allow the reset and the turning on of master 
+const int N = 100;                      //< Packet length
+const long long timeout = 24000000;             //< same as timeInterval in the master
+const long long firstTimeout = 1440000000LL;    //< longer timout to allow the reset and the turning on of master 
 const long long t10ms = 480000;
 const long long t1ms = 48000;
 const long long t1s = 48000000;
@@ -53,12 +54,12 @@ const long long noticeableValues[]={    0x00000001,
 };
 
 //Master
-const long long startMaster = 65536*100;
+const long long startMaster = 65536*1000;
 const long long offsetBetweenPing = 1920000; //40ms
 
 //Slave
 const long long delay = 480000; //10ms
 
 
-#endif /* GPIO_TIMER_TEST_CONST_H */
+#endif /* PINGPONG_CONST_H */
 
