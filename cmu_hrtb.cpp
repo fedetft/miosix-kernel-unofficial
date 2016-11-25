@@ -95,7 +95,7 @@ template<typename C>
 C divisionRounded(C a, C b){
     return (a+b/2)/b;
 }
-
+int go=0;
 int main(int argc, char** argv) {
     CMU->CALCTRL=CMU_CALCTRL_DOWNSEL_LFXO|CMU_CALCTRL_UPSEL_HFXO|CMU_CALCTRL_CONT;
     //due to hardware timer characteristic, the real counter trigger at value+1
@@ -111,31 +111,20 @@ int main(int argc, char** argv) {
     
     
     while(1){
-	correct();
-	/*const int cntNominal = 1025391;
-	
-	CMU->CMD=CMU_CMD_CALSTART;
-	while(!(CMU->IF & CMU_IF_CALRDY));
-	CMU->IFC=CMU_IFC_CALRDY;
-	int y=CMU->CALCNT;
-	int ecnt = y - cntNominal;
-	bf = static_cast<unsigned int> (ecnt*4189);
-	bi = ecnt>0 ? 1 : 0;
-	rate=(double)(700LL*48000000/32768)/(double)y;
-	*/ 
-	printf("corrected rate %f\n",rate);
-        
         //read a number of values
 	long long now=getTime();
-        for(int i=0;i<30;i++){
+	int i=0;
+        for(;i<30&&!go;i++){
 	    ledOn();
             diffs[i]=readRtc();
 	    ledOff();
 	    now+=1000000;
 	    Thread::nanoSleepUntil(now);
         }
-        for(int i=0;i<30;i++){
-            printf("%d ",diffs[i]);
+	go=false;
+	//queue.runOne();
+        for(int j=0;j<i;j++){
+            printf("%d ",diffs[j]);
         }
 	printf("\n");
     }
@@ -155,6 +144,7 @@ void __attribute__((used)) cmuhandler(){
     static bool first = true;
     //Adjust the rate
     if(CMU->IF & CMU_IF_CALRDY){
+	CMU->IFC=CMU_IFC_CALRDY;
 	const int cntNominal = 1025391;
 	if(first){
 	    first=false;
@@ -162,11 +152,12 @@ void __attribute__((used)) cmuhandler(){
 	}else{
 	    y=0.8*y+0.2*CMU->CALCNT;
 	}
-	
+	correct();
+	go=true;
 	rate=(700LL*48000000/32768)/y;
-        CMU->IFC=CMU_IFC_CALRDY;
-	bool hppw;
-	queue.IRQpost([&](){printf("%f\n",y);},hppw);
-	if(hppw) Scheduler::IRQfindNextThread();
+        
+//	bool hppw;
+//	queue.IRQpost([&](){printf("%f\n",y);},hppw);
+//	if(hppw) Scheduler::IRQfindNextThread();
     }
 }
