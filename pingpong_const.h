@@ -55,7 +55,7 @@ const long long noticeableValues[]={    0x00000001,
 
 //Master
 const long long startMaster = 65536*1000;
-const long long offsetBetweenPing = 1920000; //40ms
+const long long offsetBetweenPing = 20*65536; // about 27ms
 
 //Slave
 const long long delay = 480000; //10ms

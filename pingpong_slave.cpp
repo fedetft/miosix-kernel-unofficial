@@ -52,12 +52,7 @@ int main(){
             ledOn();
             RecvResult result;
 	    memset(packet,0,N);
-            if(firstTime){
-                result=rtx.recv(packet,N,tim.getValue()+firstTimeout);
-                firstTime=false;
-            }else{
-                result=rtx.recv(packet,N,tim.getValue()+timeout);
-            }
+            result=rtx.recv(packet,N,tim.getValue()+offsetBetweenPing*2);
 	    //Little change before retransmit
 	    for(int i=0;i<N;i++){
 		packet[i]+=10;

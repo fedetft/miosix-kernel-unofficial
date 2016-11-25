@@ -51,12 +51,12 @@ int main(){
     long long oldTimestamp=0;
     rtx.turnOn();
     for(long long i=0;i<65536;i++){
-	long long t=startMaster+i*(20*65536)+i;
+	long long t=startMaster+i*offsetBetweenPing+i;
 	try{
 	    memset(packetAux,0,N);
             rtx.sendAt(packet,N,t);
             ledOn();
-            result=rtx.recv(packetAux,N,t + delay + 300000);
+            result=rtx.recv(packetAux,N,t + delay + 2000*N);
 	    if(result.error==RecvResult::TIMEOUT){
 		printf("Timeout\n");
 	    }else{

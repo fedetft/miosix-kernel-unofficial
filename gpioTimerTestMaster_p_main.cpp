@@ -38,7 +38,10 @@ using namespace miosix;
  */
 int main(int argc, char** argv) {
     GPIOtimer& g=GPIOtimer::instance();
-    printf("Inizio test (master):\n\n");
+    printf("Start test (master):\n\n");
+    
+    printf("Set roundtrip delay: %lld\n",delay);
+    printf("First Part: send ping at some particular time. It lasts 3 minutes. You will see -> (sentAt:replyRecvAt), the first 3 are \"wake in the past\"\n");
     bool w;
     long long timestamp;
     for(long long i=0;i<sizeof(noticeableValues)/sizeof(noticeableValues[0]);i++){
@@ -46,13 +49,13 @@ int main(int argc, char** argv) {
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
             //printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
-            printf("%lld\n",timestamp-noticeableValues[i]);
+            printf("(%lld:%lld)\n",noticeableValues[i],timestamp-noticeableValues[i]);
         }else{
             printf("Wake in the past\n");
         }
     }
     
-    printf("Second part (you should see nothing until end test): \n");
+    printf("Second part: test every bit configuration of the fastest timer (you should see nothing until end test, it requires around 6 minutes): \n");
     
     long long base=g.getValue()+1000*65536;
     long long diff;
