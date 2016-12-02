@@ -28,21 +28,21 @@
 #include <cstdio>
 #include "interfaces-impl/transceiver.h"
 #include "interfaces-impl/timer_interface.h"
+#include "interfaces-impl/transceiver_timer.h"
 
 #include "flopsync_v3/protocol_constants.h"
 #include "flopsync_v3/flooder_root_node.h"
+
 
 using namespace std;
 using namespace miosix;
 
 int main()
-{
-//     Transceiver& transceiver=Transceiver::instance();
-    HardwareTimer& timer=Rtc::instance();
+{    
+    HardwareTimer& timer=TransceiverTimer::instance();
     FlooderRootNode flooder(timer);
    
-    for(;;)
-    {
+    for(;;){
         flooder.synchronize();
     }
 }

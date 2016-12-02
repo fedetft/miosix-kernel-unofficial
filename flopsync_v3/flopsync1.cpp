@@ -25,7 +25,7 @@
  *   You should have received a copy of the GNU General Public License     *
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
-#include "controller_flopsync.h"
+#include "flopsync1.h"
 #include <algorithm>
 
 using namespace std;
@@ -34,9 +34,9 @@ using namespace std;
 // class ControllerFlopsync
 //
 
-ControllerFlopsync::ControllerFlopsync() { reset(); }
+Flopsync1::Flopsync1() { reset(); }
 
-pair<int,int> ControllerFlopsync::computeCorrection(int e)
+pair<int,int> Flopsync1::computeCorrection(int e)
 {
     //u(k)=u(k-1)+1.375*e(k)-e(k-1)
     int u=uo+11*e-8*eo;
@@ -79,20 +79,20 @@ pair<int,int> ControllerFlopsync::computeCorrection(int e)
     return make_pair(uquant,scaleFactor*dw);
 }
 
-pair<int,int> ControllerFlopsync::lostPacket()
+pair<int,int> Flopsync1::lostPacket()
 {
     //Double receiver window on packet loss, still clamped to max value
     dw=min<int>(2*dw,w/scaleFactor);
     return make_pair(getClockCorrection(),scaleFactor*dw);
 }
 
-void ControllerFlopsync::reset()
+void Flopsync1::reset()
 {
     uo=eo=sum=squareSum=count=0;
     dw=w/scaleFactor;
 }
 
-int ControllerFlopsync::getClockCorrection() const
+int Flopsync1::getClockCorrection() const
 {
     //Error measure is unavailable if the packet is lost, the best we can
     //do is to reuse the past correction value

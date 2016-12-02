@@ -26,33 +26,40 @@
  ***************************************************************************/
 
 #include <cstdio>
-#include <cstring>
-#include <limits>
 #include <miosix.h>
-#include "interfaces-impl/transceiver.h"
 #include "interfaces-impl/timer_interface.h"
+#include "interfaces-impl/transceiver_timer.h"
 
 #include "flopsync_v3/protocol_constants.h"
 #include "flopsync_v3/flooder_sync_node.h"
-#include "flopsync_v3/controller_flopsync.h"
 #include "flopsync_v3/flopsync2.h"
+#include "flopsync_v3/flopsync1.h"
 
 using namespace std;
 using namespace miosix;
 
 int main()
 {   
-    HardwareTimer& timer=Rtc::instance();
-//     Synchronizer *sync=new FLOPSYNC2; //The new FLOPSYNC, FLOPSYNC 2
-    Synchronizer *sync=new ControllerFlopsync;
+    char packet[5]={'a','b','c','d','e'};
+    Transceiver& t=Transceiver::instance();
+    miosix::TransceiverConfiguration cfg(2450);
+    t.configure(cfg);
+    t.turnOn();
+    t.sendAt(packet,5,100000000);
+    t.turnOff();
+    HardwareTimer& timer=TransceiverTimer::instance();
+    //Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
+    Synchronizer* sync=new Flopsync1;
     //the third parameter is the node ID
     FlooderSyncNode flooder(timer,*sync,1);
+
 
 //     Clock *clock=new MonotonicClock(*sync,flooder);
 //     else clock=new NonMonotonicClock(*sync,flooder);
     
-    for(;;)
-    {
-        if(flooder.synchronize()) flooder.resynchronize();
+    for(;;){
+        if(flooder.synchronize()){
+	    flooder.resynchronize();
+	}
     }
 }

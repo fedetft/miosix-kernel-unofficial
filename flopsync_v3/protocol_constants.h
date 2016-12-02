@@ -31,6 +31,7 @@
 //Channel bandwidth 250 Kbps
 const unsigned long long channelbps=250000;
 
+#define USE_VHT
 
 #ifndef USE_VHT
 const unsigned long long hz=32768;
@@ -71,8 +72,8 @@ const unsigned long long piggybackingTime=static_cast<unsigned long long>((0*8*h
 ////Time to transfer full packet
 const unsigned long long frameTime=static_cast<unsigned long long>((8*8*hz)/channelbps+0.5f);
 
-//Time to transfer full sync packet, 13 byte @250000kbit/s, in tick 32768tick/s
-const unsigned long long fullSyncPacketTime=13*8/250000*hz;
+//Time to transfer full sync packet, 13 byte @250000kbit/s, in tick
+const unsigned long long fullSyncPacketTime=13*8*hz/250000;
 
 //Time to wait before forwarding the packet, 500microseconds chosen by default, expressed in tick.
 const unsigned long long rebroadcastGapTime=static_cast<unsigned long long>(0.000800*hz); 

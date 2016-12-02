@@ -34,13 +34,13 @@
 /**
  * Old flopsync controller.
  */
-class ControllerFlopsync : public Synchronizer
+class Flopsync1 : public Synchronizer
 {
 public:
     /**
      * Constructor
      */
-    ControllerFlopsync();
+    Flopsync1();
     
     /**
      * Compute clock correction and receiver window given synchronization error

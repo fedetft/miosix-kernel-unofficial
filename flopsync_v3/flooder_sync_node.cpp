@@ -29,7 +29,7 @@
 #include <cstdio>
 #include <cassert>
 #include <stdexcept>
-#include "myConfigRadio.h"
+#include "radioConfig.h"
 
 #define L 5
 
@@ -59,7 +59,7 @@ bool FlooderSyncNode::synchronize()
     assert(timer.getValue()<wakeupTime);
     timer.absoluteWait(wakeupTime);
     
-    miosix::TransceiverConfiguration cfg(2450,0,true);
+    miosix::TransceiverConfiguration cfg(2450);
     transceiver.configure(cfg);
     transceiver.turnOn();
     unsigned char packet[L];
@@ -73,7 +73,6 @@ bool FlooderSyncNode::synchronize()
     {
         try {
             result=transceiver.recv(packet,sizeof(packet),timeoutTime);
-            
             if(   result.error==RecvResult::OK && result.timestampValid==true
                && result.size==L && (hop==packet[2]+1) && packet[0]==0xC2 && packet[1]==0x02 && packet[3]==static_cast<unsigned char>(PANID>>8) && packet[4]==static_cast<unsigned char>(PANID))
             {
@@ -92,14 +91,13 @@ bool FlooderSyncNode::synchronize()
         }
     }
     ledOff();
-    
     if(packet[2]<0xff && hop==packet[2]+1){ //retransmit only once if my id is following the count
         packet[2]++;
+	//printf("%\n%lld %llu %llu %lld\n",result.timestamp,fullSyncPacketTime,rebroadcastGapTime,timer.getValue());
         transceiver.sendAt(packet,result.size,result.timestamp+fullSyncPacketTime+rebroadcastGapTime);        
         printf("[my ID %d]Status: %d %d %d. Packet forwarded:\n",hop, result.error,result.timestampValid,result.size);
         memDump(packet,sizeof(packet));
     }
-    
     transceiver.turnOff();
     
     pair<int,int> r;
@@ -156,4 +154,5 @@ void FlooderSyncNode::resynchronize()
     clockCorrection=0;
     receiverWindow=w;
     missPackets=0;
+    puts("End Resynchronize...");
 }
