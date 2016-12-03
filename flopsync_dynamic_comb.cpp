@@ -39,14 +39,7 @@ using namespace std;
 using namespace miosix;
 
 int main()
-{   
-    char packet[5]={'a','b','c','d','e'};
-    Transceiver& t=Transceiver::instance();
-    miosix::TransceiverConfiguration cfg(2450);
-    t.configure(cfg);
-    t.turnOn();
-    t.sendAt(packet,5,100000000);
-    t.turnOff();
+{
     HardwareTimer& timer=TransceiverTimer::instance();
     //Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
     Synchronizer* sync=new Flopsync1;
