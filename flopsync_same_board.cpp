@@ -12,15 +12,31 @@ using namespace miosix;
  * This code aim to sync the 2 clock on wandstem. The master is HFXO and the slave is LFXO, the interesting part of code is in high_resolution_timer_base
  */
 
-void task(void* value){
+void task1(void* ){
     HighResolutionTimerBase::tWaiting=Thread::getCurrentThread();
     Flopsync1 f;
     for(;;){
 	Thread::wait();
 	pair<int,int> result=f.computeCorrection(HighResolutionTimerBase::error);
 	HighResolutionTimerBase::clockCorrection=result.first;
-	printf("Timestamped=%lld Expected=%lld e=%lld %lld\n",HighResolutionTimerBase::syncPointHrtTimestamped,HighResolutionTimerBase::syncPointHrtExpected,HighResolutionTimerBase::error,HighResolutionTimerBase::clockCorrection);
+	//printf("Timestamped=%lld Expected=%lld e=%lld %lld\n",HighResolutionTimerBase::syncPointHrtTimestamped,HighResolutionTimerBase::syncPointHrtExpected,HighResolutionTimerBase::error,HighResolutionTimerBase::clockCorrection);
+	printf("%lld\n",HighResolutionTimerBase::error);
+	//greenLed::toggle();
+    }
+}
+int a=0;
+void task2(void* ){
+    for(;;){
+	delayMs(1000);
+	Thread::sleep(200);
+	
+    }
+}
+
+void task3(void* ){
+    for(;;){	
 	greenLed::toggle();
+	Thread::sleep(20);
     }
 }
 /*
@@ -64,8 +80,10 @@ int main(int argc, char** argv) {
     TIMER2->IEN |= TIMER_IEN_CC2;
     while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1) ;
     
-    Thread::create(task,2048,3);
-    
+    Thread::create(task1,2048,3);
+    Thread::create(task2,2048,1);
+    Thread::sleep(10);
+    Thread::create(task3,2048,0);
     Thread::wait();
     
     return 0;
