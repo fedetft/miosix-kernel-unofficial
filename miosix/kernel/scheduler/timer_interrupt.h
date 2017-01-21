@@ -33,6 +33,7 @@
 #include "scheduler.h"
 
 namespace miosix {
+extern bool isRaceConditionHappening;
 
 //These are a couple of global variables and a function that are part of the
 //internal implementation of the kernel and are defined in kernel.cpp
@@ -51,7 +52,7 @@ inline void IRQtimerInterrupt(long long currentTick)
     bool hptw = IRQwakeThreads(currentTick);
     if (currentTick >= Scheduler::IRQgetNextPreemption() || hptw ){
         //End of the burst || a higher priority thread has woken up
-        Scheduler::IRQfindNextThread();//If the kernel is running, preempt
+        if (isRaceConditionHappening==false) Scheduler::IRQfindNextThread();//If the kernel is running, preempt
         if(kernel_running!=0) tick_skew=true;
     }
     

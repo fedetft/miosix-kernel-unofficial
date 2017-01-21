@@ -32,6 +32,7 @@
 #include "kernel/scheduler/priority/priority_scheduler.h"
 #include "kernel/scheduler/control/control_scheduler.h"
 #include "kernel/scheduler/edf/edf_scheduler.h"
+#include "../../../profiler.h"
 
 namespace miosix {
 
@@ -167,6 +168,7 @@ public:
      */
     static unsigned int IRQfindNextThread()
     {
+        Profiler::IRQoneContextSwitchHappened();
         return T::IRQfindNextThread();
     }
     

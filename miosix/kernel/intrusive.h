@@ -667,7 +667,7 @@ class IntrusiveList; //Forward declaration
  */
 class IntrusiveListItem
 {
-private:
+public:
     IntrusiveListItem *next=nullptr;
     IntrusiveListItem *prev=nullptr;
     template<typename T>
