@@ -24,7 +24,7 @@
  *   You should have received a copy of the GNU General Public License     *
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
-
+#include "../../../../rescaled.h"
 #ifndef PARAMETERS_H
 #define	PARAMETERS_H
 
@@ -76,15 +76,15 @@ const int multFactor=static_cast<int>(1.0f/kpi);
 
 ///Instead of fixing a round time the current policy is to have
 ///roundTime=bNominal * numThreads, where bNominal is the nominal thread burst
-static const int bNominal=static_cast<int>(4000000);// 4ms
-
+//static const int bNominal=static_cast<int>(4000000);// 4ms
+extern int bNominal;
 ///minimum burst time (to avoid inefficiency caused by context switch
 ///time longer than burst time)
-static const int bMin=static_cast<int>(200000);// 200us
-
+//static const int bMin=static_cast<int>(200000);// 200us
+static const int bMin=static_cast<int>(0); // zero (hartstone)
 ///maximum burst time (to avoid losing responsiveness/timer overflow)
-static const int bMax=static_cast<int>(20000000);// 20ms
-
+//static const int bMax=static_cast<int>(20000000);// 20ms
+extern int bMax;
 ///idle thread has a fixed burst length that can be modified here
 ///it is recomended to leave it to a high value, but that does not cause
 ///overflow of the auxiliary timer

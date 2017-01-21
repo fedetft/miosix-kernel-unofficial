@@ -207,6 +207,7 @@ long long PriorityScheduler::IRQgetNextPreemption()
 }
 
 static void IRQsetNextPreemption(bool curIsIdleThread){
+#ifdef SCHED_PRIORITY_USE_NONPERIODIC_TIMING
     long long firstWakeupInList;
     if (sleepingList->empty())
         firstWakeupInList = LONG_LONG_MAX;
@@ -219,6 +220,10 @@ static void IRQsetNextPreemption(bool curIsIdleThread){
         nextPeriodicPreemption = std::min(firstWakeupInList, timer.IRQgetCurrentTime() + preemptionPeriodNs);
     
     timer.IRQsetNextInterrupt(nextPeriodicPreemption);
+#else
+    nextPeriodicPreemption = timer.getCurrentTime() + preemptionPeriodNs;
+    timer.IRQsetNextInterrupt(nextPeriodicPreemption);
+#endif
 }
 
 unsigned int PriorityScheduler::IRQfindNextThread()

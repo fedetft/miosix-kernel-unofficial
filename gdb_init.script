@@ -1,0 +1,29 @@
+# Auto script for gdb, interpreted by jtag_profiler
+# Used to test step response for control scheduler,
+# with and without both feedforward
+
+target remote :3333
+
+# monitor soft_reset_halt
+# load
+monitor reset halt
+break test.cpp:32
+c
+# Breakpoint must be put on line that sets Tr to zero,
+# so after external regulator has run but before internal
+# regulator has run
+
+
+# for control scheduler with multiburst support
+# break control_scheduler.cpp:660
+
+# for control scheduler without multiburst support
+break control_scheduler.cpp:190
+c
+
+# Select variables to watch
+disp burstStart
+disp cur
+
+# This syntax means repeat 250 times the "c" command
+@250 c

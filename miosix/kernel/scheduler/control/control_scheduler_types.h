@@ -81,7 +81,7 @@ public:
      * \param priority the desired priority value.
      */
     ControlSchedulerPriority(short int priority): priority(priority), 
-            realtime(REALTIME_PRIORITY_END_OF_ROUND) {}
+            realtime(REALTIME_PRIORITY_IMMEDIATE) {}
     
     ControlSchedulerPriority(short int priority, short int realtime):
             priority(priority),realtime(realtime){}
@@ -162,7 +162,7 @@ struct ThreadsListItem : public IntrusiveListItem
 class ControlSchedulerData
 {
 public:
-    ControlSchedulerData(): priority(0), bo(bNominal*multFactor), alfa(0),
+    ControlSchedulerData(): priority(0), bo(bNominal*multFactor), alfa(0), theta(1),
             SP_Tp(0), Tp(bNominal), next(0) {}
 
     //Thread priority. Higher priority means longer burst
@@ -170,6 +170,8 @@ public:
     int bo;//Old burst time, is kept here multiplied by multFactor
     #ifndef SCHED_CONTROL_FIXED_POINT
     float alfa; //Sum of all alfa=1
+    float alfaPrime;
+    unsigned int theta;
     #else //FIXED_POINT_MATH
     //Sum of all alfa is 4096 except for some rounding error
     unsigned short alfa;

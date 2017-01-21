@@ -1009,6 +1009,9 @@ private:
     friend void IRQaddToSleepingList(SleepData *x);
     //Needs access to status
     friend bool IRQwakeThreads(long long currentTick);
+    
+    friend void IRQtimerInterrupt(long long currentTick);
+    
     //Needs access to watermark, status, next
     friend void *idleThread(void *argv);
     //Needs to create the idle thread

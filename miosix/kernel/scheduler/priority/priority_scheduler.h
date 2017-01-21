@@ -33,6 +33,7 @@
 #include "kernel/kernel.h"
 
 #ifdef SCHED_TYPE_PRIORITY
+//#define SCHED_PRIORITY_USE_NONPERIODIC_TIMING
 
 namespace miosix {
 

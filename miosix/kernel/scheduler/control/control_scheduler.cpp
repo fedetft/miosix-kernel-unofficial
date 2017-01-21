@@ -31,6 +31,7 @@
 #include <limits>
 #include "interfaces/cstimer.h"
 #include "kernel/scheduler/scheduler.h"
+#include <cmath>
 
 using namespace std;
 
@@ -150,6 +151,17 @@ Thread *ControlScheduler::IRQgetIdleThread()
     return idle;
 }
 
+int bNominal=1000000*rescaled;// 1ms (hartstone)
+int bMax=10000000*rescaled;// 10ms (hartstone)
+void ControlScheduler::fixmeManualBurst(float burstLength)
+{
+    InterruptDisableLock dLock;
+    
+    bNominal=static_cast<int>(1000000000ll*burstLength)*rescaled;
+    bMax=5*bNominal;
+    SP_Tr=bNominal*threadListSize;
+}
+
 long long ControlScheduler::IRQgetNextPreemption()
 {
     return nextPreemption;
@@ -248,7 +260,7 @@ unsigned int ControlScheduler::IRQfindNextThread()
             IRQrunRegulator(allReadyThreadsSaturated);
         }
 
-        if(curInRound->flags.isReady())
+        if(curInRound->flags.isReady() && curInRound->schedData.bo>0)
         {
             //Found a READY thread, so run this one
             cur=curInRound;
@@ -284,62 +296,79 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
     IRQrecalculateAlfa();
     #endif //ENABLE_FEEDFORWARD
 }
+void ControlScheduler::disableAutomaticAlfaChange()
+ {
+    InterruptDisableLock dLock;
+     for(Thread *it=threadList;it!=0;it=it->schedData.next)
+            it->schedData.alfaPrime=it->schedData.alfa;
+    disableAutoAlfaChange=true;
+    IRQrecalculateAlfa();
+}
 
+void ControlScheduler::enableAutomaticAlfaChange()
+{
+    InterruptDisableLock dLock;
+    disableAutoAlfaChange=false;
+    IRQrecalculateAlfa();
+}
 void ControlScheduler::IRQrecalculateAlfa()
 {
-    //Sum of all priorities of all threads
-    //Note that since priority goes from 0 to PRIORITY_MAX-1
-    //but priorities we need go from 1 to PRIORITY_MAX we need to add one
-    unsigned int sumPriority=0;
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
+    //IRQrecalculateAlfa rewritten from scratch to implement full workload
+    //div deadline algorithm
+    #if defined(FIXED_POINT_MATH) || !defined(ENABLE_FEEDFORWARD) || \
+       !defined(ENABLE_REGULATOR_REINIT)
+    #error "Workload div deadline preconditions not met"
+    #endif
+    if(disableAutoAlfaChange==false)
     {
-        #ifdef ENABLE_FEEDFORWARD
-        //Count only ready threads
-        if(it->flags.isReady())
-            sumPriority+=it->schedData.priority.get()+1;//Add one
-        #else //ENABLE_FEEDFORWARD
-        //Count all threads
-        sumPriority+=it->schedData.priority.get()+1;//Add one
-        #endif //ENABLE_FEEDFORWARD
-    }
-    //This can happen when ENABLE_FEEDFORWARD is set and no thread is ready
-    if(sumPriority==0) return;
-    #ifndef SCHED_CONTROL_FIXED_POINT
-    float base=1.0f/((float)sumPriority);
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    {
-        #ifdef ENABLE_FEEDFORWARD
-        //Assign zero bursts to blocked threads
-        if(it->flags.isReady())
+        //Sum of all priorities of all threads
+        //Note that since priority goes from 0 to PRIORITY_MAX-1
+        //but priorities we need go from 1 to PRIORITY_MAX we need to add one
+        unsigned int sumPriority=0;
+        for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
-            it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
-        } else {
-            it->schedData.alfa=0;
+            //Count only ready threads
+            if(it->flags.isReady())
+                sumPriority+=it->schedData.priority.get()+1;//Add one
         }
-        #else //ENABLE_FEEDFORWARD
-        //Assign bursts irrespective of thread blocking status
-        it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
-        #endif //ENABLE_FEEDFORWARD
-    }
-    #else //FIXED_POINT_MATH
-    //Sum of all alfa is maximum value for an unsigned short
-    unsigned int base=4096/sumPriority;
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    {
-        #ifdef ENABLE_FEEDFORWARD
-        //Assign zero bursts to blocked threads
-        if(it->flags.isReady())
+        //This can happen when ENABLE_FEEDFORWARD is set and no thread is ready
+        if(sumPriority==0) return;
+        float base=1.0f/((float)sumPriority);
+        for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
-            it->schedData.alfa=base*(it->schedData.priority.get()+1);
-        } else {
-            it->schedData.alfa=0;
+            //Assign zero bursts to blocked threads
+            if(it->flags.isReady())
+            {
+                it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
+            } else {
+                it->schedData.alfa=0;
+            }
         }
-        #else //ENABLE_FEEDFORWARD
-        //Assign bursts irrespective of thread blocking status
-        it->schedData.alfa=base*(it->schedData.priority.get()+1);
-        #endif //ENABLE_FEEDFORWARD
+    }else{
+        float cpuLoad=0.0f;
+        for(Thread *it=threadList;it!=0;it=it->schedData.next)
+        {
+            if(it->flags.isReady())
+            {
+                it->schedData.alfa=it->schedData.alfaPrime;
+                cpuLoad+=it->schedData.alfaPrime;
+            } else it->schedData.alfa=0.0f;    
+         }
+        if(cpuLoad<1.0f)
+        {
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+                it->schedData.alfa/=cpuLoad;
+        } else {
+            float rescale=0.0f;
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+            {
+                it->schedData.alfa=it->schedData.alfa*it->schedData.theta;
+                rescale+=it->schedData.alfa;
+            }
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+                it->schedData.alfa/=rescale;
+        }
     }
-    #endif //FIXED_POINT_MATH
     reinitRegulator=true;
 }
 
@@ -354,51 +383,57 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
     if(reinitRegulator==false)
     {
     #endif //ENABLE_REGULATOR_REINIT
-        int eTr=SP_Tr-Tr;
-        #ifndef SCHED_CONTROL_FIXED_POINT
-        int bc=bco+static_cast<int>(krr*eTr-krr*zrr*eTro);
-        #else //FIXED_POINT_MATH
-        //Tr is clamped to 524287, so eTr uses at most 19bits. Considering
-        //the 31bits of a signed int, we have 12bits free.
-        const int fixedKrr=static_cast<int>(krr*2048);
-        const int fixedKrrZrr=static_cast<int>(krr*zrr*1024);
-        int bc=bco+(fixedKrr*eTr)/2048-(fixedKrrZrr*eTro)/1024;
-        #endif //FIXED_POINT_MATH
-        if(allReadyThreadsSaturated)
-        {
-            //If all inner regulators reached upper saturation,
-            //allow only a decrease in the burst correction.
-            if(bc<bco) bco=bc;
-        } else bco=bc;
+    int eTr=SP_Tr-Tr;
+    #ifndef SCHED_CONTROL_FIXED_POINT
+    int bc=bco+static_cast<int>(krr*eTr-krr*zrr*eTro);
+    #else //FIXED_POINT_MATH
+    //Tr is clamped to 524287, so eTr uses at most 19bits. Considering
+    //the 31bits of a signed int, we have 12bits free.
+    const int fixedKrr=static_cast<int>(krr*2048);
+    const int fixedKrrZrr=static_cast<int>(krr*zrr*1024);
+    int bc=bco+(fixedKrr*eTr)/2048-(fixedKrrZrr*eTro)/1024;
+    #endif //FIXED_POINT_MATH
+    if(allReadyThreadsSaturated)
+    {
+        //If all inner regulators reached upper saturation,
+        //allow only a decrease in the burst correction.
+        if(bc<bco) bco=bc;
+    } else bco=bc;
 
-        bco=min<int>(max(bco,-Tr),bMax*threadListSize);
+    bco=min<int>(max(bco,-Tr),bMax*threadListSize);
+    #ifndef SCHED_CONTROL_FIXED_POINT
+    float nextRoundTime=static_cast<float>(Tr+bco);
+    #else //FIXED_POINT_MATH
+    unsigned int nextRoundTime=Tr+bco; //Bounded to 20bits
+    #endif //FIXED_POINT_MATH
+    eTro=eTr;
+    Trace::IRQaddToLog(31,SP_Tr);
+    Trace::IRQaddToLog(31,Tr);
+    Tr=0;//Reset round time
+    int id = 0;
+    for(Thread *it=threadList;it!=0;it=it->schedData.next)
+    {
+        //Recalculate per thread set point
         #ifndef SCHED_CONTROL_FIXED_POINT
-        float nextRoundTime=static_cast<float>(Tr+bco);
+        it->schedData.SP_Tp=static_cast<int>(
+                it->schedData.alfa*nextRoundTime);
         #else //FIXED_POINT_MATH
-        unsigned int nextRoundTime=Tr+bco; //Bounded to 20bits
+        //nextRoundTime is bounded to 20bits, alfa to 12bits,
+        //so the multiplication fits in 32bits
+        it->schedData.SP_Tp=(it->schedData.alfa*nextRoundTime)/4096;
         #endif //FIXED_POINT_MATH
-        eTro=eTr;
-        Tr=0;//Reset round time
-        for(Thread *it=threadList;it!=0;it=it->schedData.next)
-        {
-            //Recalculate per thread set point
-            #ifndef SCHED_CONTROL_FIXED_POINT
-            it->schedData.SP_Tp=static_cast<int>(
-                    it->schedData.alfa*nextRoundTime);
-            #else //FIXED_POINT_MATH
-            //nextRoundTime is bounded to 20bits, alfa to 12bits,
-            //so the multiplication fits in 32bits
-            it->schedData.SP_Tp=(it->schedData.alfa*nextRoundTime)/4096;
-            #endif //FIXED_POINT_MATH
 
-            //Run each thread internal regulator
-            int eTp=it->schedData.SP_Tp - it->schedData.Tp;
-            //note: since b and bo contain the real value multiplied by
-            //multFactor, this equals b=bo+eTp/multFactor.
-            int b=it->schedData.bo + eTp;
-            //saturation
-            it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
-        }
+        //Run each thread internal regulator
+        int eTp=it->schedData.SP_Tp - it->schedData.Tp;
+        //note: since b and bo contain the real value multiplied by
+        //multFactor, this equals b=bo+eTp/multFactor.
+        int b=it->schedData.bo + eTp;
+        //saturation
+        it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+        Trace::IRQaddToLog(id,it->schedData.SP_Tp);
+        Trace::IRQaddToLog(id,it->schedData.Tp);
+        id++;
+    }
     #ifdef ENABLE_REGULATOR_REINIT
     } else {
         reinitRegulator=false;
@@ -407,6 +442,7 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
         eTro=0;
         bco=0;
 
+        int id = 0;
         for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
             //Recalculate per thread set point
@@ -420,6 +456,9 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
 
             int b=it->schedData.SP_Tp*multFactor;
             it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+            Trace::IRQaddToLog(id,it->schedData.SP_Tp);
+            Trace::IRQaddToLog(id,it->schedData.Tp);
+            id++;
         }
     }
     #endif //ENABLE_REGULATOR_REINIT
@@ -434,6 +473,7 @@ int ControlScheduler::Tr=bNominal;
 int ControlScheduler::bco=0;
 int ControlScheduler::eTro=0;
 bool ControlScheduler::reinitRegulator=false;
+volatile bool ControlScheduler::disableAutoAlfaChange;
 }
 #else
 namespace miosix {
@@ -475,7 +515,7 @@ static inline void addThreadToActiveList(ThreadsListItem *atlEntry)
 }
 
 static inline void remThreadfromActiveList(ThreadsListItem *atlEntry){
-    if (curInRound==IntrusiveList<ThreadsListItem>::iterator(atlEntry)){
+    if (*curInRound==atlEntry){
         curInRound++;
     }
     activeThreads.erase(IntrusiveList<ThreadsListItem>::iterator(atlEntry));
@@ -620,6 +660,16 @@ static inline void IRQsetNextPreemption(long long burst){
     timer.IRQsetNextInterrupt(nextPreemption);
 }
 
+int bNominal=static_cast<int>(1000000)*rescaled;// 1ms (hartstone)
+int bMax=static_cast<int>(10000000)*rescaled;// 10ms (hartstone)
+void ControlScheduler::fixmeManualBurst(float burstLength)
+{
+    InterruptDisableLock dLock;
+    bNominal=static_cast<int>(1000000000ll*burstLength)*rescaled;
+    bMax=5*bNominal;
+    SP_Tr=bNominal*threadListSize;
+}
+
 unsigned int ControlScheduler::IRQfindNextThread()
 {
     // Warning: since this function is called within interrupt routines, it
@@ -686,7 +736,7 @@ unsigned int ControlScheduler::IRQfindNextThread()
             IRQrunRegulator(allReadyThreadsSaturated);
         }
 
-        if((*curInRound)->t->flags.isReady())
+        if((*curInRound)->t->flags.isReady() && (*curInRound)->t->schedData.bo>0)
         {
             //Found a READY thread, so run this one
             cur=(*curInRound)->t;
@@ -711,8 +761,8 @@ unsigned int ControlScheduler::IRQfindNextThread()
             //If we get here we have a non ready thread that cannot run,
             //so regardless of the burst calculated by the scheduler
             //we do not run it and set Tp to zero.
-            //curInRound->schedData.Tp=0;
-            return UINT_MAX; //This case should not happen, just for debug!
+            curInRound++;
+            //return UINT_MAX; //This case should not happen, just for debug!
         }
     }
 }
@@ -720,76 +770,96 @@ unsigned int ControlScheduler::IRQfindNextThread()
 void ControlScheduler::IRQwaitStatusHook(Thread* t)
 {
     // Managing activeThreads list
-    if (t->flags.isReady() && !t->schedData.lastReadyStatus){
+    if (t->flags.isReady()){
         // The thread has became active -> put it in the list
         addThreadToActiveList(&t->schedData.atlEntry);
-        t->schedData.lastReadyStatus = true;
-    }else if (!t->flags.isReady() && t->schedData.lastReadyStatus){
+    }else {
         // The thread is no longer active -> remove it from the list
         remThreadfromActiveList(&t->schedData.atlEntry);
-        t->schedData.lastReadyStatus = false;
     }
     #ifdef ENABLE_FEEDFORWARD
     IRQrecalculateAlfa();
     #endif //ENABLE_FEEDFORWARD
+    //Integrity Test
+//    for (auto it = activeThreads.begin() ; it != activeThreads.end() ; it++){
+//        assert(!(*it)->t->flags.isReady());
+//    }
+}
+
+void ControlScheduler::disableAutomaticAlfaChange()
+ {
+    InterruptDisableLock dLock;
+    for(Thread *it=threadList;it!=0;it=it->schedData.next)
+        it->schedData.alfaPrime=it->schedData.alfa;
+    disableAutoAlfaChange=true;
+    IRQrecalculateAlfa();
+}
+
+void ControlScheduler::enableAutomaticAlfaChange()
+{
+    InterruptDisableLock dLock;
+    disableAutoAlfaChange=false;
+    IRQrecalculateAlfa();
 }
 
 void ControlScheduler::IRQrecalculateAlfa()
 {
-    //Sum of all priorities of all threads
-    //Note that since priority goes from 0 to PRIORITY_MAX-1
-    //but priorities we need go from 1 to PRIORITY_MAX we need to add one
-    unsigned int sumPriority=0;
-    //for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    for (auto it = activeThreads.begin() ; it != activeThreads.end() ; it++)
+    //IRQrecalculateAlfa rewritten from scratch to implement full workload
+    //div deadline algorithm
+    #if defined(FIXED_POINT_MATH) || !defined(ENABLE_FEEDFORWARD) || \
+       !defined(ENABLE_REGULATOR_REINIT)
+    #error "Workload div deadline preconditions not met"
+    #endif
+    if(disableAutoAlfaChange==false)
     {
-        #ifdef ENABLE_FEEDFORWARD
-        //Count only ready threads
-        if((*it)->t->flags.isReady())
+        //Sum of all priorities of all threads
+        //Note that since priority goes from 0 to PRIORITY_MAX-1
+        //but priorities we need go from 1 to PRIORITY_MAX we need to add one
+        unsigned int sumPriority=0;
+        for (auto it = activeThreads.begin() ; it != activeThreads.end() ; it++)
+        {
+            //Count only ready threads
             sumPriority+=(*it)->t->schedData.priority.get()+1;//Add one
-        #else //ENABLE_FEEDFORWARD
-        //Count all threads
-        sumPriority+=(*it)->t->schedData.priority.get()+1;//Add one
-        #endif //ENABLE_FEEDFORWARD
-    }
-    //This can happen when ENABLE_FEEDFORWARD is set and no thread is ready
-    if(sumPriority==0) return;
-    #ifndef SCHED_CONTROL_FIXED_POINT
-    float base=1.0f/((float)sumPriority);
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    {
-        #ifdef ENABLE_FEEDFORWARD
-        //Assign zero bursts to blocked threads
-        if(it->flags.isReady())
-        {
-            it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
-        } else {
-            it->schedData.alfa=0;
         }
-        #else //ENABLE_FEEDFORWARD
-        //Assign bursts irrespective of thread blocking status
-        it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
-        #endif //ENABLE_FEEDFORWARD
-    }
-    #else //FIXED_POINT_MATH
-    //Sum of all alfa is maximum value for an unsigned short
-    unsigned int base=4096/sumPriority;
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    {
-        #ifdef ENABLE_FEEDFORWARD
-        //Assign zero bursts to blocked threads
-        if(it->flags.isReady())
+        //This can happen when ENABLE_FEEDFORWARD is set and no thread is ready
+        if(sumPriority==0) return;
+        float base=1.0f/((float)sumPriority);
+        for (Thread *it=threadList ; it!=0 ; it=it->schedData.next)
         {
-            it->schedData.alfa=base*(it->schedData.priority.get()+1);
-        } else {
-            it->schedData.alfa=0;
+            //Assign zero bursts to blocked threads
+            if(it->flags.isReady())
+            {
+                it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
+            } else {
+                it->schedData.alfa=0;
+            }
         }
-        #else //ENABLE_FEEDFORWARD
-        //Assign bursts irrespective of thread blocking status
-        it->schedData.alfa=base*(it->schedData.priority.get()+1);
-        #endif //ENABLE_FEEDFORWARD
+    }else{
+        float cpuLoad=0.0f;
+        for(Thread *it=threadList;it!=0;it=it->schedData.next)
+        {
+            if(it->flags.isReady())
+            {
+                it->schedData.alfa=it->schedData.alfaPrime;
+                cpuLoad+=it->schedData.alfaPrime;
+            } else it->schedData.alfa=0.0f;
+            
+        }
+        if(cpuLoad<1.0f)
+	{
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+                it->schedData.alfa/=cpuLoad;
+    	} else {
+            float rescale=0.0f;
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+            {
+                it->schedData.alfa=it->schedData.alfa*it->schedData.theta;
+                rescale+=it->schedData.alfa;
+            }
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+                it->schedData.alfa/=rescale;
+	}
     }
-    #endif //FIXED_POINT_MATH
     reinitRegulator=true;
 }
 
@@ -828,7 +898,10 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
         unsigned int nextRoundTime=Tr+bco; //Bounded to 20bits
         #endif //FIXED_POINT_MATH
         eTro=eTr;
+        Trace::IRQaddToLog(31,SP_Tr);
+        Trace::IRQaddToLog(31,Tr);
         Tr=0;//Reset round time
+        int id = 0;
         for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
             //Recalculate per thread set point
@@ -848,6 +921,9 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
             int b=it->schedData.bo + eTp;
             //saturation
             it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+            Trace::IRQaddToLog(id,it->schedData.SP_Tp);
+            Trace::IRQaddToLog(id,it->schedData.Tp);
+            id++;
         }
     #ifdef ENABLE_REGULATOR_REINIT
     } else {
@@ -857,6 +933,7 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
         eTro=0;
         bco=0;
 
+        int id = 0;
         for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
             //Recalculate per thread set point
@@ -870,6 +947,9 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
 
             int b=it->schedData.SP_Tp*multFactor;
             it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+            Trace::IRQaddToLog(id,it->schedData.SP_Tp);
+            Trace::IRQaddToLog(id,it->schedData.Tp);
+            id++;
         }
     }
     #endif //ENABLE_REGULATOR_REINIT
@@ -884,6 +964,7 @@ int ControlScheduler::Tr=bNominal;
 int ControlScheduler::bco=0;
 int ControlScheduler::eTro=0;
 bool ControlScheduler::reinitRegulator=false;
+volatile bool ControlScheduler::disableAutoAlfaChange=false;
 } //namespace miosix
 #endif // SCHED_CONTROL_MULTIBURST
 #endif //SCHED_TYPE_CONTROL_BASED

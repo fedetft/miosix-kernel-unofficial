@@ -77,6 +77,8 @@ static unsigned char interruptDisableNesting=0;
 
 static int deepSleepCounter = 0;
 
+bool isRaceConditionHappening=false;
+
 #ifdef WITH_PROCESSES
 
 /// The proc field of the Thread class for kernel threads points to this object
@@ -389,6 +391,7 @@ void Thread::nanoSleepUntil(long long absoluteTime)
         d.p=const_cast<Thread*>(cur);
         d.wakeup_time = absoluteTime;
         IRQaddToSleepingList(&d);//Also sets SLEEP_FLAG
+        isRaceConditionHappening=true;
     }
     // NOTE: There is no need to synchronize the timer (calling IRQsetNextInterrupt)
     // with the list at this point. Because, Thread::yield will make a supervisor
