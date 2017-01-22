@@ -44,7 +44,7 @@ int main(int argc, char** argv) {
     for(;;){
 	g.waitTimeoutOrEvent(timeout);
 	timestamp=g.getExtEventTimestamp();
-	g.absoluteSyncWaitTrigger(timestamp+delay);
+	g.absoluteWaitTrigger(timestamp+delay);
         
 	printf("Now: %lld Received at: %lld (both in ticks)\n",g.getValue(),timestamp);
 	printf("%lld\n",timestamp-oldtimestamp);

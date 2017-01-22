@@ -45,7 +45,7 @@ int main(int argc, char** argv) {
     bool w;
     long long timestamp;
     for(long long i=0;i<sizeof(noticeableValues)/sizeof(noticeableValues[0]);i++){
-        if(!g.absoluteSyncWaitTrigger(noticeableValues[i])){
+        if(!g.absoluteWaitTrigger(noticeableValues[i])){
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
             //printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
@@ -60,7 +60,7 @@ int main(int argc, char** argv) {
     long long base=g.getValue()+1000*65536;
     long long diff;
     for(long long i=0;i<65536;i++){
-        if(!g.absoluteSyncWaitTrigger(base+i*(65536*4)+i)){
+        if(!g.absoluteWaitTrigger(base+i*(65536*4)+i)){
             w=g.waitTimeoutOrEvent(timeout);
             timestamp=g.getExtEventTimestamp();
             diff=timestamp-(base+i*(65536*4)+i);

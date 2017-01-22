@@ -28,6 +28,7 @@
 #include <cstdio>
 #include "miosix.h"
 #include "interfaces-impl/transceiver.h"
+#include "interfaces-impl/transceiver_timer.h"
 #include "pingpong_const.h"
 
 using namespace std;
@@ -43,7 +44,6 @@ int main(){
     TransceiverTimer& tim=TransceiverTimer::instance();
     
     rtx.configure(tc);
-    bool firstTime=true;
     char packet[N]={0};
     long long oldTimestamp=0;
     rtx.turnOn();

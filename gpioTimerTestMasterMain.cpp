@@ -43,7 +43,7 @@ int main(int argc, char** argv) {
     long long timestamp,oldtimestamp=0;
     for(long long i=startMaster;;i+=offsetBetweenPing){
 	
-        g.absoluteSyncWaitTrigger(i);
+        g.absoluteWaitTrigger(i);
 	
         w=g.waitTimeoutOrEvent(timeout);
 	timestamp=g.getExtEventTimestamp();
