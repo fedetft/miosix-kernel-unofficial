@@ -7,7 +7,7 @@ target remote :3333
 # monitor soft_reset_halt
 # load
 monitor reset halt
-break sched_main1.cpp:30
+break sched_main2.cpp:29
 c
 # Breakpoint must be put on line that sets Tr to zero,
 # so after external regulator has run but before internal
@@ -15,10 +15,11 @@ c
 
 
 # for control scheduler with multiburst support
-break control_scheduler.cpp:660
+#break control_scheduler.cpp:660
 
 # for control scheduler without multiburst support
-# break control_scheduler.cpp:190
+break control_scheduler.cpp:195
+
 c
 
 # Select variables to watch

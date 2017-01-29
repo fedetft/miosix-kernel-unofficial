@@ -50,11 +50,22 @@ inline void IRQtimerInterrupt(long long currentTick)
 {
     miosix_private::IRQstackOverflowCheck();
     bool hptw = IRQwakeThreads(currentTick);
+    (void)hptw;
+    #ifdef SCHED_TYPE_CONTROL_BASED
+    #ifdef SCHED_CONTROL_MULTIBURST
     if (currentTick >= Scheduler::IRQgetNextPreemption() || hptw ){
         //End of the burst || a higher priority thread has woken up
         if (isRaceConditionHappening==false) Scheduler::IRQfindNextThread();//If the kernel is running, preempt
         if(kernel_running!=0) tick_skew=true;
     }
+    #else
+    //The condition below is handled through IRQsetNextPreemption functions
+    //of the control scheduler automatically
+    //Cond.: End of the burst || a thread has woken up and cur=idle thread
+    if (isRaceConditionHappening==false) Scheduler::IRQfindNextThread();//If the kernel is running, preempt
+    if(kernel_running!=0) tick_skew=true;
+    #endif
+    #endif
     
 //    miosix_private::IRQstackOverflowCheck();
 //    bool woken=IRQwakeThreads();//Increment tick and wake threads,if any

@@ -18,7 +18,7 @@ SUBDIRS := $(KPATH)
 ##
 SRC :=                                  \
 profiler.cpp				\
-sched_main1.cpp
+sched_main2.cpp
 #hartstone.cpp                           \
 #test.cpp
 #main-soft-realtime2.cpp
