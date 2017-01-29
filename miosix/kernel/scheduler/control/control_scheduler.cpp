@@ -170,6 +170,11 @@ long long ControlScheduler::IRQgetNextPreemption()
 
 // Should be called when the current thread is the idle thread
 static inline void IRQsetNextPreemptionForIdle(){
+    // In control scheduler without multiburst we don't care about other threads'
+    // wake-up time unless the idle thread is about to run!
+    // In this function since the idle thread has to run => we simply put the
+    // wake-up time of the first thread in the sleeping list as the next
+    // preemption point!
     if (sleepingList->empty())
         //normally should not happen unless an IRQ is already set and able to
         //preempt idle thread
@@ -181,13 +186,13 @@ static inline void IRQsetNextPreemptionForIdle(){
 
 // Should be called for threads other than idle thread
 static inline void IRQsetNextPreemption(long long burst){
-    long long firstWakeupInList;
-    if (sleepingList->empty())
-        firstWakeupInList = LONG_LONG_MAX;
-    else
-        firstWakeupInList = sleepingList->front()->wakeup_time;
+    // In control scheduler without multiburst we don't care about other threads'
+    // wake-up time unless the idle thread is about to run!
+    // In this function since an active thread has to run => we simply
+    // put its end-of-burst as the next preemption so that no other sleeping
+    // threads would intervene
     burstStart = timer->IRQgetCurrentTime();
-    nextPreemption = min(firstWakeupInList,burstStart + burst);
+    nextPreemption = burstStart + burst;
     timer->IRQsetNextInterrupt(nextPreemption);
 }
 
@@ -255,7 +260,6 @@ unsigned int ControlScheduler::IRQfindNextThread()
                 IRQsetNextPreemptionForIdle();
                 return 0;
             }
-
             //End of round reached, run scheduling algorithm
             curInRound=threadList;
             IRQrunRegulator(allReadyThreadsSaturated);
