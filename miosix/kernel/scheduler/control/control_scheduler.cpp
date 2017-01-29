@@ -299,8 +299,8 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
 void ControlScheduler::disableAutomaticAlfaChange()
  {
     InterruptDisableLock dLock;
-     for(Thread *it=threadList;it!=0;it=it->schedData.next)
-            it->schedData.alfaPrime=it->schedData.alfa;
+    //for(Thread *it=threadList;it!=0;it=it->schedData.next)
+    //    it->schedData.alfaPrime=it->schedData.alfa;
     disableAutoAlfaChange=true;
     IRQrecalculateAlfa();
 }
@@ -789,8 +789,8 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
 void ControlScheduler::disableAutomaticAlfaChange()
  {
     InterruptDisableLock dLock;
-    for(Thread *it=threadList;it!=0;it=it->schedData.next)
-        it->schedData.alfaPrime=it->schedData.alfa;
+    //for(Thread *it=threadList;it!=0;it=it->schedData.next)
+    //    it->schedData.alfaPrime=it->schedData.alfa;
     disableAutoAlfaChange=true;
     IRQrecalculateAlfa();
 }
