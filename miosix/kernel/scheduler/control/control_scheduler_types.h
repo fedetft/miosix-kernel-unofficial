@@ -121,31 +121,47 @@ public:
     }
 
 private:
-    short int priority;///< The priority value
+    short int priority;///< The priority value (for automatic assigment of alfa)
     short int realtime;///< The realtime priority value
 };
 
 inline bool operator <(ControlSchedulerPriority a, ControlSchedulerPriority b)
 {
+#ifdef SCHED_CONTROL_MULTIBURST
     //rule 1) Idle thread should be always preempted by any thread!
     //rule 2) Only REALTIME_PRIORITY_IMMEDIATE threads can preempt other threads
     //right away, for other real-time priorities, the scheduler does not
     //require to be called before the end of the current burst!
     return a.get()==-1 || (a.getRealtime() != 1 && b.getRealtime() == 1);
+#else
+    return a.get() < b.get();
+#endif
 }
 
 inline bool operator>(ControlSchedulerPriority a, ControlSchedulerPriority b){
+#ifdef SCHED_CONTROL_MULTIBURST
     return b.get()==-1 || (a.getRealtime() == 1 && b.getRealtime() != 1);
+#else
+    return a.get() > b.get();
+#endif
 }
 
 inline bool operator ==(ControlSchedulerPriority a, ControlSchedulerPriority b)
 {
+#ifdef SCHED_CONTROL_MULTIBURST
     return (a.getRealtime() == b.getRealtime()) && (a.get() == b.get());
+#else
+    return a.get() == b.get();
+#endif
 }
 
 inline bool operator !=(ControlSchedulerPriority a, ControlSchedulerPriority b)
 {
+#ifdef SCHED_CONTROL_MULTIBURST
     return (a.getRealtime() != b.getRealtime()) || (a.get()!= b.get());
+#else
+    return a.get() != b.get();
+#endif
 }
 
 struct ThreadsListItem : public IntrusiveListItem
@@ -170,7 +186,7 @@ public:
     int bo;//Old burst time, is kept here multiplied by multFactor
     #ifndef SCHED_CONTROL_FIXED_POINT
     float alfa; //Sum of all alfa=1
-    float alfaPrime;
+    float alfaPrime; // Backup value for manual setting of alfa
     unsigned int theta;
     #else //FIXED_POINT_MATH
     //Sum of all alfa is 4096 except for some rounding error
