@@ -53,13 +53,16 @@ int main(){
             RecvResult result;
 	    memset(packet,0,N);
             result=rtx.recv(packet,N,tim.getValue()+offsetBetweenPing*2);
-	    //Little change before retransmit
+	    
+	    //Modify data change before retransmit
 	    for(int i=0;i<N;i++){
 		packet[i]+=10;
 	    }
 	    
-	    if(result.error==RecvResult::OK){
+	    if(result.error==RecvResult::OK && result.timestampValid){
 		rtx.sendAt(packet,N,result.timestamp+delay);
+	    }else{
+		//printf("Error\n");
 	    }
 	    //printf("%d\n",result.error);
             //memDump(packet,100);

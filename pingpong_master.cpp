@@ -57,13 +57,18 @@ int main(){
             rtx.sendAt(packet,N,t);
             ledOn();
             result=rtx.recv(packetAux,N,t + delay + 2000*N);
-	    if(result.error==RecvResult::TIMEOUT){
-		printf("Timeout\n");
-	    }else{
+	    if(result.error==RecvResult::OK && result.timestampValid){
 		//printf("received at:%lld, roundtrip: %lld, temporal roundtrip: %lld\n",result.timestamp,result.timestamp-i, result.timestamp-oldTimestamp);
-		printf("%lld\n",result.timestamp-t);
+		printf("%lld",result.timestamp-t);
 		oldTimestamp=result.timestamp;
 	    }
+	    if(!result.timestampValid){
+		printf("T.S. no valid");
+	    }
+	    if(result.error!=RecvResult::OK){
+		printf("Error # %d",result.error);
+	    }
+	    printf("\n");
             ledOff();
         }catch(exception& e){
             puts("Exc");
