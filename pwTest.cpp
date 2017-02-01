@@ -59,7 +59,7 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
 	//On long running without resync, this code will fail due to the accumulating skew
 	tickH=timer.getValue();
 	tickL=rtc.getValue();
-	timeH=(double)(tickH+HighResolutionTimerBase::clockCorrection)/48000000;
+	timeH=(double)(tickH+HRTB::clockCorrection)/48000000;
 	timeL=(double)tickL/32768;
 	bool error=timeH-timeL>0.000032;
 	if(error){
@@ -69,7 +69,7 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
 	    printf("%lld %.9f %lld %lld %.9f %.9f", 
 		tickL,
 		timeL,
-		HighResolutionTimerBase::clockCorrection,
+		HRTB::clockCorrection,
 		tickH,
 		timeH,
 		timeH-timeL);
@@ -116,10 +116,10 @@ int main(int argc, char** argv) {
     long long actualTime=rtc.getValue();
     for(int i=0;i<7;i++){
 	wakeupTick=actualTime+(32768*2)*(i+1);
-	printf("[%lld] I'm going to sleep until %lld, #%d at hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HighResolutionTimerBase::clockCorrection);
+	printf("[%lld] I'm going to sleep until %lld, #%d at hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
-	tickH=g.getValue()+HighResolutionTimerBase::clockCorrection;
+	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld!\n\n",tickL,tickH);
 	testTickCorrectness(100000,false,true);
     }
@@ -127,10 +127,10 @@ int main(int argc, char** argv) {
     printf("\tTest deepsleep until first and second Rtc overflow (2^24=16777216):\n");
     for(int i=0;i<2;i++){
 	wakeupTick=maxValue*(i+1);
-	printf("[%lld] I'm going to sleep until %lld,#%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HighResolutionTimerBase::clockCorrection);
+	printf("[%lld] I'm going to sleep until %lld,#%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
-	tickH=g.getValue()+HighResolutionTimerBase::clockCorrection;
+	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
 	testTickCorrectness(100);
     }
@@ -138,10 +138,10 @@ int main(int argc, char** argv) {
     printf("\tTest deepsleep for 2 overflows:\n");
     for(int i=0;i<5;i++){
 	wakeupTick=maxValue*4+(maxValue*2)*i;
-	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HighResolutionTimerBase::clockCorrection);
+	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
-	tickH=g.getValue()+HighResolutionTimerBase::clockCorrection;
+	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
 	testTickCorrectness(100);
     }
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
 	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue());
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
-	tickH=g.getValue()+HighResolutionTimerBase::clockCorrection;
+	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
 	testTickCorrectness(100);
     }
