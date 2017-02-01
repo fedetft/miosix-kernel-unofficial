@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
 	printf("[%lld] Waken up!\n\n",tickL);
-	testTickCorrectness(100);
+	testTickCorrectness(100000,false,true);
     }
     
     printf("\tTest of GPIOtimer after multiple sleep:\n");
