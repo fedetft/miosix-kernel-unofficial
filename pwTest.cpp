@@ -109,13 +109,13 @@ int main(int argc, char** argv) {
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
 	printf("[%lld] Waken up!\n\n",tickL);
-	testTickCorrectness(100000,false,true);
+	testTickCorrectness(100,false,true);
     }
     
     printf("\tTest of GPIOtimer after multiple sleep:\n");
     long long actualTime=rtc.getValue();
     for(int i=0;i<7;i++){
-	wakeupTick=actualTime+(32768*2)*(i+1);
+	wakeupTick=actualTime+(32768*4)*(i+1);
 	printf("[%lld] I'm going to sleep until %lld, #%d at hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
@@ -126,35 +126,38 @@ int main(int argc, char** argv) {
     
     printf("\tTest deepsleep until first and second Rtc overflow (2^24=16777216):\n");
     for(int i=0;i<2;i++){
+	Thread::sleep(10000);
 	wakeupTick=maxValue*(i+1);
 	printf("[%lld] I'm going to sleep until %lld,#%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
 	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-	testTickCorrectness(100);
+	testTickCorrectness(1000000,false,true);
     }
 
     printf("\tTest deepsleep for 2 overflows:\n");
     for(int i=0;i<5;i++){
+	Thread::sleep(10000);
 	wakeupTick=maxValue*4+(maxValue*2)*i;
 	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue()+HRTB::clockCorrection);
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
 	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-	testTickCorrectness(100);
+	testTickCorrectness(1000000,false,true);
     }
     
     printf("\tTest deepsleep for 3 overflows:\n");
     for(int i=0;i<5;i++){
+	Thread::sleep(10000);
 	wakeupTick=maxValue*15+(maxValue*3)*i;
 	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,g.getValue());
 	pm.deepSleepUntil(wakeupTick);
 	tickL=rtc.getValue();
 	tickH=g.getValue()+HRTB::clockCorrection;
 	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-	testTickCorrectness(100);
+	testTickCorrectness(1000000,false,true);
     }
     
     
