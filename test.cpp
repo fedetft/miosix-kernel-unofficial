@@ -63,8 +63,9 @@ int main(int argc, char** argv) {
     VHT& vht=VHT::instance();
     PowerManager& pm=PowerManager::instance();
     Thread::create(loop,512);
-    for(long long i=800000;;i+=800000){
-        Thread::sleep(9800);
+    long long b=0;
+    for(long long i=800000;;i+=800000,b+=24414){
+        Thread::sleepUntil(b+9800);
         for(int j=0;j<3;j++){
             long long tick=h.IRQgetCurrentTickCorrected();
             long long x=vht.uncorrected2corrected(tick);
@@ -72,18 +73,18 @@ int main(int argc, char** argv) {
             printf("Orig: %lld, VHT:%lld, Calc:%lld E:%d\n",tick,x,original,tick-original);
             
         }
-//        Thread::sleep(1000);
-//        vht.stopResyncSoft();
-//        printf("Start lock..");
-//        fflush(stdout);
-//        Thread::sleep(4000);
-//        printf("End lock\n");
-//        vht.startResyncSoft();
-//        Thread::sleep(7500);
-//        printf("[%lld] Sleep until %lld\n",rtc.getValue(),i);
-//        pm.deepSleepUntil(i);
-//
-//        printf("[%lld] Wake up!\n\n",rtc.getValue());
+        Thread::sleepUntil(b+12000);
+        vht.stopResyncSoft();
+        printf("Start lock..");
+        fflush(stdout);
+        Thread::sleepUntil(b+16000);
+        printf("End lock\n");
+        vht.startResyncSoft();
+        Thread::sleepUntil(b+20000);
+        printf("[%lld] Sleep until %lld\n",rtc.getValue(),i);
+        pm.deepSleepUntil(i);
+
+        printf("[%lld] Wake up!\n\n",rtc.getValue());
     }
     
     return 0;
