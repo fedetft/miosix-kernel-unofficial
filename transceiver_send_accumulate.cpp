@@ -8,7 +8,7 @@ using namespace std;
 using namespace miosix;
 
 const static int N=5;
-const static long long timeInterval=480000;
+const static long long timeInterval=10000000;
 
 /*
  * This is a simple sender to test the transceiver and the precise timing of 
@@ -24,23 +24,23 @@ int main(){
     TransceiverTimer& tim=TransceiverTimer::instance();
     char packet[N]={0};
     for(int i=0;i<N;i++){
-	packet[i]=i;
+        packet[i]=i;
     }
     long long oldTimestamp=0;
     rtx.turnOn();
     for(long long i=96000000;;i+=timeInterval){
-	ledOn();
+        ledOn();
 
-	try{
-            rtx.sendAt(packet,N,i);
+        try{
+            rtx.sendAt(packet,N,i,Transceiver::Unit::NS);
         }catch(exception& e){
             puts(e.what());
         }
-	ledOff();
+        ledOff();
 	
-	//printf("Sent at:%lld value return %d\n",i, HighResolutionTimerBase::aux);
-	//NOTE: this sleep is very important, if we call turnOff and turnOn immediately, the system stops
-	Thread::sleep(2);
+        //printf("Sent at:%lld value return %d\n",i, HighResolutionTimerBase::aux);
+        //NOTE: this sleep is very important, if we call turnOff and turnOn immediately, the system stops
+        Thread::sleep(2);
     }
     rtx.turnOff();
 }
