@@ -428,12 +428,13 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
         #endif //FIXED_POINT_MATH
 
         //Run each thread internal regulator
-        int eTp=it->schedData.SP_Tp - it->schedData.Tp;
-        //note: since b and bo contain the real value multiplied by
-        //multFactor, this equals b=bo+eTp/multFactor.
-        int b=it->schedData.bo + eTp;
-        //saturation
-        it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+//        int eTp=it->schedData.SP_Tp - it->schedData.Tp;
+//        //note: since b and bo contain the real value multiplied by
+//        //multFactor, this equals b=bo+eTp/multFactor.
+//        int b=it->schedData.bo + eTp;
+//        //saturation
+//        it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
+        it->schedData.bo=it->schedData.SP_Tp*multFactor;
         Trace::IRQaddToLog(id,it->schedData.SP_Tp);
         Trace::IRQaddToLog(id,it->schedData.Tp);
         id++;
@@ -494,6 +495,7 @@ static long long burstStart = 0;
 static IntrusiveList<ThreadsListItem> activeThreads;
 static IntrusiveList<ThreadsListItem>::iterator curInRound = activeThreads.end();
 static long long nextPreemption = LONG_LONG_MAX;
+static bool dontAdvanceCurInRound = false;
 
 //
 // class ControlScheduler
@@ -504,17 +506,39 @@ static inline void addThreadToActiveList(ThreadsListItem *atlEntry)
     
     switch (atlEntry->t->getPriority().getRealtime()){
         case REALTIME_PRIORITY_IMMEDIATE:
-            activeThreads.insert(curInRound,atlEntry);
-            curInRound--;curInRound--;
+        {
+            //In this case we should insert the woken thread before the current
+            //item and put the pointer to the item behind it so that
+            //IRQfindNextThread executes the woken thread and then come back
+            //to this thread which is about to be preempted!!
+            auto tmp = curInRound; tmp--;
+            if (tmp==activeThreads.end()){ 
+                // curInRound is the first Item and doing curInRound-- twice
+                // raises an exceptional behavior in which puts the pointer
+                // in the end of the list and IRQfindNextThread detects an
+                // EndOfRound situation by mistake
+                activeThreads.insert(curInRound,atlEntry);
+                curInRound--;
+                dontAdvanceCurInRound = true;
+            }else{
+                activeThreads.insert(curInRound,atlEntry);
+                curInRound--;curInRound--;
+            }
+            //A preemption would occur right after this function
             break;
+        }
         case REALTIME_PRIORITY_NEXT_BURST:
         {
             auto temp=curInRound;
             activeThreads.insert(++temp,atlEntry);
+            //No preemption should occur after this function
             break;
         }
-        default:
+        default: //REALTIME_PRIORITY_END_OF_ROUND
+        {
             activeThreads.push_back(atlEntry);
+            //No preemption should occur after this function
+        }
     }
 }
 
@@ -687,9 +711,11 @@ unsigned int ControlScheduler::IRQfindNextThread()
     {
         //Not preempting from the idle thread, store actual burst time of
         //the preempted thread
-        //int Tp=miosix_private::AuxiliaryTimer::IRQgetValue(); //CurTime - LastTime = real burst
         int Tp = static_cast<int>(timer.IRQgetCurrentTime() - burstStart);
-        cur->schedData.Tp=Tp;
+        cur->schedData.Tp+=Tp;
+        //It's multiburst => deduct consumed burst so that if activated again in
+        //this burst, the thread can not run for more than allotted time to it
+        cur->schedData.bo-=Tp;
         Tr+=Tp;
     }
 
@@ -697,7 +723,12 @@ unsigned int ControlScheduler::IRQfindNextThread()
     for(;;)
     {
         //if(curInRound!=0) curInRound=curInRound->schedData.next;
-        if(curInRound!=activeThreads.end()) curInRound++;
+        if(curInRound!=activeThreads.end()){
+            if (dontAdvanceCurInRound)
+                dontAdvanceCurInRound = false;
+            else
+                curInRound++;
+        }
         if(curInRound==activeThreads.end()) //Note: do not replace with an else
         {
             //Check these two statements:
@@ -737,6 +768,7 @@ unsigned int ControlScheduler::IRQfindNextThread()
             //End of round reached, run scheduling algorithm
             //curInRound=threadList;
             curInRound = activeThreads.front();
+            long long eorTime = timer.IRQgetCurrentTime();
             IRQrunRegulator(allReadyThreadsSaturated);
         }
 
@@ -762,11 +794,8 @@ unsigned int ControlScheduler::IRQfindNextThread()
             IRQsetNextPreemption(cur->schedData.bo/multFactor);
             return 0;
         } else {
-            //If we get here we have a non ready thread that cannot run,
-            //so regardless of the burst calculated by the scheduler
-            //we do not run it and set Tp to zero.
+            //The thread has no remaining burst time => just ignore it
             curInRound++;
-            //return UINT_MAX; //This case should not happen, just for debug!
         }
     }
 }
@@ -781,13 +810,6 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
         // The thread is no longer active -> remove it from the list
         remThreadfromActiveList(&t->schedData.atlEntry);
     }
-    #ifdef ENABLE_FEEDFORWARD
-    IRQrecalculateAlfa();
-    #endif //ENABLE_FEEDFORWARD
-    //Integrity Test
-//    for (auto it = activeThreads.begin() ; it != activeThreads.end() ; it++){
-//        assert(!(*it)->t->flags.isReady());
-//    }
 }
 
 void ControlScheduler::disableAutomaticAlfaChange()
@@ -815,15 +837,15 @@ void ControlScheduler::IRQrecalculateAlfa()
     #error "Workload div deadline preconditions not met"
     #endif
     if(disableAutoAlfaChange==false)
-    {
+    { //Alfas should be computed automatically
         //Sum of all priorities of all threads
         //Note that since priority goes from 0 to PRIORITY_MAX-1
         //but priorities we need go from 1 to PRIORITY_MAX we need to add one
         unsigned int sumPriority=0;
-        for (auto it = activeThreads.begin() ; it != activeThreads.end() ; it++)
+        for (Thread *it=threadList;it!=0;it=it->schedData.next)
         {
             //Count only ready threads
-            sumPriority+=(*it)->t->schedData.priority.get()+1;//Add one
+            sumPriority+=it->schedData.priority.get()+1;//Add one
         }
         //This can happen when ENABLE_FEEDFORWARD is set and no thread is ready
         if(sumPriority==0) return;
@@ -831,23 +853,14 @@ void ControlScheduler::IRQrecalculateAlfa()
         for (Thread *it=threadList ; it!=0 ; it=it->schedData.next)
         {
             //Assign zero bursts to blocked threads
-            if(it->flags.isReady())
-            {
-                it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
-            } else {
-                it->schedData.alfa=0;
-            }
+            it->schedData.alfa=base*((float)(it->schedData.priority.get()+1));
         }
-    }else{
+    }else{ //Alfas should be as the user set them
         float cpuLoad=0.0f;
         for(Thread *it=threadList;it!=0;it=it->schedData.next)
         {
-            if(it->flags.isReady())
-            {
-                it->schedData.alfa=it->schedData.alfaPrime;
-                cpuLoad+=it->schedData.alfaPrime;
-            } else it->schedData.alfa=0.0f;
-            
+            it->schedData.alfa=it->schedData.alfaPrime;
+            cpuLoad+=it->schedData.alfaPrime;            
         }
         if(cpuLoad<1.0f)
 	{
@@ -918,11 +931,12 @@ void ControlScheduler::IRQrunRegulator(bool allReadyThreadsSaturated)
             it->schedData.SP_Tp=(it->schedData.alfa*nextRoundTime)/4096;
             #endif //FIXED_POINT_MATH
 
-            //Run each thread internal regulator
-            int eTp=it->schedData.SP_Tp - it->schedData.Tp;
-            //note: since b and bo contain the real value multiplied by
-            //multFactor, this equals b=bo+eTp/multFactor.
-            int b=it->schedData.bo + eTp;
+//            //Run each thread internal regulator
+//            int eTp=it->schedData.SP_Tp - it->schedData.Tp;
+//            //note: since b and bo contain the real value multiplied by
+//            //multFactor, this equals b=bo+eTp/multFactor.
+//            int b=it->schedData.bo + eTp;
+            int b=it->schedData.SP_Tp*multFactor;
             //saturation
             it->schedData.bo=min(max(b,bMin*multFactor),bMax*multFactor);
             Trace::IRQaddToLog(id,it->schedData.SP_Tp);
