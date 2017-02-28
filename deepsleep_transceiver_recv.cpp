@@ -3,6 +3,7 @@
 #include "interfaces-impl/transceiver.h"
 #include "interfaces-impl/power_manager.h"
 #include "interfaces-impl/rtc.h"
+#include "interfaces-impl/transceiver_timer.h"
 
 using namespace std;
 using namespace miosix;
@@ -20,6 +21,9 @@ int main(int argc, char** argv) {
     PowerManager& pw=PowerManager::instance();
     Rtc& rtc=Rtc::instance();
     Transceiver& t=Transceiver::instance();
+    TransceiverTimer& tt=TransceiverTimer::instance();
+    
+    
     
     t.turnOn();
     for(;;){
