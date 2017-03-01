@@ -50,7 +50,6 @@ int main()
     FlooderRootNode flooder(10000000000LL,2450,1,1);
    
     for(;;){
-        printf("Entro il for\n");
         flooder.synchronize();
     }
 }

@@ -51,8 +51,8 @@ int main()
     Thread::create(dosome,512,1);
     
     HardwareTimer& timer=TransceiverTimer::instance();
-    //Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
-    Synchronizer* sync=new Flopsync1;
+    Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
+    //Synchronizer* sync=new Flopsync1;
     //the third parameter is the node ID
     FlooderSyncNode flooder(sync,10000000000LL,2450,1,1);
 
