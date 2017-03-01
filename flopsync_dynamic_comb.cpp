@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C)  2013 by Terraneo Federico                              *
+ *   Copyright (C) 2013 by Terraneo Federico                               *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,67 +25,34 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#ifndef FLOODER_ROOT_NODE_H
-#define	FLOODER_ROOT_NODE_H
-
-#include "interfaces-impl/transceiver.h"
+#include <cstdio>
+#include <miosix.h>
 #include "interfaces-impl/timer_interface.h"
-#include "interfaces-impl/power_manager.h"
-#include "synchronizer.h"
-#include "flooding_scheme.h"
+#include "interfaces-impl/transceiver_timer.h"
 
-/**
- * Glossy flooding scheme, root node
- */
-class FlooderRootNode : public FloodingScheme
+#include "flopsync_v3/protocol_constants.h"
+#include "flopsync_v3/flooder_sync_node.h"
+#include "flopsync_v3/flopsync2.h"
+#include "flopsync_v3/flopsync1.h"
+
+using namespace std;
+using namespace miosix;
+
+int main()
 {
-public:
-    /**
-     * Constructor
-     * \param syncPeriod synchronization period
-     * \param radioFrequency the radio frequency used for synchronizing
-     * \param panId pan ID
-     * \param txPower powr at which the sync packet has to be transmitted
-     */
-    FlooderRootNode(long long syncPeriod, unsigned int radioFrequency,
-                    unsigned short panId, short txPower);
+    HardwareTimer& timer=TransceiverTimer::instance();
+    //Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
+    Synchronizer* sync=new Flopsync1;
+    //the third parameter is the node ID
+    FlooderSyncNode flooder(timer,*sync,1);
 
-    /**
-     * Needs to be periodically called to send the synchronization packet.
-     * This member function sleeps till it's time to send the packet, then
-     * sends it and returns. If this function isn't called again within
-     * the synchronization period, the synchronization won't work.
-     * \return true if the node desynchronized
-     */
-    bool synchronize();
-    
-    /**
-     * \return The (local) time when the synchronization packet was
-     * actually received
-     */
-    long long getMeasuredFrameStart() const { return frameStart; }
-    
-    /**
-     * \return The (local) time when the synchronization packet was
-     * expected to be received
-     */
-    long long getComputedFrameStart() const { return frameStart; }
-    
-    /**
-     * \param enabled if true, this class prints debug data
-     */
-    void debugMode(bool enabled) { debug=enabled; }
-    
-private:
-    miosix::PowerManager& pm;
-    miosix::HardwareTimer& timer;
-    miosix::Transceiver& transceiver;
-    unsigned int radioFrequency;
-    long long frameStart;
-    int rootNodeWakeupAdvance;
-    unsigned short panId;
-    short txPower;
-    bool debug;
-};
 
-#endif //FLOODER_ROOT_NODE_H
+//     Clock *clock=new MonotonicClock(*sync,flooder);
+//     else clock=new NonMonotonicClock(*sync,flooder);
+    
+    for(;;){
+        if(flooder.synchronize()){
+	    flooder.resynchronize();
+	}
+    }
+}
