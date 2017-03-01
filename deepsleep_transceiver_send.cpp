@@ -4,6 +4,7 @@
 #include "interfaces-impl/power_manager.h"
 #include "interfaces-impl/rtc.h"
 #include "interfaces-impl/transceiver_timer.h"
+#include "interfaces-impl/vht.h"
 
 
 using namespace std;
@@ -11,7 +12,7 @@ using namespace miosix;
 
 const int n=10;
 const int packetLen=1;
-const int interval=4800000;   ///< in tick 
+const int interval=48000;   ///< in tick 
 /*
  * Send some packet, while deepsleep for a while and then continue to send packets
  */
@@ -23,7 +24,9 @@ int main(int argc, char** argv) {
     PowerManager& pw=PowerManager::instance();
     Rtc& rtc=Rtc::instance();
     int i=0;
+    VHT& vht=VHT::instance();
     
+    //vht.stopResyncSoft();
     t.turnOn();
     for(long long time=96000000;;time+=interval){
         
@@ -35,11 +38,11 @@ int main(int argc, char** argv) {
             i=-1;
         }
         if(i!=-1){
-            printf("Send #%i\n",i);
+            //printf("Send #%i\n",i);
             t.sendAt(packet,packetLen,time,Transceiver::Unit::TICK);
         }else{
             printf("Deep sleep...");
-            pw.deepSleepUntil(rtc.getValue()+32768*2);
+            pw.deepSleepUntil(rtc.getValue()+32768*2,PowerManager::Unit::TICK);
             printf("Wake up at %lld\n",getTime());
             
             //Delay to give the possibility to the receiver to wake up
