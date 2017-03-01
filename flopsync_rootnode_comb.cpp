@@ -36,8 +36,17 @@
 using namespace std;
 using namespace miosix;
 
+void dosome(void*){
+    for(;;){
+        Thread::sleep(20);
+        greenLed::toggle();
+    }
+}
 int main()
 {    
+    printf("\tRoot node\n");
+    
+    Thread::create(dosome,512,1);
     FlooderRootNode flooder(10000000000LL,2450,1,1);
    
     for(;;){

@@ -30,21 +30,31 @@
 #include "interfaces-impl/timer_interface.h"
 #include "interfaces-impl/transceiver_timer.h"
 
-#include "flopsync_v3/protocol_constants.h"
-#include "flopsync_v3/flooder_sync_node.h"
-#include "flopsync_v3/flopsync2.h"
-#include "flopsync_v3/flopsync1.h"
+#include "flopsync_v4/flooder_sync_node.h"
+#include "flopsync_v4/flopsync2.h"
+#include "flopsync_v4/flopsync1.h"
 
 using namespace std;
 using namespace miosix;
 
+void dosome(void*){
+    for(;;){
+        Thread::sleep(10);
+        greenLed::toggle();
+    }
+}
+
 int main()
 {
+    printf("Dynamic node\n");
+    
+    Thread::create(dosome,512,1);
+    
     HardwareTimer& timer=TransceiverTimer::instance();
     //Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
     Synchronizer* sync=new Flopsync1;
     //the third parameter is the node ID
-    FlooderSyncNode flooder(timer,*sync,1);
+    FlooderSyncNode flooder(sync,10000000000LL,2450,1,1);
 
 
 //     Clock *clock=new MonotonicClock(*sync,flooder);
@@ -52,7 +62,7 @@ int main()
     
     for(;;){
         if(flooder.synchronize()){
-	    flooder.resynchronize();
-	}
+            flooder.resynchronize();
+        }
     }
 }
