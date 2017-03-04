@@ -544,8 +544,15 @@ static inline void addThreadToActiveList(ThreadsListItem *atlEntry)
 }
 
 static inline void remThreadfromActiveList(ThreadsListItem *atlEntry){
+    // If the current thread in run has yielded and caused a call to this func.
+    // the curInRound pointer must advance in the list so as not to lose the
+    // track of the list and then we can delete the item
     if (*curInRound==atlEntry){
         curInRound++;
+        // Since we are sure that IRQfindNextThread will be called afterwards,
+        // it should be prevented to advance curInRound pointer again, otherwise
+        // it will skip 1 thread's burst
+        dontAdvanceCurInRound = true;
     }
     activeThreads.erase(IntrusiveList<ThreadsListItem>::iterator(atlEntry));
 }
@@ -717,7 +724,7 @@ unsigned int ControlScheduler::IRQfindNextThread()
         cur->schedData.Tp+=Tp;
         //It's multiburst => deduct consumed burst so that if activated again in
         //this burst, the thread can not run for more than allotted time to it
-        cur->schedData.bo-=Tp;
+        cur->schedData.bo-=(Tp*multFactor);
         Tr+=Tp;
     }
 
