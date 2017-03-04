@@ -19,7 +19,8 @@ void f2(void *arg){
 int main()
 {
     th1=Thread::getCurrentThread();
-    th2=Thread::create(f2,STACK_MIN,ControlSchedulerPriority(MAIN_PRIORITY,REALTIME_PRIORITY_IMMEDIATE));
+    th1->setPriority(ControlSchedulerPriority(MAIN_PRIORITY,REALTIME_PRIORITY_NEXT_BURST));
+    th2=Thread::create(f2,STACK_MIN,ControlSchedulerPriority(MAIN_PRIORITY,REALTIME_PRIORITY_NEXT_BURST));
     ControlScheduler::fixmeManualBurst(0.001f); // Burst Time = 1ms
     {
         PauseKernelLock dLock;
