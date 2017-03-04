@@ -53,7 +53,7 @@ inline void IRQtimerInterrupt(long long currentTick)
     (void)hptw;
     #ifdef SCHED_TYPE_CONTROL_BASED
     #ifdef SCHED_CONTROL_MULTIBURST
-    if (currentTick >= Scheduler::IRQgetNextPreemption() || hptw ){
+    if (currentTick >= Scheduler::IRQgetNextPreemption() || hptw){
         //End of the burst || a higher priority thread has woken up
         if (isRaceConditionHappening==false) Scheduler::IRQfindNextThread();//If the kernel is running, preempt
         if(kernel_running!=0) tick_skew=true;
@@ -65,7 +65,21 @@ inline void IRQtimerInterrupt(long long currentTick)
     if (isRaceConditionHappening==false) Scheduler::IRQfindNextThread();//If the kernel is running, preempt
     if(kernel_running!=0) tick_skew=true;
     #endif
+    #elif defined(SCHED_TYPE_PRIORITY)
+    //With the priority scheduler every tick causes a context switch
+    Scheduler::IRQfindNextThread();//If the kernel is running, preempt
+    if(kernel_running!=0) tick_skew=true;
+    #elif defined(SCHED_TYPE_EDF)
+    //With the EDF scheduler a preemption happens only if a thread with a closer
+    //deadline appears. So by default there is no need to call the scheduler;
+    //only if some threads were woken, they may have closer deadlines
+    if(hptw)
+    {
+        Scheduler::IRQfindNextThread();
+        if(kernel_running!=0) tick_skew=true;
+    }
     #endif
+
     
 //    miosix_private::IRQstackOverflowCheck();
 //    bool woken=IRQwakeThreads();//Increment tick and wake threads,if any
