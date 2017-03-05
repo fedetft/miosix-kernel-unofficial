@@ -160,15 +160,13 @@ public:
     static void PKsetTheta(Thread *t, unsigned theta) { t->schedData.theta=theta;}
     static void fixmeManualBurst(float burstLength);
 
-private:
-    
     /**
      * \internal
      * When priorities are modified, this function recalculates alfa for each
      * thread. Must be called with kernel paused
      */
     static void IRQrecalculateAlfa();
-
+private:
     /**
      * Called by IRQfindNextThread(), this function is where the control based
      * scheduling algorithm is run. It is called once per round.

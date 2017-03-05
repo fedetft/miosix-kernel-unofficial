@@ -178,8 +178,8 @@ struct ThreadsListItem : public IntrusiveListItem
 class ControlSchedulerData
 {
 public:
-    ControlSchedulerData(): priority(0), bo(bNominal*multFactor), alfa(0), theta(1),
-            SP_Tp(0), Tp(bNominal), next(0) {}
+    ControlSchedulerData(): priority(0), bo(bNominal*multFactor), alfa(0),
+            alfaPrime(0), theta(1), SP_Tp(0), Tp(bNominal), next(0) {}
 
     //Thread priority. Higher priority means longer burst
     ControlSchedulerPriority priority;
