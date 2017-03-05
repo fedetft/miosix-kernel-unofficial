@@ -303,8 +303,8 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
 void ControlScheduler::disableAutomaticAlfaChange()
  {
     InterruptDisableLock dLock;
-    //for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    //    it->schedData.alfaPrime=it->schedData.alfa;
+    for(Thread *it=threadList;it!=0;it=it->schedData.next)
+        it->schedData.alfaPrime=it->schedData.alfa;
     disableAutoAlfaChange=true;
     IRQrecalculateAlfa();
 }
@@ -576,14 +576,18 @@ bool ControlScheduler::PKaddThread(Thread *thread,
         SP_Tr+=bNominal; //One thread more, increase round time
         // Insert the thread in activeThreads list according to its real-time
         // priority
-        if (thread->flags.isReady()){
+        if (thread->flags.isReady())
             addThreadToActiveList(&thread->schedData.atlEntry);
-            thread->schedData.lastReadyStatus = true;
-        }else{
-            thread->schedData.lastReadyStatus = false;
-        }
+        if (disableAutoAlfaChange){
+            disableAutoAlfaChange = false;
+            IRQrecalculateAlfa();
+            for(Thread *it=threadList;it!=0;it=it->schedData.next)
+                it->schedData.alfaPrime=it->schedData.alfa;
+            disableAutoAlfaChange=true;
+            IRQrecalculateAlfa();
+        }else
+            IRQrecalculateAlfa();
         
-        IRQrecalculateAlfa();
     }
     return true;
 }
@@ -775,11 +779,11 @@ unsigned int ControlScheduler::IRQfindNextThread()
             //End of round reached, run scheduling algorithm
             //curInRound=threadList;
             curInRound = activeThreads.front();
-            long long eorTime = timer.IRQgetCurrentTime();
+//            long long eorTime = timer.IRQgetCurrentTime();
             IRQrunRegulator(allReadyThreadsSaturated);
         }
 
-        if((*curInRound)->t->flags.isReady() && (*curInRound)->t->schedData.bo>0)
+        if((*curInRound)->t->flags.isReady() && (*curInRound)->t->schedData.bo>0) 
         {
             //Found a READY thread, so run this one
             cur=(*curInRound)->t;
@@ -796,8 +800,6 @@ unsigned int ControlScheduler::IRQfindNextThread()
             #else //WITH_PROCESSES
             ctxsave=cur->ctxsave;
             #endif //WITH_PROCESSES
-            //miosix_private::AuxiliaryTimer::IRQsetValue(
-            //        curInRound->schedData.bo/multFactor);
             IRQsetNextPreemption(cur->schedData.bo/multFactor);
             return 0;
         } else {
@@ -822,8 +824,8 @@ void ControlScheduler::IRQwaitStatusHook(Thread* t)
 void ControlScheduler::disableAutomaticAlfaChange()
  {
     InterruptDisableLock dLock;
-    //for(Thread *it=threadList;it!=0;it=it->schedData.next)
-    //    it->schedData.alfaPrime=it->schedData.alfa;
+    for(Thread *it=threadList;it!=0;it=it->schedData.next)
+        it->schedData.alfaPrime=it->schedData.alfa;
     disableAutoAlfaChange=true;
     IRQrecalculateAlfa();
 }
