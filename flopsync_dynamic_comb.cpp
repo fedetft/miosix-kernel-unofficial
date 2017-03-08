@@ -29,40 +29,64 @@
 #include <miosix.h>
 #include "interfaces-impl/timer_interface.h"
 #include "interfaces-impl/transceiver_timer.h"
+#include "interfaces-impl/vht.h"
+#include "interfaces-impl/virtual_clock.h"
 
 #include "flopsync_v4/flooder_sync_node.h"
 #include "flopsync_v4/flopsync2.h"
 #include "flopsync_v4/flopsync1.h"
+#include "flopsync_v4/flooder_factory.h"
 
 using namespace std;
 using namespace miosix;
 
-void dosome(void*){
+const int hop=1;
+
+void prova1(void*){
     for(;;){
-        Thread::sleep(10);
-        greenLed::toggle();
+        Thread::sleep(400);
+        printf("y\n");
+    }
+}
+
+void prova2(void*){
+    for(;;){
+        Thread::sleep(600);
+        printf("x\n");
+    }
+}
+
+void flopsyncRadio(void*){    
+    printf("\tDynamic node, hop #%d\n",hop);
+    
+    VirtualClock& vt=VirtualClock::instance();
+    FlooderSyncNode& flooder=FlooderFactory::instance();
+    TransceiverTimer g=TransceiverTimer::instance();
+    flooder.forceHop(hop);
+    for(;;){
+        bool resync=flooder.synchronize();
+        if(resync){
+            flooder.resynchronize();
+        }else{
+            //printf("Do roundtrip... [MOCK PRINT]\n");
+            Thread::sleep(500);
+            long long now=g.getValue();
+            long long time=vt.uncorrected2corrected(now);
+            long long original=vt.corrected2uncorrected(time);
+            printf("Now:%lld Correc:%lld original:%lld\n",now,time,original);
+            Thread::sleep(500);
+        }
     }
 }
 
 int main()
 {
-    printf("Dynamic node\n");
+    Thread::create(flopsyncRadio,2048,PRIORITY_MAX-1);
     
-    Thread::create(dosome,512,1);
+    Thread::create(prova1,2048,1);
+    Thread::create(prova2,2048,1);
     
-    HardwareTimer& timer=TransceiverTimer::instance();
-    Synchronizer *sync=new Flopsync2; //The new FLOPSYNC, FLOPSYNC 2
-    //Synchronizer* sync=new Flopsync1;
-    //the third parameter is the node ID
-    FlooderSyncNode flooder(sync,10000000000LL,2450,1,1);
-
-
-//     Clock *clock=new MonotonicClock(*sync,flooder);
-//     else clock=new NonMonotonicClock(*sync,flooder);
+    Thread::sleep(1000000000);
     
-    for(;;){
-        if(flooder.synchronize()){
-            flooder.resynchronize();
-        }
-    }
+    return 0;
 }

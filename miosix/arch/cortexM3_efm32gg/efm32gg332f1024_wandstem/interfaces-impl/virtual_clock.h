@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2013 by Terraneo Federico                               *
+ *   Copyright (C) 2016 by Fabiano Riccardi                                *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,37 +25,69 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include <cstdio>
-#include "interfaces-impl/transceiver.h"
-#include "interfaces-impl/timer_interface.h"
-#include "interfaces-impl/transceiver_timer.h"
-#include "interfaces-impl/rtc.h"
-#include "interfaces-impl/vht.h"
-#include "flopsync_v4/flooder_root_node.h"
+#ifndef VIRTUAL_CLOCK_H
+#define VIRTUAL_CLOCK_H
 
+#include "kernel/timeconversion.h"
+#include "cassert"
+#include "stdio.h"
+#include "miosix.h"
 
-using namespace std;
 using namespace miosix;
 
-void flopsyncRadio(void*){
-    printf("\tRoot node\n");
-    VHT::instance().stopResyncSoft();
+class VirtualClock {
+public:
+    static VirtualClock& instance();
     
-    FlooderRootNode flooder(10000000000LL,2450,1,1);
-    Rtc& rtc=Rtc::instance();
-    for(;;){
-        printf("[%lld][%lld] Doing synchronize...\n",getTime()/1000000000,rtc.getValue());
-        flooder.synchronize();
-        //printf("Do roundtrip... [MOCK PRINT]\n");
-        //printf("Do protocol... [MOCK PRINT]\n\n");
+    /**
+     * Uncorrect a given tick value with the windows parameter
+     * @param tick in HIGH frequency
+     * @return  
+     */
+    long long corrected2uncorrected(long long tick){
+        return baseComputed+fastNegMul((tick-baseTheoretical),inverseFactorI,inverseFactorD);
     }
-}
+        
+    /**
+     * Correct a given tick value with the windows parameter
+     * @param tick in HIGH frequency
+     * @return 
+     */
+    long long uncorrected2corrected(long long tick){
+        return baseTheoretical+fastNegMul(tick-baseComputed,factorI,factorD);
+    }
+    
+    void update(long long baseTheoretical, long long baseComputed, long long clockCorrection);
+    
+    void setSyncPeriod(long long syncPeriod){
+        if(syncPeriod>maxPeriod) throw 0;
+        this->syncPeriod=syncPeriod;
+    }
+    
+private:
+    VirtualClock(){};
+    VirtualClock(const VirtualClock&)=delete;
+    VirtualClock& operator=(const VirtualClock&)=delete;
+    
+    long long fastNegMul(long long a,unsigned int bi, unsigned int bf){
+        if(a<0){
+            return -mul64x32d32(-a,bi,bf);
+        }else{
+            return mul64x32d32(a,bi,bf);
+        }
+    }
+    
+    //Max period, necessary to guarantee the proper behaviour of runUpdate
+    //They are 2^40=1099s
+    const long long maxPeriod=1099511627775;
+    long long syncPeriod=-1;
+    long long baseTheoretical=0;
+    long long baseComputed=0;
+    unsigned int factorI=1;
+    unsigned int factorD=0;
+    unsigned int inverseFactorI=1;
+    unsigned int inverseFactorD=0;
+};
 
-int main()
-{    
-    Thread::create(flopsyncRadio,2048,1);
-    
-    Thread::sleep(0xFFFFFFFF);
-    
-    return 0;
-}
+#endif /* VIRTUAL_CLOCK_H */
+

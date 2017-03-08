@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2013 by Terraneo Federico                               *
+ *   Copyright (C) 2016 by Fabiano Riccardi                                *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,37 +25,29 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include <cstdio>
-#include "interfaces-impl/transceiver.h"
-#include "interfaces-impl/timer_interface.h"
-#include "interfaces-impl/transceiver_timer.h"
-#include "interfaces-impl/rtc.h"
-#include "interfaces-impl/vht.h"
-#include "flopsync_v4/flooder_root_node.h"
+#include "virtual_clock.h"
 
+VirtualClock& VirtualClock::instance(){
+    static VirtualClock vt;
+    return vt;
+}
 
-using namespace std;
-using namespace miosix;
+void VirtualClock::update(long long baseTheoretical, long long baseComputed, long long clockCorrection){
+        assert(syncPeriod!=-1);
+        //efficient way to calculate the factor T/(T+u(k))
+        long long temp=(syncPeriod<<24)/(syncPeriod+clockCorrection);
+        //calculate inverse of previous factor (T+u(k))/T
+        long long inverseTemp = ((syncPeriod+clockCorrection)<<24)/syncPeriod;
+        {
+            FastInterruptDisableLock dLock;
+            factorI = static_cast<unsigned int>((temp & 0x00FFFFFFFF000000LLU)>>24);
+            factorD = static_cast<unsigned int>(temp<<8);
 
-void flopsyncRadio(void*){
-    printf("\tRoot node\n");
-    VHT::instance().stopResyncSoft();
-    
-    FlooderRootNode flooder(10000000000LL,2450,1,1);
-    Rtc& rtc=Rtc::instance();
-    for(;;){
-        printf("[%lld][%lld] Doing synchronize...\n",getTime()/1000000000,rtc.getValue());
-        flooder.synchronize();
-        //printf("Do roundtrip... [MOCK PRINT]\n");
-        //printf("Do protocol... [MOCK PRINT]\n\n");
+            inverseFactorI = static_cast<unsigned int>((inverseTemp & 0x00FFFFFFFF000000LLU)>>24);
+            inverseFactorD = static_cast<unsigned int>(inverseTemp<<8);
+
+            this->baseTheoretical=baseTheoretical;
+            this->baseComputed=baseComputed;
+        }
+        //printf("%u %u %u %u %lld %lld\n",factorI,factorD,inverseFactorI,inverseFactorD,this->baseTheoretical, this->baseComputed);
     }
-}
-
-int main()
-{    
-    Thread::create(flopsyncRadio,2048,1);
-    
-    Thread::sleep(0xFFFFFFFF);
-    
-    return 0;
-}
