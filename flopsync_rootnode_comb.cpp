@@ -39,15 +39,12 @@ using namespace miosix;
 
 void flopsyncRadio(void*){
     printf("\tRoot node\n");
-    VHT::instance().stopResyncSoft();
     
     FlooderRootNode flooder(10000000000LL,2450,1,1);
     Rtc& rtc=Rtc::instance();
     for(;;){
         printf("[%lld][%lld] Doing synchronize...\n",getTime()/1000000000,rtc.getValue());
         flooder.synchronize();
-        //printf("Do roundtrip... [MOCK PRINT]\n");
-        //printf("Do protocol... [MOCK PRINT]\n\n");
     }
 }
 
