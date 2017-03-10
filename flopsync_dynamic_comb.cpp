@@ -70,10 +70,10 @@ void flopsyncRadio(void*){
         }else{
             //printf("Do roundtrip... [MOCK PRINT]\n");
             Thread::sleep(500);
-            long long now=g.getValue();
-            long long time=vt.uncorrected2corrected(now);
-            long long original=vt.corrected2uncorrected(time);
-            printf("Now:%lld Correc:%lld original:%lld\n",now,time,original);
+//            long long now=g.getValue();
+//            long long time=vt.uncorrected2corrected(now);
+//            long long original=vt.corrected2uncorrected(time);
+//            printf("Now:%lld Correc:%lld original:%lld\n",now,time,original);
             Thread::sleep(500);
         }
     }
@@ -83,8 +83,8 @@ int main()
 {
     Thread::create(flopsyncRadio,2048,PRIORITY_MAX-1);
     
-    Thread::create(prova1,2048,1);
-    Thread::create(prova2,2048,1);
+//    Thread::create(prova1,2048,1);
+//    Thread::create(prova2,2048,1);
     
     Thread::sleep(1000000000);
     
