@@ -25,20 +25,23 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+/**
+ * Test that aims to check if the time is always corrected after a deep sleep.
+ * The VHT should be disabled to see both clock diverge, better to scheduler 
+ * sleep period in TICK to avoid conversion error.
+ */
+
 #include <stdio.h>
 #include "miosix.h"
 #include "interfaces-impl/rtc.h"
 #include "interfaces-impl/power_manager.h"
 #include "interfaces-impl/hrtb.h"
-#include "kernel/timeconversion.h"
 #include "interfaces-impl/vht.h"
 
 using namespace std;
 using namespace miosix;
 
 const int maxValue= 16777216; //2^24
-
-TimeConversion *tc48000=nullptr;
 
 void blink(void*){
     for(;;){
@@ -73,11 +76,13 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
             tickL=rtc.IRQgetValue();
             tickH=hrtb.IRQgetCurrentTickCorrected();
         }
-        timeH=tc48000->tick2ns(tickH);
-        timeL=rtc.tick2ns(tickL);
+        //timeH=tc48000->tick2ns(tickH);
+        //Conversion precise as possible, performance aren't importatnt
+        timeH=(double)tickH*1000/48;
+        timeL=(double)tickL*1953125/64;
         long long diff=timeH-timeL;
         // 1/32768=0,00003051757813 --> 31000ns approx
-        bool error = diff>32000 || diff<-10000 ;
+        bool error = diff>32000 || diff<-1000 ;
         if(error){
             printf("Sync error @iteration# %d --> \t\t",i);
         }
@@ -100,6 +105,16 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
 }
 
 int main(int argc, char** argv) {
+//    long long toConvert=0;
+//    int step=500000000;
+//    for(int i=0;i<100000;i++){
+//        long long converted=mul64x32d32(toConvert,0,1784582144);
+//        double precise=(double)toConvert*0.41550540924072f;
+//        printf("%lld %lld %f %lld\n", toConvert, converted, precise, converted-(long long)precise);
+//        toConvert+=step;
+//    }
+//    return 0;
+    
     printf("\t\tTest DeepSleep\n\n");
     VHT::instance().stopResyncSoft();
     
@@ -107,10 +122,6 @@ int main(int argc, char** argv) {
     PowerManager& pm=PowerManager::instance();
     Rtc& rtc=Rtc::instance();
     printf(" Done!\n");
-    
-    printf("Instantiation of TimeConversion...");
-    TimeConversion tc48000=TimeConversion(48000000);
-    ::tc48000=&tc48000;
     
     //NB: in this phase HRTB is already instantiated by ContextSwitchTimer
     printf("Instantiation of GPIOtimer...");
@@ -121,7 +132,7 @@ int main(int argc, char** argv) {
     long long tickH,tickL;
     long long wakeupTick;
 
-    testTickCorrectness(100000,true,false);
+    testTickCorrectness(100);
         
     printf("\tTest of deepSleep multiple times:\n");
     for(int i=0;i < 7;i++){
@@ -130,56 +141,56 @@ int main(int argc, char** argv) {
         pm.deepSleepUntil(wakeupTick,PowerManager::Unit::TICK);
         tickL=rtc.getValue();
         printf("[%lld] Waken up!\n\n",tickL);
-        testTickCorrectness(100,true,false);
+        testTickCorrectness(100,false,true);
     }
     
-//    printf("\tTest of GPIOtimer after multiple sleep:\n");
-//    long long actualTime=rtc.getValue();
-//    for(int i=0;i<7;i++){
-//	wakeupTick=actualTime+(32768*4)*(i+1);
-//	printf("[%lld] I'm going to sleep until %lld, #%d at hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
-//	pm.deepSleepUntil(wakeupTick);
-//	tickL=rtc.getValue();
-//	tickH=hrtb.getCurrentTickCorrected();
-//	printf("[%lld] Waken up at %lld!\n\n",tickL,tickH);
-//	testTickCorrectness(100000,false,true);
-//    }
-//    
-//    printf("\tTest deepsleep until first and second Rtc overflow (2^24=16777216):\n");
-//    for(int i=0;i<2;i++){
-//	Thread::sleep(10000);
-//	wakeupTick=maxValue*(i+1);
-//	printf("[%lld] I'm going to sleep until %lld,#%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
-//	pm.deepSleepUntil(wakeupTick);
-//	tickL=rtc.getValue();
-//	tickH=hrtb.getCurrentTickCorrected();
-//	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-//	testTickCorrectness(1000000,false,true);
-//    }
-//
-//    printf("\tTest deepsleep for 2 overflows:\n");
-//    for(int i=0;i<5;i++){
-//	Thread::sleep(10000);
-//	wakeupTick=maxValue*4+(maxValue*2)*i;
-//	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
-//	pm.deepSleepUntil(wakeupTick);
-//	tickL=rtc.getValue();
-//	tickH=hrtb.getCurrentTickCorrected();
-//	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-//	testTickCorrectness(1000000,false,true);
-//    }
-//    
-//    printf("\tTest deepsleep for 3 overflows:\n");
-//    for(int i=0;i<5;i++){
-//	Thread::sleep(10000);
-//	wakeupTick=maxValue*15+(maxValue*3)*i;
-//	printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
-//	pm.deepSleepUntil(wakeupTick);
-//	tickL=rtc.getValue();
-//	tickH=hrtb.getCurrentTickCorrected();
-//	printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
-//	testTickCorrectness(1000000,false,true);
-//    }
+    printf("\tTest of GPIOtimer after multiple sleep:\n");
+    long long actualTime=rtc.getValue();
+    for(int i=0;i<7;i++){
+        wakeupTick=actualTime+(32768*4)*(i+1);
+        printf("[%lld] I'm going to sleep until %lld, #%d at hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
+        pm.deepSleepUntil(wakeupTick,PowerManager::Unit::TICK);
+        tickL=rtc.getValue();
+        tickH=hrtb.getCurrentTickCorrected();
+        printf("[%lld] Waken up at %lld!\n\n",tickL,tickH);
+        testTickCorrectness(100000,false,true);
+    }
+    
+    printf("\tTest deepsleep until first and second Rtc overflow (2^24=16777216):\n");
+    for(int i=0;i<2;i++){
+        Thread::sleep(10000);
+        wakeupTick=maxValue*(i+1);
+        printf("[%lld] I'm going to sleep until %lld,#%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
+        pm.deepSleepUntil(wakeupTick,PowerManager::Unit::TICK);
+        tickL=rtc.getValue();
+        tickH=hrtb.getCurrentTickCorrected();
+        printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
+        testTickCorrectness(1000000,false,true);
+    }
+
+    printf("\tTest deepsleep for 2 overflows:\n");
+    for(int i=0;i<5;i++){
+        Thread::sleep(10000);
+        wakeupTick=maxValue*4+(maxValue*2)*i;
+        printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
+        pm.deepSleepUntil(wakeupTick,PowerManager::Unit::TICK);
+        tickL=rtc.getValue();
+        tickH=hrtb.getCurrentTickCorrected();
+        printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
+        testTickCorrectness(1000000,false,true);
+    }
+    
+    printf("\tTest deepsleep for 3 overflows:\n");
+    for(int i=0;i<5;i++){
+        Thread::sleep(10000);
+        wakeupTick=maxValue*15+(maxValue*3)*i;
+        printf("[%lld] I'm going to sleep until %lld, #%d hrt:%lld...\n",rtc.getValue(),wakeupTick,i+1,hrtb.getCurrentTickCorrected());
+        pm.deepSleepUntil(wakeupTick,PowerManager::Unit::TICK);
+        tickL=rtc.getValue();
+        tickH=hrtb.getCurrentTickCorrected();
+        printf("[%lld] Waken up at %lld\n\n",tickL,tickH);
+        testTickCorrectness(1000000,false,true);
+    }
     
     
     
