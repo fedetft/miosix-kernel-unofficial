@@ -41,7 +41,7 @@
 using namespace std;
 using namespace miosix;
 
-const int maxValue= 16777216; //2^24
+const int maxValue = 16777216; //2^24
 
 void blink(void*){
     for(;;){
@@ -76,8 +76,7 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
             tickL=rtc.IRQgetValue();
             tickH=hrtb.IRQgetCurrentTickCorrected();
         }
-        //timeH=tc48000->tick2ns(tickH);
-        //Conversion precise as possible, performance aren't importatnt
+        //Conversion precise as possible, performance aren't important
         timeH=(double)tickH*1000/48;
         timeL=(double)tickL*1953125/64;
         long long diff=timeH-timeL;
@@ -105,17 +104,8 @@ void testTickCorrectness(int n, bool verbose=0, bool forceReturnOnError=0){
 }
 
 int main(int argc, char** argv) {
-//    long long toConvert=0;
-//    int step=500000000;
-//    for(int i=0;i<100000;i++){
-//        long long converted=mul64x32d32(toConvert,0,1784582144);
-//        double precise=(double)toConvert*0.41550540924072f;
-//        printf("%lld %lld %f %lld\n", toConvert, converted, precise, converted-(long long)precise);
-//        toConvert+=step;
-//    }
-//    return 0;
-    
     printf("\t\tTest DeepSleep\n\n");
+    //I want to see the effect of the skew
     VHT::instance().stopResyncSoft();
     
     printf("Instantiation of PowerManager and Rtc...");
