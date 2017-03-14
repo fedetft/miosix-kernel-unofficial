@@ -45,6 +45,7 @@ void flopsyncRadio(void*){
     for(;;){
         printf("[%lld][%lld] Doing synchronize...\n",getTime()/1000000000,rtc.getValue());
         flooder.synchronize();
+        Thread::sleep(1000);
     }
 }
 
