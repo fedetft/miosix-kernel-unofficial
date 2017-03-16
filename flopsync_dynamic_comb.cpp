@@ -67,13 +67,8 @@ void flopsyncRadio(void*){
         bool resync=flooder.synchronize();
         if(resync){
             flooder.resynchronize();
-        }else{
-            //printf("Do roundtrip... [MOCK PRINT]\n");
+        }else{                        
             Thread::sleep(500);
-//            long long now=g.getValue();
-//            long long time=vt.uncorrected2corrected(now);
-//            long long original=vt.corrected2uncorrected(time);
-//            printf("Now:%lld Correc:%lld original:%lld\n",now,time,original);
             Thread::sleep(500);
         }
     }
