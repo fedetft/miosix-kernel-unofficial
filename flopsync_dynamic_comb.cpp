@@ -61,7 +61,6 @@ void flopsyncRadio(void*){
     
     VirtualClock& vt=VirtualClock::instance();
     FlooderSyncNode& flooder=FlooderFactory::instance();
-    TransceiverTimer g=TransceiverTimer::instance();
     flooder.forceHop(hop);
     for(;;){
         bool resync=flooder.synchronize();
