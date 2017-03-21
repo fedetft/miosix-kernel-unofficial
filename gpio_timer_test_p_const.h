@@ -56,7 +56,7 @@ const long long startMaster = 48000000;
 const long long offsetBetweenPing = 1920000; //40ms
 
 //Slave
-const long long delay = 96000; //1ms
+const long long delay = t1ms; //1ms
 
 
 #endif /* GPIO_TIMER_TEST_CONST_H */

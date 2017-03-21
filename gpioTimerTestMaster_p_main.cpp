@@ -30,6 +30,7 @@
 #include "interfaces-impl/gpio_timer.h"
 #include "gpio_timer_test_p_const.h"
 
+
 using namespace std;
 using namespace miosix;
 
@@ -46,8 +47,8 @@ int main(int argc, char** argv) {
     long long timestamp;
     for(long long i=0;i<sizeof(noticeableValues)/sizeof(noticeableValues[0]);i++){
         if(!g.absoluteWaitTrigger(noticeableValues[i])){
-            w=g.waitTimeoutOrEvent(timeout);
-            timestamp=g.getExtEventTimestamp();
+            w=g.waitTimeoutOrEvent(delay+1000);
+            timestamp=g.getExtEventTimestamp(HardwareTimer::Correct::CORR);
             //printf("Send at: %lld Timestamp received: %lld diff=%lld diff between past event:%lld\n",i,timestamp,timestamp-i,timestamp-oldtimestamp);
             printf("(%lld:%lld)\n",noticeableValues[i],timestamp-noticeableValues[i]);
         }else{
@@ -62,10 +63,10 @@ int main(int argc, char** argv) {
     for(long long i=0;i<65536;i++){
         if(!g.absoluteWaitTrigger(base+i*(65536*4)+i)){
             w=g.waitTimeoutOrEvent(timeout);
-            timestamp=g.getExtEventTimestamp();
+            timestamp=g.getExtEventTimestamp(HardwareTimer::Correct::CORR);
             diff=timestamp-(base+i*(65536*4)+i);
-	    if(diff<delay||diff>delay+1){
-		printf("%lld\n",diff);
+            if(diff<delay-1||diff>delay+1){
+                printf("%lld\n",diff);
             }
         }else{
             printf("Wake in the past\n");

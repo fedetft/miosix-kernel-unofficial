@@ -43,9 +43,9 @@ int main(int argc, char** argv) {
     //in tick, stay below 0.1 second to avoid (great) dependencies on the temperature and intrinsic quartz skew.
     long long timestamp,oldtimestamp=0; 
     for(;;){
-	g.waitTimeoutOrEvent(timeout);
-	timestamp=g.getExtEventTimestamp();
-	g.absoluteWaitTrigger(timestamp+delay);
+        g.waitTimeoutOrEvent(timeout);
+        timestamp=g.getExtEventTimestamp(HardwareTimer::Correct::CORR);
+        g.absoluteWaitTrigger(timestamp+delay);
     }
     return 0;
 }
