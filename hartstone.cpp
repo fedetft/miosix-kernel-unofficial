@@ -110,13 +110,26 @@ void Hartstone::rescaleAlfa()
     PauseKernelLock dLock;
     //NOTE: With the full workload div deadline algorithm PKsetAlfa() will
     //touch alfaPrime, not alfa, and alfaPrime is not subject to the constraint
-    //that the sum of all alfaPrime should be one, so no rescailng is done here
+    //that the sum of all alfaPrime s//#ifndef SCHED_CONTROL_MULTIBURST
+    //ControlScheduler::PKsetAlfa(Thread::getCurrentThread(),0.05f);
+    //for(unsigned int i=0;i<threads.size();i++)
+    //{
+    //    float k=(0.00125f*threads[i].load/(0.001f*threads[i].period));
+    //    ControlScheduler::PKsetAlfa(threads[i].thread,k);
+    //}
+    //Alfa (CPU Share) for thread t = freq(t)/sum(freq);
+    float tot = 0;
+    for(unsigned int i=0;i<threads.size();i++)
+    {
+        tot += 1.0f/threads[i].period;
+    }
     ControlScheduler::PKsetAlfa(Thread::getCurrentThread(),0.05f);
     for(unsigned int i=0;i<threads.size();i++)
     {
-        float k=(0.00125f*threads[i].load/(0.001f*threads[i].period));
+        float k=(1.0f/threads[i].period)/tot;
         ControlScheduler::PKsetAlfa(threads[i].thread,k);
     }
+    ControlScheduler::IRQrecalculateAlfa();
 }
 #endif //SCHED_TYPE_CONTROL_BASED
 
