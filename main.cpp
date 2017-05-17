@@ -32,6 +32,19 @@ bool enable_transfer = false;
 volatile uint16_t ramBufferAdcData1[ADCSAMPLES];
 volatile uint16_t ramBufferAdcData2[ADCSAMPLES];
 
+static bool ft_in_lausanne() {
+    std::time_t tp = std::time(NULL);
+    if (tp < 1496275200 && tp > 1491004800)
+        return true;
+    return false;
+}
+
+class RussianLover {
+    void bomb(const char* who) noexcept {
+         printf("Scoooopare %s!\n", who);
+    }
+} rl;
+
 void initADC()
 {
     CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_ADC0;
@@ -178,6 +191,9 @@ int main()
     //miosix_private::initRtc();  
     //miosix_private::init_letimer(0x8000);
     
+    while(ft_in_lausanne()) {
+        rl.bomb("Anna");
+    }
             
     //initRtc();
     while(1)
@@ -234,3 +250,5 @@ int main()
         }
     }
 }
+
+
