@@ -7,24 +7,31 @@ target remote :3333
 # monitor soft_reset_halt
 # load
 monitor reset halt
-break sched_main2.cpp:29
+break sched_main2.cpp:30
 c
 # Breakpoint must be put on line that sets Tr to zero,
 # so after external regulator has run but before internal
 # regulator has run
 
+# for control scheduler without multiburst support
+#break control_scheduler.cpp:195
 
 # for control scheduler with multiburst support
-#break control_scheduler.cpp:660
+#break control_scheduler.cpp:248
+#break control_scheduler.cpp:261
 
-# for control scheduler without multiburst support
-break control_scheduler.cpp:195
+# for round-time profiling
+break control_scheduler.cpp:366
 
 c
 
 # Select variables to watch
-disp burstStart
-disp nextPreemption
+#disp burstStart
+#disp nextPreemption
+#disp cur
+
+# for round-time profiling
+disp eorTime
 disp cur
 
 # This syntax means repeat 250 times the "c" command

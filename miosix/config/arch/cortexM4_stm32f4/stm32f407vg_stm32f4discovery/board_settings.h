@@ -49,7 +49,7 @@ namespace miosix {
 const unsigned int MAIN_STACK_SIZE=4*1024;
 
 /// Context Switch Quantum Size (measured in nanoseconds)
-const unsigned int preemptionPeriodNs=1000000;
+const unsigned int preemptionPeriodNs=1000000/2;
 
 /// Frequency of tick (in Hz). The frequency of the STM32F100RB timer in the
 /// stm32vldiscovery board can be divided by 1000. This allows to use a 1KHz

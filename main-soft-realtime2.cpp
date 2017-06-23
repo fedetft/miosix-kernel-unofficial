@@ -241,18 +241,28 @@ void benchmark4m()
     Profiler::stop();
     Hartstone::commonStats();
 }
-
+//#define HARTSTONE_EXT
 int main()
 {
-#ifdef SCHED_TYPE_CONTROL_BASED
-    ControlScheduler::fixmeManualBurst(0.004f);
-#endif
     getchar();
     Hartstone::setQuiet(false);
+#ifdef HARTSTONE_EXT
+    //HARTSTONE-EXT TEST
+    #ifdef SCHED_TYPE_CONTROL_BASED
+    ControlScheduler::fixmeManualBurst(0.004f);
+    #endif
     Hartstone::setStopProfilerOnMiss(false);
     Hartstone::setExternelBenchmark(1,benchmark1m);
     Hartstone::setExternelBenchmark(2,benchmark2m);
     Hartstone::setExternelBenchmark(3,benchmark3m);
     Hartstone::setExternelBenchmark(4,benchmark4m);
+#else
+    //HARTSTONE TEST
+#if defined (SCHED_TYPE_CONTROL_BASED) && defined(SCHED_CONTROL_PIMB)
+    ControlScheduler::fixmeManualBurst(0.0005f);
+#elif defined (SCHED_TYPE_CONTROL_BASED)
+    ControlScheduler::fixmeManualBurst(0.0002f);
+#endif
+#endif
     Hartstone::performBenchmark();
 }
