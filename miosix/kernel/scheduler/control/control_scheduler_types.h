@@ -196,7 +196,7 @@ public:
     int Tp;//Real processing time
     Thread *next;//Next thread in list
     ThreadsListItem atlEntry; //Entry in activeThreads list
-    bool lastReadyStatus;
+    bool wokenDuringBurst; // for recalculation of bursts (Multiburst Support)
 };
 
 } //namespace miosix

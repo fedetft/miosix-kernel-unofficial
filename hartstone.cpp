@@ -44,7 +44,7 @@ typedef Gpio<GPIOD_BASE,13> led1;
 typedef Gpio<GPIOD_BASE,14> led2;
 typedef Gpio<GPIOD_BASE,15> led3;
 #else
-#error 
+//#error 
 #endif
 
 /**
@@ -111,13 +111,7 @@ void Hartstone::rescaleAlfa()
     //NOTE: With the full workload div deadline algorithm PKsetAlfa() will
     //touch alfaPrime, not alfa, and alfaPrime is not subject to the constraint
     //that the sum of all alfaPrime s//#ifndef SCHED_CONTROL_MULTIBURST
-    //ControlScheduler::PKsetAlfa(Thread::getCurrentThread(),0.05f);
-    //for(unsigned int i=0;i<threads.size();i++)
-    //{
-    //    float k=(0.00125f*threads[i].load/(0.001f*threads[i].period));
-    //    ControlScheduler::PKsetAlfa(threads[i].thread,k);
-    //}
-    //Alfa (CPU Share) for thread t = freq(t)/sum(freq);
+    // Alfa (CPU Share) for thread t = freq(t)/sum(freq);
     float tot = 0;
     for(unsigned int i=0;i<threads.size();i++)
     {
@@ -128,7 +122,7 @@ void Hartstone::rescaleAlfa()
     {
         float k=(1.0f/threads[i].period)/tot;
         ControlScheduler::PKsetAlfa(threads[i].thread,k);
-    }
+    }        
     ControlScheduler::IRQrecalculateAlfa();
 }
 #endif //SCHED_TYPE_CONTROL_BASED
@@ -265,18 +259,20 @@ void Hartstone::benchmark1()
     float frequency=32.0f; //Fifth thread starts with a frequency of 32Hz
     int count=1;
     {
-        Profiler::start();
         BenchmarkMarker bmMark;
         for(;;)
         {
+            Profiler::start(); //restart context switch counter
             frequency+=8.0f;
             threads.at(4).period=static_cast<long long>( // TICK_FREQ = 1GHz
                     (rescaled*1000000000ll)/frequency);
             #ifdef SCHED_TYPE_CONTROL_BASED
             rescaleAlfa();
             #endif //SCHED_TYPE_CONTROL_BASED
+            
             Thread::sleep(1000*rescaled);
             if(failFlag) break;
+            printf("It %d - # context switches %d\n",count,Profiler::count());
             count++;
         }
     }
@@ -295,10 +291,10 @@ void Hartstone::benchmark2()
     float ratio=1.0f;
     int count=1;
     {
-        Profiler::start();
         BenchmarkMarker bmMark;
         for(;;)
         {
+            Profiler::start();
             ratio+=0.1f;
             for(int i=0;i<5;i++)
             {
@@ -310,6 +306,7 @@ void Hartstone::benchmark2()
             #endif //SCHED_TYPE_CONTROL_BASED
             Thread::sleep(1000*rescaled);
             if(failFlag) break;
+            printf("It %d - # context switches %d\n",count,Profiler::count());
             count++;
         }
     }
@@ -331,10 +328,11 @@ void Hartstone::benchmark3()
 {
     int count=1;
     {
-        Profiler::start();
+        
         BenchmarkMarker bmMark;
         for(;;)
         {
+            Profiler::start();
             for(int i=0;i<5;i++)
             {
                 threads[i].load+=rescaled;
@@ -344,6 +342,7 @@ void Hartstone::benchmark3()
             #endif //SCHED_TYPE_CONTROL_BASED
             Thread::sleep(1000*rescaled);
             if(failFlag) break;
+            printf("It %d - # context switches %d\n",count,Profiler::count());
             count++;
         }
     }
@@ -362,10 +361,11 @@ void Hartstone::benchmark4()
 {
     int count=1;
     {
-        Profiler::start();
+        
         BenchmarkMarker bmMark;
         for(;;)
         {
+            Profiler::start();
             threads.push_back(ThreadData());
             threads[threads.size()-1].thread=Thread::create(entry,STACK_DEFAULT_FOR_PTHREAD,1,
                     reinterpret_cast<void*>(threads.size()-1),Thread::JOINABLE);
@@ -374,6 +374,7 @@ void Hartstone::benchmark4()
             #endif //SCHED_TYPE_CONTROL_BASED
             Thread::sleep(1000*rescaled);
             if(failFlag) break;
+            printf("It %d - # context switches %d\n",count,Profiler::count());
             count++;
         }
     }

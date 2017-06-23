@@ -18,12 +18,11 @@ SUBDIRS := $(KPATH)
 ##
 SRC :=                                  \
 profiler.cpp				\
-sched_main2.cpp
-#hartstone.cpp                           \
+hartstone.cpp                           \
+main-soft-realtime2.cpp
 #test.cpp
-#main-soft-realtime2.cpp
 #main-hartstone-roundsweep.cpp
-
+#sched_main2.cpp
 ##
 ## List here additional static libraries with relative path
 ##

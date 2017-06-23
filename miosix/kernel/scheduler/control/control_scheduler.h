@@ -28,7 +28,7 @@
 #ifndef CONTROL_SCHEDULER_H
 #define	CONTROL_SCHEDULER_H
 
-//#define SCHED_CONTROL_MULTIBURST
+//#define SCHED_CONTROL_PIMB
 
 #include "config/miosix_settings.h"
 #include "control_scheduler_types.h"
@@ -155,8 +155,14 @@ public:
     //For benchmarking, allow to manually change alfa
     static void disableAutomaticAlfaChange();
     static void enableAutomaticAlfaChange();
+#ifdef SCHED_CONTROL_PIMB
+    static void PKsetAlfa(Thread *t, float alfa) { t->schedData.alfa=alfa;}
+    static float PKgetAlfa(Thread *t) { return t->schedData.alfa; }
+#else
     static void PKsetAlfa(Thread *t, float alfa) { t->schedData.alfaPrime=alfa;}
     static float PKgetAlfa(Thread *t) { return t->schedData.alfaPrime; }
+#endif
+
     static void PKsetTheta(Thread *t, unsigned theta) { t->schedData.theta=theta;}
     static void fixmeManualBurst(float burstLength);
 
@@ -177,7 +183,7 @@ private:
     static Thread *threadList;
     static unsigned int threadListSize;
 
-#ifndef SCHED_CONTROL_MULTIBURST 
+#if !defined(SCHED_CONTROL_MULTIBURST) && !defined(SCHED_CONTROL_PIMB) 
     ///\internal current thread in the round
     static Thread *curInRound;
 #endif

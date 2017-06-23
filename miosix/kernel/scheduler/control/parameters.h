@@ -65,15 +65,19 @@ namespace miosix {
 #if defined(ENABLE_REGULATOR_REINIT) && !defined(ENABLE_FEEDFORWARD)
 #error "ENABLE_REGULATOR_REINIT requires ENABLE_FEEDFORWARD"
 #endif
+#ifdef SCHED_CONTROL_PIMB
+const float krr = 1.9;
+const float zrr = 0.5;
 
+const int multFactor=1;
+#else
 const float kpi=0.5;
 const float krr=0.9;//1.4f;
 const float zrr=0.88f;
-
 ///Implementation detail resulting from a fixed point implementation of the
 ///inner integral regulators. Never change this, change kpi instead.
 const int multFactor=static_cast<int>(1.0f/kpi);
-
+#endif
 ///Instead of fixing a round time the current policy is to have
 ///roundTime=bNominal * numThreads, where bNominal is the nominal thread burst
 //static const int bNominal=static_cast<int>(4000000);// 4ms
