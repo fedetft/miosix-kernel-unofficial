@@ -492,61 +492,62 @@ void Transceiver::writePacketToTxBuffer(const void* pkt, int size)
 
 void Transceiver::handlePacketTransmissionEvents(int size)
 {
-    bool oneRestart=false;
+    bool restart;
     bool silentError=false;
-    restart:
-    //Wait for the first event to occur (SFD)
-    if(timer.waitTimeoutOrEvent(timer.ns2tick(sfdTimeout))==true)
-    {
-        //In case of timeout, abort current transmission
-        idle();
-        throw runtime_error("Transceiver::handlePacketTransmissionEvents timeout 1");
-    }
-    
-    unsigned int exc=getExceptions(0b111);
-    if(exc & CC2520Exception::SFD)
-    {
-        clearException(CC2520Exception::SFD);
-    }
-    //Both exception can occur simultaneously if a context switch occurs causing
-    //an unexpected delay
-    if(exc & CC2520Exception::TX_FRM_DONE)
-    {
-        //If both exceptions have occurred, then clear also the second one and
-        //return without waiting any longer
-        clearException(CC2520Exception::TX_FRM_DONE);
-        if(silentError) idle();
-        return;
-    }
-    //These are the odd ones caused by a race condition happening when we
-    //transmit without first turning off the receiver, which for STXONCCA is
-    //a necessity. If an unread packet is in the RX fifo, the RX_FRM_DONE
-    //is set and this keeps exc ch B active, so we need to clear the RX
-    //exception even though we are in TX. Same for RX_OVERFLOW, but we also
-    //need to recover from the error, and do so AFTER we have sent the packet
-    if(exc & CC2520Exception::RX_FRM_DONE)
-    {
-        if(oneRestart)
-        {
-            idle();
-            throw runtime_error("Transceiver::handlePacketTransmissionEvents rx frm done");
-        }
-        oneRestart=true;
-        clearException(CC2520Exception::RX_FRM_DONE);
-        goto restart;
-    }
-    if(exc & CC2520Exception::RX_OVERFLOW)
-    {
-        if(oneRestart)
-        {
-            idle();
-            throw runtime_error("Transceiver::handlePacketTransmissionEvents rx overflow");
-        }
-        oneRestart=true;
-        clearException(CC2520Exception::RX_OVERFLOW);
-        silentError=true;
-        goto restart;
-    }
+	do {
+		restart = false;
+		//Wait for the first event to occur (SFD)
+		if(timer.waitTimeoutOrEvent(timer.ns2tick(sfdTimeout))==true)
+		{
+			//In case of timeout, abort current transmission
+			idle();
+			throw runtime_error("Transceiver::handlePacketTransmissionEvents timeout 1");
+		}
+		
+		unsigned int exc=getExceptions(0b111);
+		if(exc & CC2520Exception::SFD)
+		{
+			clearException(CC2520Exception::SFD);
+		}
+		//Both exception can occur simultaneously if a context switch occurs causing
+		//an unexpected delay
+		if(exc & CC2520Exception::TX_FRM_DONE)
+		{
+			//If both exceptions have occurred, then clear also the second one and
+			//return without waiting any longer
+			clearException(CC2520Exception::TX_FRM_DONE);
+			if(silentError) idle();
+			return;
+		}
+		//These are the odd ones caused by a race condition happening when we
+		//transmit without first turning off the receiver, which for STXONCCA is
+		//a necessity. If an unread packet is in the RX fifo, the RX_FRM_DONE
+		//is set and this keeps exc ch B active, so we need to clear the RX
+		//exception even though we are in TX. Same for RX_OVERFLOW, but we also
+		//need to recover from the error, and do so AFTER we have sent the packet
+		if(exc & CC2520Exception::RX_FRM_DONE)
+		{
+			if(restart)
+			{
+				idle();
+				throw runtime_error("Transceiver::handlePacketTransmissionEvents rx frm done");
+			}
+			restart=true;
+			clearException(CC2520Exception::RX_FRM_DONE);
+		}
+		if(exc & CC2520Exception::RX_OVERFLOW)
+		{
+			if(restart)
+			{
+				idle();
+				throw runtime_error("Transceiver::handlePacketTransmissionEvents rx overflow");
+			}
+			restart=true;
+			clearException(CC2520Exception::RX_OVERFLOW);
+			silentError=true;
+		}
+	}
+	while(restart);
     
     //Wait for the second event to occur (TX_FRM_DONE)
     bool timeout=timer.waitTimeoutOrEvent(timer.ns2tick(maxPacketTimeout));
