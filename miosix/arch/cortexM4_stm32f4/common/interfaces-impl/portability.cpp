@@ -365,4 +365,4 @@ void sleepCpu()
     __WFI();
 }
 
-}; //namespace miosix_private
+} //namespace miosix_private

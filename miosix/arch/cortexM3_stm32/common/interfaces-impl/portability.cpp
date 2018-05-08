@@ -239,4 +239,4 @@ void AuxiliaryTimer::IRQsetValue(int x)
 }
 #endif //SCHED_TYPE_CONTROL_BASED
 
-}; //namespace miosix_private
+} //namespace miosix_private

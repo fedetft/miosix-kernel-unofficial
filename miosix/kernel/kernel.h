@@ -169,6 +169,7 @@ public:
      */
     InterruptEnableLock(InterruptDisableLock& l)
     {
+        (void)l;
         enableInterrupts();
     }
 
@@ -233,6 +234,7 @@ public:
      */
     FastInterruptEnableLock(FastInterruptDisableLock& l)
     {
+        (void)l;
         fastEnableInterrupts();
     }
 
@@ -342,6 +344,7 @@ public:
      */
     RestartKernelLock(PauseKernelLock& l)
     {
+        (void)l;
         restartKernel();
     }
 
@@ -707,7 +710,7 @@ public:
      * \internal
      * \return the size of the stack of the current thread.
      */
-    static const int getStackSize();
+    static int getStackSize();
     
     #ifdef WITH_PROCESSES
 
@@ -1081,6 +1084,6 @@ struct SleepData : public IntrusiveListItem
  * \}
  */
 
-}; //namespace miosix
+} //namespace miosix
 
 #endif //KERNEL_H
