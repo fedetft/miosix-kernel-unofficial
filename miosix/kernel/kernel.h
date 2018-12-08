@@ -363,6 +363,7 @@ private:
     RestartKernelLock& operator= (const RestartKernelLock& l);
 };
 
+#ifdef WITH_DEEP_SLEEP
 /*Increment the deepSleepCounter variable, enabling deep sleep of MCU if the variable
  * holds a positive value*/ 
 void deepSleepLock();
@@ -370,6 +371,7 @@ void deepSleepLock();
 /*Decrement the deepSleepCounter variable, disabling deep sleep of MCU if the variable
  * becomes a positive value*/ 
 void deepSleepUnlock();
+
 
 class DeepSleepLock
 {
@@ -383,6 +385,8 @@ private:
     DeepSleepLock(const DeepSleepLock&);
     DeepSleepLock& operator= (const DeepSleepLock&);
 };
+
+#endif // WITH_DEEP_SLEEP
 
 /**
  * \internal
