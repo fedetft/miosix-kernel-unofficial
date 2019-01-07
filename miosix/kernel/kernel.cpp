@@ -118,13 +118,13 @@ void *idleThread(void *argv)
             if(deepSleepCounter==0)
             {
                 long long closest_wakeup_time=0;
-                if(sleepingList->empty()) 
+                if(!sleepingList->empty()) 
                 {
                     auto first_sleep=sleepingList->begin();
                     closest_wakeup_time=(*first_sleep)->wakeup_time;
                 } else {
                     // Should be changed because it may be too much high
-                    closest_wakeup_time = 2147483647;
+                    closest_wakeup_time=2147483647;
                 }
                 IRQdeepSleep(closest_wakeup_time);
             } else sleep=true;
@@ -190,18 +190,20 @@ bool areInterruptsEnabled()
 {
     return miosix_private::checkAreInterruptsEnabled();
 }
- 
-#ifdef WITH_DEEP_SLEEP
+
 void deepSleepLock()
 {
+    #ifdef WITH_DEEP_SLEEP
     atomicAdd(&deepSleepCounter,1);
+    #endif // WITH_DEEP_SLEEP
 }
 
 void deepSleepUnlock()
-{ 
+{
+    #ifdef WITH_DEEP_SLEEP
     atomicAdd(&deepSleepCounter,-1);
+    #endif // WITH_DEEP_SLEEP
 }
-#endif // WITH_DEEP_SLEEP
 
 void startKernel()
 {
@@ -603,7 +605,7 @@ void Thread::IRQwakeup()
 }
 
 bool Thread::IRQexists(Thread* p)
-{
+
     if(p==NULL) return false;
     return Scheduler::PKexists(p);
 }
