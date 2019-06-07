@@ -92,6 +92,9 @@ static ProcessBase *kernel=0;
 
 #endif //WITH_PROCESSES
 
+// forward decls
+bool IRQwakeThreads(long long currentTick);
+
 /**
  * \internal
  * Idle thread. Created when the kernel is started, it phisically deallocates
@@ -127,9 +130,12 @@ void *idleThread(void *argv)
                     closest_wakeup_time=2147483647;
                 }
                 IRQdeepSleep(closest_wakeup_time);
+                long long int currentTime=ContextSwitchTimer::instance().IRQgetCurrentTime();
+                IRQwakeThreads(closest_wakeup_time);
             } else sleep=true;
         }
-        if(sleep) miosix_private::sleepCpu();
+        if (sleep) miosix_private::sleepCpu();
+        else Thread::yield();
         #else //WITH_DEEP_SLEEP
         miosix_private::sleepCpu();
         #endif //WITH_DEEP_SLEEP
