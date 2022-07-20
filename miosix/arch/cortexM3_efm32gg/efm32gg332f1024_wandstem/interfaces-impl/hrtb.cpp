@@ -136,7 +136,7 @@ static  void callScheduler(){
     TIMER1->IFC = TIMER_IFC_CC1;
     TIMER3->IFC = TIMER_IFC_CC1;
     //This line takes about 7.7microseconds
-    long long ns = tc->tick2ns(vt->uncorrected2corrected(IRQgetTickCorrectedVht()));
+    long long ns = vt->getVirtualTime(tc->tick2ns(IRQgetTickCorrectedVht()));
     IRQtimerInterrupt(ns);
 }
 
@@ -484,7 +484,7 @@ inline WaitResult HRTB::IRQsetNextTransceiverInterrupt(long long tick){
     long long curTick = IRQgetTick(); // This require almost 1us about 50ticks
     long long diff=tick-curTick;
     tick--;
-    
+
     // 200 are enough to make sure that this routine ends and the timer IEN is enabled. 
     //NOTE: this is really dependent on compiler, optimization and other stuff, 
     // with -O2 it takes 163 ticks

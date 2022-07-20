@@ -63,7 +63,7 @@ namespace miosix {
         
         inline unsigned int getTickFrequency() const{ return b.getTimerFrequency(); }
         
-        long long getExtEventTimestamp(Correct c) const;
+        long long getExtEventTimestamp() const;
         
         long long tick2ns(long long tick);
         long long ns2tick(long long ns);

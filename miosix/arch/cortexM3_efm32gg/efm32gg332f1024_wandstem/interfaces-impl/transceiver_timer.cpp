@@ -36,11 +36,11 @@ static VirtualClock *vt=nullptr;
 
 long long TransceiverTimer::getValue() const{
     FastInterruptDisableLock dLock;
-    return vt->uncorrected2corrected(b.IRQgetCurrentTickVht());
+    return vt->getVirtualTime(b.IRQgetCurrentTickVht()); // FIXME: returning ns when should be getting ticks
 }
 
 void TransceiverTimer::wait(long long tick){
-    absoluteWait(vt->uncorrected2corrected(b.getCurrentTickVht())+tick);
+    absoluteWait(tc.ns2tick(vt->getVirtualTime(b.getCurrentTickVht()))+tick);
 }
 
 bool TransceiverTimer::absoluteWait(long long tick){
@@ -59,13 +59,14 @@ bool TransceiverTimer::absoluteWaitTrigger(long long tick){
     return b.transceiverAbsoluteWaitTrigger(b.removeBasicCorrection(vht->corrected2uncorrected(vt->corrected2uncorrected(tick))));
 }
 
+// FIXME: (s) ticks??? good because internal?
 bool TransceiverTimer::absoluteWaitTimeoutOrEvent(long long tick){
     return b.transceiverAbsoluteWaitTimeoutOrEvent(b.removeBasicCorrection(vht->corrected2uncorrected(vt->corrected2uncorrected(tick))));
 }
 
 bool TransceiverTimer::waitTimeoutOrEvent(long long tick){
     //FIXME: why the IRQ version of getCurrentTickVht()?
-    return absoluteWaitTimeoutOrEvent(vt->uncorrected2corrected(b.IRQgetCurrentTickVht())+tick);
+    return absoluteWaitTimeoutOrEvent(vt->getVirtualTime(b.IRQgetCurrentTickVht())+tick);
 }
 
 long long TransceiverTimer::tick2ns(long long tick){
@@ -79,14 +80,11 @@ long long TransceiverTimer::ns2tick(long long ns){
 unsigned int TransceiverTimer::getTickFrequency() const{
     return b.getTimerFrequency();
 }
-	    
-long long TransceiverTimer::getExtEventTimestamp(Correct c) const{
-    long long t=(vht->uncorrected2corrected(b.addBasicCorrection(b.IRQgetSetTimeTransceiver()-stabilizingTime)));
-    if(c==Correct::UNCORR){
-        return t;
-    }else{
-        return vt->uncorrected2corrected(t);
-    }
+
+long long TransceiverTimer::getExtEventTimestamp() const{
+    long long tsnc = tc.tick2ns(vht->uncorrected2corrected(b.addBasicCorrection(b.IRQgetSetTimeTransceiver()-stabilizingTime)));
+    long long t_corr = vt->getVirtualTime(tsnc);
+    return t_corr; // FIXME: (s) NOT ONLY very ugly but also very wrong! only update if it's a sync packet
 }
 	 
 TransceiverTimer::TransceiverTimer():b(HRTB::instance()),tc(b.getTimerFrequency()) {

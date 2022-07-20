@@ -272,6 +272,8 @@ void Transceiver::sendNow(const void* pkt, int size)
 
 bool Transceiver::sendCca(const void* pkt, int size)
 {
+    DeepSleepLock dslck;
+    
     if(state==CC2520State::DEEPSLEEP)
         throw runtime_error("Transceiver::sendCca while in deep sleep");
     
@@ -288,8 +290,10 @@ bool Transceiver::sendCca(const void* pkt, int size)
     return true;
 }
 
-void Transceiver::sendAt(const void* pkt, int size, long long when, Unit unit)
+void Transceiver::sendAt(const void* pkt, int size, long long when)
 {
+    DeepSleepLock dslck;
+
     if(state==CC2520State::DEEPSLEEP)
         throw runtime_error("Transceiver::sendAt while in deep sleep");
     
@@ -298,12 +302,7 @@ void Transceiver::sendAt(const void* pkt, int size, long long when, Unit unit)
     
     writePacketToTxBuffer(pkt,size);
     
-    long long w;
-    if(unit==Unit::NS){
-        w=timer.ns2tick(when-turnaround);
-    }else{
-        w=when-timer.ns2tick(turnaround);
-    }
+    long long w = timer.ns2tick(when-turnaround); // TODO: (s) fix, no more ticks but propagate ns to absolute trigger
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
     if(timer.absoluteWaitTrigger(w)==true)
@@ -315,7 +314,7 @@ void Transceiver::sendAt(const void* pkt, int size, long long when, Unit unit)
     handlePacketTransmissionEvents(size);
 }
 
-RecvResult Transceiver::recv(void *pkt, int size, long long timeout, Unit unit, Correct c)
+RecvResult Transceiver::recv(void *pkt, int size, long long timeout)
 {
     if(state==CC2520State::DEEPSLEEP)
         throw runtime_error("Transceiver::recv while in deep sleep");
@@ -347,14 +346,8 @@ RecvResult Transceiver::recv(void *pkt, int size, long long timeout, Unit unit, 
             if(inFifo>=lengthByte+1)
             {
                 //Timestamp is wrong and we know it, so we don't set valid
-                
-                if(unit==Unit::NS){
-                    result.timestamp=timer.tick2ns(timer.getExtEventTimestamp((HardwareTimer::Correct) c))-
-                        (preambleSfdTime+rxSfdLag);
-                }else{
-                    result.timestamp=timer.getExtEventTimestamp((HardwareTimer::Correct) c)-
-                        timer.ns2tick(preambleSfdTime+rxSfdLag);
-                }
+                // TODO: (s) remove ::Correct param + remove dependency from ticks inside timer!!
+                result.timestamp = timer.getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
                 
                 //We may still be in the middle of another packet reception, so
                 //this may cause FRM_DONE to occur without a previous SFD,
@@ -367,7 +360,7 @@ RecvResult Transceiver::recv(void *pkt, int size, long long timeout, Unit unit, 
         }
     }
     
-    if(handlePacketReceptionEvents(timeout,size,result,unit,c)==false)
+    if(handlePacketReceptionEvents(timeout,size,result)==false)
          readPacketFromRxBuffer(pkt,size,result);
     return result;
 }
@@ -433,6 +426,8 @@ Transceiver::Transceiver()
 
 void Transceiver::startRxAndWaitForRssi()
 {
+    DeepSleepLock dslck;
+
     if(state!=CC2520State::RX)
     {
         commandStrobe(CC2520Command::SRXON);
@@ -490,7 +485,7 @@ void Transceiver::writePacketToTxBuffer(const void* pkt, int size)
 }
 
 void Transceiver::handlePacketTransmissionEvents(int size)
-{
+{   
     bool oneRestart=false;
     bool silentError=false;
     restart:
@@ -566,12 +561,12 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     if(silentError) idle();
 }
 
-bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvResult& result, Unit unit, Correct c)
+bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvResult& result)
 {
-    if(unit==Unit::NS)
-    {
-        timeout=timer.ns2tick(timeout);
-    }
+    DeepSleepLock dslck;
+
+    // TODO: (s) remove tick dependency
+    timeout = timer.ns2tick(timeout);
     //Wait for the first event to occur (SFD), or timeout
     if(timer.absoluteWaitTimeoutOrEvent(timeout)==true)
     {
@@ -581,14 +576,8 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     //NOTE: the returned timestamp is the time where the first byte of the
     //packet is received, while the cc2520 allows timestamping at the SFD
     
-    if(unit==Unit::NS){
-        result.timestamp=timer.tick2ns(timer.getExtEventTimestamp((HardwareTimer::Correct) c))-
-                        (preambleSfdTime+rxSfdLag);
-    }else{
-        result.timestamp=timer.getExtEventTimestamp((HardwareTimer::Correct) c)-
-                        timer.ns2tick(preambleSfdTime+rxSfdLag);
-    }
-    
+    // TODO: (s) only NS
+    result.timestamp = timer.getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
     unsigned int exc=getExceptions(0b011);
     if(exc & CC2520Exception::RX_OVERFLOW)
     {
@@ -620,6 +609,7 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     }
     
     //Wait for the second event to occur (RX_FRM_DONE)
+    // TODO: (s) why getValue and not getTime? if same interface obv. also, sum ns with ns. No more ns2tick needed
     long long tt=timer.getValue()+timer.ns2tick(slack+timePerByte*size);
     auto secondTimeout=config.strictTimeout ? min(timeout,tt) : max(timeout,tt);
     if(timer.absoluteWaitTimeoutOrEvent(secondTimeout))
@@ -733,7 +723,9 @@ void Transceiver::waitXosc()
     //The simplest possible implementation is
     //while(internalSpi::miso::value()==0) ;
     //but it is too energy hungry
-    
+
+    DeepSleepLock dslck;
+
     auto misoPin=internalSpi::miso::getPin();
     FastInterruptDisableLock dLock;
     waiting=Thread::IRQgetCurrentThread();

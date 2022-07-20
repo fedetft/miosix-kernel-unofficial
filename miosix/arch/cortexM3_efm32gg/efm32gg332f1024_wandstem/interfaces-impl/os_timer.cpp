@@ -41,12 +41,13 @@ static VirtualClock *vt=nullptr;
 
 long long getTime() noexcept
 {
-    return tc.tick2ns(vt->uncorrected2corrected(vht->uncorrected2corrected(b->addBasicCorrection(b->getCurrentTick()))));
+    // TODO: (s) A * tick + B... no more cascade call
+    return vt->getVirtualTime(tc.tick2ns(vht->uncorrected2corrected(b->addBasicCorrection(b->getCurrentTick()))));
 }
 
 long long IRQgetTime() noexcept
 {
-    return tc.tick2ns(vt->uncorrected2corrected(vht->uncorrected2corrected(b->addBasicCorrection(b->IRQgetCurrentTick()))));
+    return vt->getVirtualTime(tc.tick2ns(vht->uncorrected2corrected(b->addBasicCorrection(b->IRQgetCurrentTick()))));
 }
 
 namespace internal {
@@ -61,6 +62,7 @@ void IRQosTimerInit()
 
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
+    // FIXME: (s) fix this, no corrected2uncorrected implemented yet!!
     b->IRQsetNextInterruptCS(b->removeBasicCorrection(vht->corrected2uncorrected(vt->corrected2uncorrected(tc.ns2tick(ns)))));
 }
 

@@ -109,18 +109,7 @@ public:
  */
 class Transceiver
 {
-public:
-    
-    enum Unit{
-        TICK,
-        NS
-    };
-    
-    enum Correct{
-        CORR,
-        UNCORR
-    };
-    
+public:    
     static const int minFrequency=2405; ///< Minimum supported frequency (MHz)
     static const int maxFrequency=2480; ///< Maximum supported frequency (MHz)
     
@@ -204,18 +193,16 @@ public:
      * \param size packet size in bytes. If CRC is enabled the maximum size is
      * 125 bytes (the packet must not contain the CRC, which is appended
      * by this class). If CRC is disabled, maximum length is 127 bytes
-     * \param when the time point when the first bit of the preamble of the
+     * \param when the point in time (ns) when the first bit of the preamble of the
      * packet is to be transmitted on the wireless channel
      * \throws exception in case of errors
      */
-    void sendAt(const void *pkt, int size, long long when, Unit = Unit::NS);
+    void sendAt(const void *pkt, int size, long long when);
     
     /**
      * \param pkt pointer to a buffer where the packet will be stored
      * \param size size of the buffer
      * \param timeout timeout absolute time after which the function returns
-     * \param unit the unit in which timeout is specified and packet is timestamped
-     * \param c if the returned timestamp will be corrected by VT or not
      * \return a RecvResult class with the information about the operation
      * outcome
      * \throws exception in case of errors
@@ -229,7 +216,7 @@ public:
      * responsibility of the caller to check the timeout and discard the
      * packet.
      */
-    RecvResult recv(void *pkt, int size, long long timeout, Unit unit=Unit::NS, Correct c=Correct::CORR);
+    RecvResult recv(void *pkt, int size, long long timeout);
 
     /**
      * Read the RSSI of the currently selected channel
@@ -305,7 +292,7 @@ private:
      * \return true in case of timeout
      * \throws runtime_error in case of errors
      */
-    bool handlePacketReceptionEvents(long long timeout, int size, RecvResult& result, Unit unit, Correct c);
+    bool handlePacketReceptionEvents(long long timeout, int size, RecvResult& result);
     
     /**
      * Read a data packet from the transceiver

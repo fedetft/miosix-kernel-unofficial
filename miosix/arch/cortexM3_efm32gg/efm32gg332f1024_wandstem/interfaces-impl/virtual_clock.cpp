@@ -26,6 +26,7 @@
  ***************************************************************************/
 
 #include "virtual_clock.h"
+#include "kernel/timeconversion.h"
 
 namespace miosix {
 
@@ -34,30 +35,72 @@ VirtualClock& VirtualClock::instance(){
     return vt;
 }
 
-void VirtualClock::update(long long baseTheoretical, long long baseComputed, long long clockCorrection){
-    assert(syncPeriod!=0);
-    //performs a fixed point division, using a 36.28 representation, to compute
-    // T/(T+u(k)), which in this case results left-shifter of 28 positions.
-    unsigned long long temp=(syncPeriod<<28)/(syncPeriod+clockCorrection);
-    //similarly to the previous division, calculates the inverse factor.
-    unsigned long long inverseTemp = ((syncPeriod+clockCorrection)<<28)/syncPeriod;
-    {
-        FastInterruptDisableLock dLock;
+void VirtualClock::updateVC(long long vc_k)
+{
+    assertNonNegativeTime(vc_k);
+    if(syncPeriod == 0) { throw std::logic_error("No sync period has been set yet"); };  
 
-        //the calculated factor is then split into integer and decimal part.
-        //Both of them are 32 bits long, since the fixed point implementation
-        //is 64 x 32.32 and the lost precision is of 0.0037 ppm, therefore negligible.
-        factorI = static_cast<unsigned int>((temp & 0x0FFFFFFFF0000000LLU)>>28);
-        factorD = static_cast<unsigned int>(temp<<4);
+    int kT = this->k * this->syncPeriod;
 
-        //same is done for the inverse coefficient
-        inverseFactorI = static_cast<unsigned int>((inverseTemp & 0x0FFFFFFFF0000000LLU)>>28);
-        inverseFactorD = static_cast<unsigned int>(inverseTemp<<4);
+    // calculating sync error
+    int e_k = (kT + T0) - vc_k; // TODO: (s) the error should be passed from timesync for a more abstraction level
 
-        this->baseTheoretical=baseTheoretical;
-        this->baseComputed=baseComputed;
+    // controller correction
+    int u_k = 1 + 0.15 * e_k; // should call flopsync3!
+    
+    // performing virtual clock slope correction
+    this->vcdot_k = u_k; 
+    
+    // next iteration values (k + 1 done in dynamic timesync downlink, ma non sono molto d'accordo)
+    this->tsnc_km1 = deriveTsnc(vc_k);
+    this->k += 1; // TODO: (s) move it to the synchronizer?
+    this->vc_km1 = vc_k;
+    this->vcdot_km1 = this->vcdot_k;
+}
+
+long long VirtualClock::getVirtualTime(long long tsnc)
+{
+    assertNonNegativeTime(tsnc);
+    return vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
+}
+
+// DELETEME: (s) legacy?
+long long VirtualClock::corrected2uncorrected(long long vc_t)
+{
+    #warning "This function is part of the legacy compatibility and may be removed in next udpates."
+   // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
+   static TimeConversion tc;
+   return tc.ns2tick(deriveTsnc(vc_t));
+}
+
+void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
+{
+    if(syncPeriod > VirtualClock::maxPeriod) throw 0;
+    this->syncPeriod = syncPeriod;
+    this->vc_km1 = -syncPeriod;
+    this->tsnc_km1 = -syncPeriod;
+}
+
+void VirtualClock::setInitialOffset(long long T0)
+{
+    assertNonNegativeTime(T0);
+    this->T0 = T0;
+}
+
+long long VirtualClock::deriveTsnc(long long vc_t)
+{
+    assertNonNegativeTime(vc_t);
+    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1)/ vcdot_km1;
+}
+
+void VirtualClock::assertNonNegativeTime(long long time)
+{
+    if(time < 0) 
+    { 
+        throw std::invalid_argument(
+            std::string("[ ") +  typeid(*this).name() +  std::string(" | ") + __FUNCTION__ + std::string(" ] Time cannot be negative")
+        ); 
     }
-    //printf("%u %u %u %u %lld %lld\n",factorI,factorD,inverseFactorI,inverseFactorD,this->baseTheoretical, this->baseComputed);
 }
 
 }

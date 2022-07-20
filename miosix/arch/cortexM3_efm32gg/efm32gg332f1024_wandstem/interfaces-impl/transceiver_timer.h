@@ -52,7 +52,7 @@ namespace miosix{
             
             unsigned int getTickFrequency() const;
             
-            long long getExtEventTimestamp(Correct c) const;
+            long long getExtEventTimestamp() const;
             
 
         private:

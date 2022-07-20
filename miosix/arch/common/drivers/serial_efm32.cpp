@@ -134,6 +134,7 @@ EFM32Serial::EFM32Serial(int id, int baudrate)
 
 ssize_t EFM32Serial::readBlock(void *buffer, size_t size, off_t where)
 {
+    DeepSleepLock dslck;
     Lock<FastMutex> l(rxMutex);
     char *buf=reinterpret_cast<char*>(buffer);
     size_t result=0;
