@@ -170,12 +170,12 @@ void __attribute__((naked)) TIMER3_IRQHandler()
     restoreContext();
 }
 
-void __attribute__((naked)) TIMER2_IRQHandler()
+/*void __attribute__((naked)) TIMER2_IRQHandler()
 {
     saveContext();
     asm volatile("bl _Z10cstirqhnd2v");
     restoreContext();
-}
+}*/
 
 void __attribute__((naked)) TIMER1_IRQHandler()
 {
@@ -508,6 +508,7 @@ inline WaitResult HRTB::IRQsetNextTransceiverInterrupt(long long tick){
     }
 } 
 
+// TODO: (s)
 void HRTB::IRQsetNextInterruptCS(long long tick) noexcept {
     // First off, disable timers to prevent unnecessary IRQ
     // when IRQsetNextInterrupt is called multiple times consecutively.
@@ -527,6 +528,7 @@ void HRTB::IRQsetNextInterruptCS(long long tick) noexcept {
     }
 }
 
+// TODO: (s)
 /*
  * Return true if the pin is going to raise, otherwise false, the pin remain low because the command arrived too late
  * Should be called at least 4us before the next interrupt, otherwise it returns with WAKEUP_IN_THE_PAST

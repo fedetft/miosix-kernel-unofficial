@@ -30,7 +30,7 @@
 
 #include <miosix.h>
 #include "spi.h"
-#include "hrtb.h"
+#include "hsc.h"
 #include "rtc.h"
 #include "vht.h"
 #include "virtual_clock.h"
@@ -189,7 +189,7 @@ private:
     bool transceiverPowerDomainExplicitDelayNeeded;
     Spi& spi;
 
-    HRTB& b;
+    Hsc& b;
     Rtc& rtc;
     VHT& vht;
     VirtualClock& vt;

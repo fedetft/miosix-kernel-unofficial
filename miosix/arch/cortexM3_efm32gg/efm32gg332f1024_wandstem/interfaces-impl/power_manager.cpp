@@ -97,7 +97,7 @@ void PowerManager::deepSleepUntil(long long int when/*, Unit unit*/)
     RTC->IFC=RTC_IFC_COMP1;
     RTC->IEN |= RTC_IEN_COMP1;
     //NOTE: the corner case where the wakeup is now is considered "in the past"
-    if(preWake<=rtc.IRQgetValue())
+    if(preWake<=rtc.IRQgetTimeTick())
     {
         RTC->IFC=RTC_IFC_COMP1;
         RTC->IEN &= ~RTC_IEN_COMP1;
@@ -121,7 +121,7 @@ void PowerManager::deepSleepUntil(long long int when/*, Unit unit*/)
                 //Clear the interrupt (both in the RTC peripheral and NVIC),
                 //this is important as pending IRQ prevent WFI from working
                 
-                if((preWake-1)<=rtc.IRQgetValue()){
+                if((preWake-1)<=rtc.IRQgetTimeTick()){
                     RTC->IFC=RTC_IFC_COMP1;
                     NVIC_ClearPendingIRQ(RTC_IRQn);
                     break;
@@ -147,7 +147,7 @@ void PowerManager::deepSleepUntil(long long int when/*, Unit unit*/)
                     __NOP();
                 }
             }
-            if(preWake-1<=rtc.IRQgetValue()){
+            if(preWake-1<=rtc.IRQgetTimeTick()){
                 break;
             }
         }
@@ -172,7 +172,7 @@ void PowerManager::deepSleepUntil(long long int when/*, Unit unit*/)
     //If true, it goes forward, otherwise the interrupt is caused by another IRQ. 
     //But this IRQ can't be served because the interrupts are disabled, hence the while-cycle turns in a polling-cycle 
     //(bad and not low power, but definitely very rare)
-    while(when>rtc.IRQgetValue()) __WFI();
+    while(when>rtc.IRQgetTimeTick()) __WFI();
     RTC->IEN &= ~RTC_IEN_COMP1;
     RTC->IFC=RTC_IFC_COMP1;
 
@@ -422,7 +422,7 @@ void PowerManager::IRQpostDeepSleep(Transceiver& rtx)
 }
 
 void PowerManager::IRQresyncClock(){
-    long long nowRtc=rtc.IRQgetValue();
+    long long nowRtc=rtc.IRQgetTimeTick();
     long long syncAtRtc=nowRtc+2;
     //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
     long long prevCOMP1=RTC->COMP1;
