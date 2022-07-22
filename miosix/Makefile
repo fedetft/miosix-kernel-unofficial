@@ -18,11 +18,12 @@ kernel/stage_2_boot.cpp                                                    \
 kernel/elf_program.cpp                                                     \
 kernel/process.cpp                                                         \
 kernel/process_pool.cpp                                                    \
-kernel/timeconversion.cpp                                                  \
 kernel/SystemMap.cpp                                                       \
 kernel/scheduler/priority/priority_scheduler.cpp                           \
 kernel/scheduler/control/control_scheduler.cpp                             \
 kernel/scheduler/edf/edf_scheduler.cpp                                     \
+time/timeconversion.cpp                                                    \
+time/flopsync3.cpp														   \
 filesystem/file_access.cpp                                                 \
 filesystem/file.cpp                                                        \
 filesystem/stringpart.cpp                                                  \
