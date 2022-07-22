@@ -25,17 +25,14 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#ifndef RTC_H
-#define RTC_H
+#ifndef HSC_H
+#define HSC_H
 
 #include "interfaces/os_timer.h"
-#include "hwmapping.h"
 
-namespace miosix
-{
-
+namespace miosix {
 /**
- * Manages the hardware timer that runs also in low power mode.
+ * Manages the high frequency hardware timer
  * This class is not safe to be accessed by multiple threads simultaneously.
  * 
  * Implements TimerAdapter required functions
@@ -61,176 +58,157 @@ namespace miosix
  *     static void IRQinit() {}
  */
 
-class Rtc : public TimerAdapter<Rtc, 24>
+class Hsc : public TimerAdapter<Hsc, 32>
 {
 public:
-    /**
-     * \return a reference to the timer (singleton)
-     */
-    static Rtc& instance()
+    static Hsc& instance()
     {
-        static Rtc timer;
-        return timer;
+        static Hsc hsc;
+        return hsc;
     }
 
-    /**
-     * @brief RTC hardware timer counter
-     * 
-     * @return unsigned int time in ticks
-     */
     static inline unsigned int IRQgetTimerCounter()
     {
-        return RTC->CNT;
+        return IRQread32Timer();
     }
-    /**
-     *  @brief Sets RTC hardware timer counter
-     * 
-     * @param v new timer value
-     */
+
     static inline void IRQsetTimerCounter(unsigned int v)
     {
-        RTC->CNT = v;
+        TIMER1->CNT = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
+        TIMER2->CNT = static_cast<uint16_t> ((v >> 16) & 0xFFFFUL); // upper part
     }
 
-    /**
-     * @brief Gets register containing value to be used in capture and compare mode for the timer (same as CCR1 in stm32)
-     * 
-     * @return unsigned int register containing value to be compared
-     */
     static inline unsigned int IRQgetTimerMatchReg()
     {
-        return RTC->COMP0;
+        return (static_cast<unsigned int>(TIMER2->CC[0].CCV)<<16 ) | TIMER1->CC[0].CCV;
     }
-    /**
-     * @brief Sets register to be used in capture and compare mode for the timer
-     * 
-     * @param v time value to be comapred the timer with
-     */
+
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
-        RTC->COMP0 = v;
+        TIMER1->CC[0].CCV = (uint16_t) (v & 0xFFFFUL); // lower part
+        TIMER2->CC[0].CCV = (uint16_t) ((v >> 16) & 0xFFFFUL); // upper part
     }
 
-    /**
-     * @brief Returns overflow flag of the RTC
-     * 
-     * @return true if we have an overflow
-     * @return false if there is no overflow
-     */
     static inline bool IRQgetOverflowFlag()
     {
-        return RTC->IF & _RTC_IFC_OF_MASK;
+        return TIMER2->IF & TIMER_IF_OF;
     }
-    /**
-     * @brief Clears the overflow flag
-     * 
-     */
+
     static inline void IRQclearOverflowFlag()
     {
-        RTC->IF = ~_RTC_IFC_OF_MASK;
+        TIMER2->IFC |= TIMER_IFC_OF;
     }
 
-    /**
-     * @brief Gets compare result flag of the timer with the campute and compare register
-     * 
-     * @return true if timer value matches compare register
-     * @return false if timer value does not matche compare register
-     */
     static inline bool IRQgetMatchFlag()
     {
-        return RTC->IF & _RTC_IF_COMP0_MASK;
+        return (TIMER2->IF & TIMER_IF_CC0) & (TIMER1->IF & TIMER_IF_CC0);
     }
-    /**
-     * @brief Clears match flag
-     * 
-     */
+
     static inline void IRQclearMatchFlag()
     {
-        RTC->IF = ~_RTC_IF_COMP0_MASK;
+        TIMER2->IFS &= ~TIMER_IFS_CC0;
+        TIMER1->IFS &= ~TIMER_IFS_CC0;
     }
 
-    /**
-     * @brief Forces pending interrupt request for the RTC timer
-     * 
-     */
     static inline void IRQforcePendingIrq()
     {
-        NVIC_SetPendingIRQ(RTC_IRQn);
+        NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
 
-    /**
-     * @brief Stops RTC timer
-     * 
-     */
     static inline void IRQstopTimer()
     {
-        RTC->CTRL = 0;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
-    }
-    /**
-     * @brief Starts RTC timer
-     * 
-     */
-    static inline void IRQstartTimer()
-    {
-        RTC->CTRL = RTC_CTRL_EN;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
+        TIMER1->CMD=TIMER_CMD_STOP;
     }
 
-    /**
-     * @brief Gets RTC timer frequency
-     * 
-     * @return unsigned int 
-     */
+    static inline void IRQstartTimer()
+    {
+        TIMER1->CMD = TIMER_CMD_START;
+        
+        //Synchronization is required only when timers are to start.
+        //If the sync is not disabled after start, start/stop on another timer
+        //(e.g. TIMER0) will affect the behavior of context switch timer!
+        TIMER1->CTRL &= ~TIMER_CTRL_SYNC;
+        TIMER2->CTRL &= ~TIMER_CTRL_SYNC;
+    }
+
     static unsigned int IRQTimerFrequency()
     {
         return frequency;
     }
 
-    /**
-     * @brief Inits RTC timer
-     * 
-     */
     static void IRQinitTimer()
     {
-        //
-        // Configure timer
-        //
+        //Power the timers up and PRS system
+        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER1 | CMU_HFPERCLKEN0_TIMER2 | CMU_HFPERCLKEN0_PRS;
+
+        // configure timers (chaning two 16 bit timers to get a 32 one)
+        // TIMER1 => lower part
+        // TIMER2 => upper part
+        // When TIMER1 overflows, TIMER2 counter is updated 
+        // (automatic chaninig for neighborhood timers with CTRL_SYNC)
+        TIMER1->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
+                | TIMER_CTRL_PRESC_DIV1 | TIMER_CTRL_SYNC;
         
-        //The LFXO is already started by the BSP
-        CMU->HFCORECLKEN0 |= CMU_HFCORECLKEN0_LE; //Enable clock to LE peripherals
-        CMU->LFACLKEN0 |= CMU_LFACLKEN0_RTC;
-        while(CMU->SYNCBUSY & CMU_SYNCBUSY_LFACLKEN0) ;
-        
-        RTC->CNT=0;
-        
-        RTC->CTRL=RTC_CTRL_EN;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
-        
-        //In the EFM32GG332F1024 the RTC has two compare channels, used in this way:
-        //COMP0 -> used for wait and trigger
-        //COMP1 -> reserved for VHT resync and Power manager
-        //NOTE: interrupt not yet enabled as we're not setting RTC->IEN
-        NVIC_EnableIRQ(RTC_IRQn);
-        NVIC_SetPriority(RTC_IRQn, 7); // 0 is the higest priority, 15 il the lowest
-        
-        RTC->IEN |= RTC_IEN_OF;
+        TIMER2->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_TIMEROUF 
+                | TIMER_CTRL_SYNC;
+
+        // reset TIMER1, needed if you want run after the flash
+        TIMER1->CMD=TIMER_CMD_STOP;
+        TIMER1->CTRL=0;
+        TIMER1->ROUTE=0;
+        TIMER1->IEN=0;
+        TIMER1->IFC=~0;
+        TIMER1->TOP=0xFFFF;
+        TIMER1->CNT=0;
+        TIMER1->CC[0].CTRL=0;
+        TIMER1->CC[0].CCV=0;
+        TIMER1->CC[1].CTRL=0;
+        TIMER1->CC[1].CCV=0;
+        TIMER1->CC[2].CTRL=0;
+        TIMER1->CC[2].CCV=0;
+
+        //Enable necessary interrupt lines
+        TIMER1->IEN = 0; //TIMER_IEN_CC0;
+        TIMER2->IEN = TIMER_IEN_OF; // signaling overflow, needed for pending bit trick
+
+        TIMER1->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        NVIC_SetPriority(TIMER1_IRQn,3);
+        NVIC_SetPriority(TIMER2_IRQn,3);
+
+        NVIC_ClearPendingIRQ(TIMER1_IRQn);
+        NVIC_ClearPendingIRQ(TIMER2_IRQn);
+
+        NVIC_EnableIRQ(TIMER1_IRQn);
+        NVIC_EnableIRQ(TIMER2_IRQn);
     }
-
-
 
 private:
     /**
      * Constructor
      */
-    Rtc() {};
-    Rtc(const Rtc&)=delete;
-    Rtc& operator=(const Rtc&)=delete;
+    Hsc() {};
+    Hsc(const Hsc&)=delete;
+    Hsc& operator=(const Hsc&)=delete;
+    
+    static inline unsigned int IRQread32Timer(){
+        unsigned int high = TIMER2->CNT;
+        unsigned int low = TIMER1->CNT;
+        unsigned int high2 = TIMER2->CNT;
+        
+        if(high == high2) // No lower part overflow
+        {
+            return (high<<16) | low; // constructing 32 bit number
+        }
 
-    /// The internal RTC frequency in Hz
-    static const unsigned int frequency = EFM32_LFXO_FREQ; // 32768 Hz
+        return high2<<16 | TIMER1->CNT;
+    }
+
+    static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };
 
-} /* end of namespace miosix */
+}//end miosix namespace
 
-#endif /* REAL_TIME_CLOCK */
+#endif /* HIGH_SPEED_CLOCK */
+
