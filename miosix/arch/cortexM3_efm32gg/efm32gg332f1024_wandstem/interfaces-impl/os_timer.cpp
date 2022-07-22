@@ -27,60 +27,92 @@
 
 #include "interfaces/os_timer.h"
 #include "kernel/timeconversion.h"
-#include "vht.h"
-#include "virtual_clock.h"
+#include "rtc.h"
+#include "hsc.h"
+#include "bsp_impl.h"
 
 using namespace miosix;
 
 namespace miosix {
 
-static HRTB *b=nullptr;
+static Rtc *rtc = nullptr;
+static Hsc *hsc = nullptr;
 static TimeConversion tc;
-static VHT *vht=nullptr;
-static VirtualClock *vt=nullptr;
 
 long long getTime() noexcept
 {
-    // TODO: (s) A * tick + B... no more cascade call
-    return vt->getVirtualTime(tc.tick2ns(vht->uncorrected2corrected(b->addBasicCorrection(b->getCurrentTick()))));
+    FastInterruptDisableLock dLock;
+    return IRQgetTime();
 }
 
 long long IRQgetTime() noexcept
 {
-    return vt->getVirtualTime(tc.tick2ns(vht->uncorrected2corrected(b->addBasicCorrection(b->IRQgetCurrentTick()))));
+    return hsc->IRQgetTimeNs();
 }
 
 namespace internal {
 
 void IRQosTimerInit()
 {
-    b=&HRTB::instance();
-    tc=TimeConversion(b->getTimerFrequency());
-    vht=&VHT::instance();
-    vt=&VirtualClock::instance();
+    rtc = &Rtc::instance();
+    rtc->IRQinit();
+
+    hsc = &Hsc::instance();
+    hsc->IRQinit();
+    IRQosTimerSetTime(80 * 1e9); // TEST: (s) close to overflow at 88ns
+    
+    tc = TimeConversion(osTimerGetFrequency());
+}
+
+void IRQosTimerSetTime(long long ns) noexcept
+{
+    hsc->IRQsetTimeNs(ns);
 }
 
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
-    // FIXME: (s) fix this, no corrected2uncorrected implemented yet!!
-    b->IRQsetNextInterruptCS(b->removeBasicCorrection(vht->corrected2uncorrected(vt->corrected2uncorrected(tc.ns2tick(ns)))));
+    hsc->IRQsetIrqNs(ns); 
 }
-
-// long long ContextSwitchTimer::getNextInterrupt() const
-// {
-//     return tc->tick2ns(vt->uncorrected2corrected(vht->uncorrected2corrected(pImpl->b.addBasicCorrection(pImpl->b.IRQgetSetTimeCS()))));
-// }
-
-// void IRQosTimerSetTime(long long ns) noexcept
-// {
-//     //TODO
-// }
 
 unsigned int osTimerGetFrequency()
 {
-    return b->getTimerFrequency();
+    FastInterruptDisableLock dLock;
+    return hsc->IRQTimerFrequency();
 }
 
 } //namespace internal
 
-} //namespace miosix
+} //namespace miosix 
+
+/**
+ * TIMER2 interrupt routine
+ * 
+ */
+void __attribute__((naked)) TIMER2_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) TIMER2_IRQHandlerImpl()
+{
+    miosix::ledOn();
+    hsc->IRQhandler();
+    miosix::ledOff();
+}
+
+/**
+ * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
+ */
+void __attribute__((naked)) RTC_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z14RTChandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) RTChandlerImpl()
+{
+    rtc->IRQhandler();
+}
