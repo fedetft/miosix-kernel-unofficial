@@ -253,6 +253,9 @@ public:
         D::IRQstopTimer();
         long long oldTick = IRQgetTimeTick();
         long long tick = tc.ns2tick(ns);
+
+        // if we're moving forward in time, we have to force IRQ in case
+        // we get past the next IRQ scheduled
         if(tick>oldTick)
         {
             upperTimeTick = tick & upperMask;
@@ -320,6 +323,161 @@ public:
                 IRQtimerInterrupt(tc.tick2ns(tick));
             }
         }
+        if(D::IRQgetOverflowFlag())
+        {
+            D::IRQclearOverflowFlag();
+            upperTimeTick += upperIncr;
+        }
+    }
+    
+    /**
+     * Initializes and starts the timer.
+     */
+    void IRQinit()
+    {
+        D::IRQinitTimer();
+        tc=TimeConversion(D::IRQTimerFrequency());
+        D::IRQstartTimer();
+    }
+};
+
+// Specific Timer Adapter for RTC (TODO: (s) make base class and then specialize two cases)
+template<typename D, unsigned bits, unsigned quirkAdvance=0>
+class RTCTimerAdapter
+{
+public:
+    //Note that if you have a 64 bit timer you don't need this code at all
+    static_assert(bits<=32, "Support for larger timers not implemented");
+    static constexpr unsigned long long upperIncr=(1LL<<bits);
+    static constexpr unsigned long long lowerMask=upperIncr-1;
+    static constexpr unsigned long long upperMask=0xFFFFFFFFFFFFFFFFLL-lowerMask;
+    
+    long long upperTimeTick = 0; //Extended timer counter (upper bits)
+    long long upperIrqTick = 0;  //Extended interrupt time point (upper bits)
+    miosix::TimeConversion tc;
+    bool lateIrq=false;
+    
+    /**
+     * \return the current time in ticks
+     */
+    inline long long IRQgetTimeTick()
+    {
+        // THE PENDING BIT TRICK, version 2
+        unsigned int counter=D::IRQgetTimerCounter();
+        if(D::IRQgetOverflowFlag() && D::IRQgetTimerCounter()>=counter)
+            return (upperTimeTick | static_cast<long long>(counter)) + upperIncr;  
+        return upperTimeTick | static_cast<long long>(counter);
+    }
+    
+    /**
+     * \return the time when the next RTC interrupt is scheduled in ticks
+     */
+    inline long long IRQgetIrqTick()
+    {
+        return upperIrqTick | D::IRQgetTimerMatchReg();
+    }
+    
+    /**
+     * \return the current time in nanoseconds
+     */
+    inline long long IRQgetTimeNs()
+    {
+        return tc.tick2ns(IRQgetTimeTick());
+    }
+    
+    /**
+     * \return the time when the next os interrupt is scheduled in nanoseconds
+     */
+    inline long long IRQgetIrqNs()
+    {
+        return tc.tick2ns(IRQgetIrqTick());
+    }
+    
+    /**
+     * Set the current time
+     * \param ns absolute time in nanoseconds, can only be greater than the
+     * current time
+     */
+    void IRQsetTimeNs(long long ns)
+    {
+        //Normally we never stop the timer not to accumulate clock skew,
+        //but here we're asked to introduce a clock jump anyway
+        D::IRQstopTimer();
+        long long oldTick = IRQgetTimeTick();
+        long long tick = tc.ns2tick(ns);
+
+        // if we're moving forward in time, we have to force IRQ in case
+        // we get past the next IRQ scheduled
+        if(tick>oldTick)
+        {
+            upperTimeTick = tick & upperMask;
+            D::IRQsetTimerCounter(static_cast<unsigned int>(tick & lowerMask));
+            D::IRQclearOverflowFlag();
+            //Adjust also when the next interrupt will be fired
+            long long nextIrqTick = IRQgetIrqTick();
+            if(nextIrqTick>oldTick)
+            {
+                //Avoid using IRQsetIrqTick(nextIrqTick) as in some weird timers
+                //IRQgetTimeTick() does not work after setting the timer counter
+                //and before starting the timer (ATsam4l is an example)
+                auto tick2 = nextIrqTick + quirkAdvance;
+                upperIrqTick = tick2 & upperMask;
+                D::IRQsetTimerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+                if(tick >= nextIrqTick)
+                {
+                    D::IRQforcePendingIrq();
+                    lateIrq=true;
+                }
+            }
+        }
+        D::IRQstartTimer();
+    }
+    
+    /**
+     * Schedule the next RTC interrupt
+     * \param ns absolute time in ticks, must be > 0
+     */
+    // TODO: (s) implement
+    inline void IRQsetDeepSleepIrqTick(long long tick)
+    {
+        // setting RTC compare register
+        auto tick2 = tick + quirkAdvance;
+        upperIrqTick = tick2 & upperMask;
+        D::IRQsetTimerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+        /*if(IRQgetTimeTick() >= tick) // TODO: (s) remove?
+        {
+            D::IRQforcePendingIrq();
+            lateIrq=true;
+        }*/
+    }
+    
+    /**
+     * Schedule the next os interrupt
+     * \param ns absolute time in nanoseconds, must be > 0
+     */
+    inline void IRQsetDeepIrqSleep(long long ns)
+    {
+        IRQsetDeepSleepIrqTick(tc.ns2tick(ns));
+    }
+    
+    /**
+     * Must be called by the timer interrupt routine when writing the driver
+     * for a particular timer. It clears the pending flag and calls the os as
+     * needed.
+     */
+    inline void IRQoverflowHandler()
+    {
+        /*if(D::IRQgetMatchFlag() || lateIrq)
+        {
+            D::IRQclearMatchFlag();
+            long long tick=IRQgetTimeTick();
+            if(tick >= IRQgetIrqTick() || lateIrq)
+            {
+                lateIrq=false;
+                //IRQtimerInterrupt(tc.tick2ns(tick));
+                // simply return
+            }
+        }*/
         if(D::IRQgetOverflowFlag())
         {
             D::IRQclearOverflowFlag();

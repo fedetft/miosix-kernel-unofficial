@@ -29,7 +29,6 @@
 #include "kernel/timeconversion.h"
 #include "rtc.h"
 #include "hsc.h"
-#include "bsp_impl.h"
 
 using namespace miosix;
 
@@ -41,7 +40,7 @@ static TimeConversion tc;
 
 long long getTime() noexcept
 {
-    FastInterruptDisableLock dLock;
+    InterruptDisableLock dLock;
     return IRQgetTime();
 }
 
@@ -59,8 +58,7 @@ void IRQosTimerInit()
 
     hsc = &Hsc::instance();
     hsc->IRQinit();
-    IRQosTimerSetTime(80 * 1e9); // TEST: (s) close to overflow at 88ns
-    
+
     tc = TimeConversion(osTimerGetFrequency());
 }
 
@@ -71,12 +69,13 @@ void IRQosTimerSetTime(long long ns) noexcept
 
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
+    // TODO: (s) check if in the past?
     hsc->IRQsetIrqNs(ns); 
 }
 
 unsigned int osTimerGetFrequency()
 {
-    FastInterruptDisableLock dLock;
+    InterruptDisableLock dLock;
     return hsc->IRQTimerFrequency();
 }
 
@@ -88,6 +87,7 @@ unsigned int osTimerGetFrequency()
  * TIMER2 interrupt routine
  * 
  */
+// TODO: timer1 chiamato dopo timer2
 void __attribute__((naked)) TIMER2_IRQHandler()
 {
     saveContext();
@@ -97,9 +97,10 @@ void __attribute__((naked)) TIMER2_IRQHandler()
 
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
-    miosix::ledOn();
+    //miosix::ledOn();
+    //iprintf("TIM2 Int...\n"); // DELETEME: (s)
     hsc->IRQhandler();
-    miosix::ledOff();
+    //miosix::ledOff();
 }
 
 /**
@@ -114,5 +115,7 @@ void __attribute__((naked)) RTC_IRQHandler()
 
 void __attribute__((used)) RTChandlerImpl()
 {
-    rtc->IRQhandler();
+    //miosix::ledOn();
+    //iprintf("RTC Int...\n"); // DELETEME: (s)
+    rtc->IRQoverflowHandler();
 }

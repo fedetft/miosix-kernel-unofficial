@@ -85,6 +85,9 @@ public:
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
+        TIMER2->IEN |= TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
+        TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; //DEADLOCK directly?!?
+
         TIMER1->CC[0].CCV = (uint16_t) (v & 0xFFFFUL); // lower part
         TIMER2->CC[0].CCV = (uint16_t) ((v >> 16) & 0xFFFFUL); // upper part
     }
@@ -101,13 +104,19 @@ public:
 
     static inline bool IRQgetMatchFlag()
     {
-        return (TIMER2->IF & TIMER_IF_CC0) & (TIMER1->IF & TIMER_IF_CC0);
+        // TODO: (s) quando TIMER2 manda interrupt, non è detto che TIMER1 abbia il valore corretto!
+        // ma se uso solo timer2, numero ticks non corrisponde, è più avanti (1.2ms)
+        return TIMER2->IF & TIMER_IF_CC0; //(TIMER2->IF & TIMER_IF_CC0) & (TIMER1->IF & TIMER_IF_CC0);
     }
 
     static inline void IRQclearMatchFlag()
     {
-        TIMER2->IFS &= ~TIMER_IFS_CC0;
-        TIMER1->IFS &= ~TIMER_IFS_CC0;
+        TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        // TODO: (s) TIM2 triggera enable interrrupt TIM1 che effettivamente lancia compare!
+        TIMER2->IFC |= TIMER_IFC_CC0;
+        //TIMER1->IFS &= ~TIMER_IFS_CC0;
     }
 
     static inline void IRQforcePendingIrq()
@@ -122,6 +131,9 @@ public:
 
     static inline void IRQstartTimer()
     {
+        TIMER1->CTRL |= TIMER_CTRL_SYNC;
+        TIMER2->CTRL |= TIMER_CTRL_SYNC;
+
         TIMER1->CMD = TIMER_CMD_START;
         
         //Synchronization is required only when timers are to start.
@@ -147,14 +159,12 @@ public:
         // When TIMER1 overflows, TIMER2 counter is updated 
         // (automatic chaninig for neighborhood timers with CTRL_SYNC)
         TIMER1->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
-                | TIMER_CTRL_PRESC_DIV1 | TIMER_CTRL_SYNC;
+                | TIMER_CTRL_PRESC_DIV1;
         
-        TIMER2->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_TIMEROUF 
-                | TIMER_CTRL_SYNC;
+        TIMER2->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_TIMEROUF;
 
         // reset TIMER1, needed if you want run after the flash
         TIMER1->CMD=TIMER_CMD_STOP;
-        TIMER1->CTRL=0;
         TIMER1->ROUTE=0;
         TIMER1->IEN=0;
         TIMER1->IFC=~0;
@@ -167,21 +177,33 @@ public:
         TIMER1->CC[2].CTRL=0;
         TIMER1->CC[2].CCV=0;
 
+        // reset TIMER2
+        TIMER2->CMD=TIMER_CMD_STOP;
+        TIMER2->IEN=0;
+        TIMER2->IFC=~0;
+        TIMER2->TOP=0xFFFF;
+        TIMER2->CNT=0;
+        TIMER2->CC[0].CTRL=0;
+        TIMER2->CC[0].CCV=0;
+
         //Enable necessary interrupt lines
-        TIMER1->IEN = 0; //TIMER_IEN_CC0;
-        TIMER2->IEN = TIMER_IEN_OF; // signaling overflow, needed for pending bit trick
+        TIMER1->IEN = 0; // |= TIMER_IEN_CC0;
+        TIMER2->IEN |= TIMER_IEN_OF; // signaling overflow, needed for pending bit trick
+        //TIMER2->IEN |= TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
 
-        TIMER1->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        //TIMER1->CC[0].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; // does not call interrupt handler!
+        //TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; //DEADLOCK directly?!?
+        //TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_CMOA_SET; // TODO: (s) remove
 
-        NVIC_SetPriority(TIMER1_IRQn,3);
-        NVIC_SetPriority(TIMER2_IRQn,3);
+        NVIC_SetPriority(TIMER1_IRQn, 3);
+        NVIC_SetPriority(TIMER2_IRQn, 3);
 
         NVIC_ClearPendingIRQ(TIMER1_IRQn);
         NVIC_ClearPendingIRQ(TIMER2_IRQn);
 
         NVIC_EnableIRQ(TIMER1_IRQn);
         NVIC_EnableIRQ(TIMER2_IRQn);
+
     }
 
 private:
@@ -204,6 +226,8 @@ private:
 
         return high2<<16 | TIMER1->CNT;
     }
+
+    // TODO: (s) usare timer2 handler privato
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };

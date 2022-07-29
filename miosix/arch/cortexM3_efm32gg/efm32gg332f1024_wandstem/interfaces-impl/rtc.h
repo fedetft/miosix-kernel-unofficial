@@ -61,7 +61,7 @@ namespace miosix
  *     static void IRQinit() {}
  */
 
-class Rtc : public TimerAdapter<Rtc, 24>
+class Rtc : public RTCTimerAdapter<Rtc, 24>
 {
 public:
     /**
@@ -109,6 +109,8 @@ public:
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
         RTC->COMP0 = v;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0) ;
+        RTC->IEN |= RTC_IEN_COMP0; // TODO: (s) move into init?
     }
 
     /**
@@ -119,7 +121,7 @@ public:
      */
     static inline bool IRQgetOverflowFlag()
     {
-        return RTC->IF & _RTC_IFC_OF_MASK;
+        return RTC->IF & RTC_IFC_OF;
     }
     /**
      * @brief Clears the overflow flag
@@ -127,7 +129,8 @@ public:
      */
     static inline void IRQclearOverflowFlag()
     {
-        RTC->IF = ~_RTC_IFC_OF_MASK;
+        // missing NVIC clear pending?
+        RTC->IFC |= RTC_IFC_OF;
     }
 
     /**
@@ -138,7 +141,7 @@ public:
      */
     static inline bool IRQgetMatchFlag()
     {
-        return RTC->IF & _RTC_IF_COMP0_MASK;
+        return RTC->IF & RTC_IF_COMP0;
     }
     /**
      * @brief Clears match flag
@@ -146,7 +149,7 @@ public:
      */
     static inline void IRQclearMatchFlag()
     {
-        RTC->IF = ~_RTC_IF_COMP0_MASK;
+        RTC->IFC |= RTC_IFC_COMP0;
     }
 
     /**
@@ -203,18 +206,16 @@ public:
         while(CMU->SYNCBUSY & CMU_SYNCBUSY_LFACLKEN0) ;
         
         RTC->CNT=0;
-        
-        RTC->CTRL=RTC_CTRL_EN;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
-        
+        RTC->IEN |= RTC_IEN_OF;
+
         //In the EFM32GG332F1024 the RTC has two compare channels, used in this way:
         //COMP0 -> used for wait and trigger
         //COMP1 -> reserved for VHT resync and Power manager
         //NOTE: interrupt not yet enabled as we're not setting RTC->IEN
-        NVIC_EnableIRQ(RTC_IRQn);
         NVIC_SetPriority(RTC_IRQn, 7); // 0 is the higest priority, 15 il the lowest
+        NVIC_ClearPendingIRQ(RTC_IRQn);
+        NVIC_EnableIRQ(RTC_IRQn);  
         
-        RTC->IEN |= RTC_IEN_OF;
     }
 
 
