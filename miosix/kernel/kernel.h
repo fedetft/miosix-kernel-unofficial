@@ -42,7 +42,17 @@
  * All user available kernel functions, classes are inside this namespace.
  */
 namespace miosix {
-    
+
+//Forwrd declaration
+struct SleepData;
+class MemoryProfiling;
+class Mutex;
+class ConditionVariable;
+class PowerManageablePeripheral;
+#ifdef WITH_PROCESSES
+class ProcessBase;
+#endif //WITH_PROCESSES
+
 /**
  * \addtogroup Kernel
  * \{
@@ -379,6 +389,13 @@ private:
 };
 
 /**
+ * @brief TODO: (s)
+ * 
+ * @param pmp 
+ */
+void IRQregisterPowerManageablePeripheral(PowerManageablePeripheral& pmp);
+
+/**
  * \internal
  * Start the kernel.<br> There is no way to stop the kernel once it is
  * started, except a (software or hardware) system reset.<br>
@@ -413,15 +430,6 @@ long long getTime() noexcept;
  * \return current time in nanoseconds
  */
 long long IRQgetTime() noexcept;
-
-//Forwrd declaration
-struct SleepData;
-class MemoryProfiling;
-class Mutex;
-class ConditionVariable;
-#ifdef WITH_PROCESSES
-class ProcessBase;
-#endif //WITH_PROCESSES
 
 /**
  * This class represents a thread. It has methods for creating, deleting and

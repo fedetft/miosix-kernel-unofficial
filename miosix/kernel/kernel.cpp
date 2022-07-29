@@ -44,6 +44,7 @@
 #include <string.h>
 #include <reent.h>
 #include "interfaces/deep_sleep.h"
+#include "interfaces/peripheral.h"
 
 /*
 Used by assembler context switch macros
@@ -84,6 +85,7 @@ static unsigned char interruptDisableNesting=0;
 ///  This variable is used to keep count of how many peripherals are actually used.
 /// If it 0 then the system can enter the deep sleep state
 static int deepSleepCounter = 0;
+static list<std::pair<PowerManageablePeripheral&, bool>> deepSleepPeripherals;
 
 #endif // WITH_DEEP_SLEEP
 
@@ -119,11 +121,23 @@ void *idleThread(void *argv)
             bool sleep;
             if(deepSleepCounter==0)
             {
+                // turning off all powered peripherals
+                for(auto& p : deepSleepPeripherals)
+                {
+                    p.second = p.first.IRQisTurnedOn();
+                    if(p.second) p.first.IRQturnOff();
+                }
+            
                 if(sleepingList->empty()==false)
                 {
                     long long wakeup=(*sleepingList->begin())->wakeup_time;
                     sleep=!IRQdeepSleep(wakeup);
                 } else sleep=!IRQdeepSleep();
+
+                // restoring power for all previously powered peripherals
+                for(auto& p : deepSleepPeripherals)
+                    if(p.second) p.first.IRQturnOn();
+
             } else sleep=true;
             //NOTE: going to sleep with interrupts disabled makes sure no
             //preemption occurs from when we take the decision to sleep till
@@ -203,6 +217,13 @@ void deepSleepUnlock()
 {
     #ifdef WITH_DEEP_SLEEP
     atomicAdd(&deepSleepCounter,-1);
+    #endif // WITH_DEEP_SLEEP
+}
+
+void IRQregisterPowerManageablePeripheral(PowerManageablePeripheral& pmp)
+{
+    #ifdef WITH_DEEP_SLEEP
+    deepSleepPeripherals.push_back({pmp, false});
     #endif // WITH_DEEP_SLEEP
 }
 
