@@ -234,4 +234,21 @@ private:
 
 } /* end of namespace miosix */
 
+/**
+ * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
+ */
+void __attribute__((naked)) RTC_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z14RTChandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) RTChandlerImpl()
+{
+    //miosix::ledOn();
+    //iprintf("RTC Int...\n"); // DELETEME: (s)
+    (&miosix::Rtc::instance())->IRQoverflowHandler(); // FIXME: (s) very ugly and slow!
+}
+
 #endif /* REAL_TIME_CLOCK */
