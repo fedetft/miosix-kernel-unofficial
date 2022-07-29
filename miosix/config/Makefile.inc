@@ -28,7 +28,7 @@
 #OPT_BOARD := stm32f103cb_als_mainboard_rev2
 #OPT_BOARD := stm32f100cb_tempsensor
 #OPT_BOARD := stm32f429zi_oledboard2
-#OPT_BOARD := efm32gg332f1024_wandstem
+OPT_BOARD := efm32gg332f1024_wandstem
 #OPT_BOARD := stm32f411re_nucleo
 #OPT_BOARD := stm32f429zi_skyward_anakin
 #OPT_BOARD := stm32f100rc_solertegiard
@@ -59,8 +59,8 @@
 ## -O2 is recomended otherwise, as it provides a good balance between code
 ## size and speed
 ##
-#OPT_OPTIMIZATION := -O0
-OPT_OPTIMIZATION := -O2
+OPT_OPTIMIZATION := -O0
+#OPT_OPTIMIZATION := -O2
 #OPT_OPTIMIZATION := -O3
 #OPT_OPTIMIZATION := -Os
 
@@ -2135,18 +2135,9 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
         ARCH_SRC :=                                                 \
         $(BOARD_INC)/interfaces-impl/bsp.cpp                        \
         $(BOARD_INC)/interfaces-impl/spi.cpp                        \
-        $(BOARD_INC)/interfaces-impl/power_manager.cpp              \
         $(BOARD_INC)/interfaces-impl/os_timer.cpp                   \
-        $(BOARD_INC)/interfaces-impl/timer_interface.cpp            \
-        $(BOARD_INC)/interfaces-impl/rtc.cpp                        \
-        $(BOARD_INC)/interfaces-impl/hrtb.cpp                       \
-        $(BOARD_INC)/interfaces-impl/gpio_timer.cpp                 \
-        $(BOARD_INC)/interfaces-impl/transceiver_timer.cpp          \
+        $(BOARD_INC)/interfaces-impl/deep_sleep.cpp                 \
         $(BOARD_INC)/interfaces-impl/gpioirq.cpp                    \
-        $(BOARD_INC)/interfaces-impl/transceiver.cpp                \
-        $(BOARD_INC)/interfaces-impl/flopsync_vht.cpp               \
-        $(BOARD_INC)/interfaces-impl/vht.cpp                        \
-        $(BOARD_INC)/interfaces-impl/virtual_clock.cpp
 
         ## Add a #define to allow querying board name
         CFLAGS_BASE   += -DEFM32GG332F1024 -D_BOARD_WANDSTEM
