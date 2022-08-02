@@ -82,3 +82,76 @@ unsigned int osTimerGetFrequency()
 } //namespace internal
 
 } //namespace miosix 
+
+/**
+ * TIMER2 interrupt routine
+ * 
+ */
+void __attribute__((naked)) TIMER2_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) TIMER2_IRQHandlerImpl()
+{
+    // TIMER2 overflow, pending bit trick
+    if(hsc->IRQgetOverflowFlag())
+    {
+        hsc->IRQhandler();
+    }
+    // first part of output compare, disable output compare interrupt
+    // for TIMER2 and turn of output comapre interrupt of TIMER1
+    else
+    {
+        //miosix::greenLed::high();
+
+        // disable output compare interrupt on channel 0 for most significant timer
+        TIMER2->IEN &= ~TIMER_IEN_CC0;
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->IFC |= TIMER_IFC_CC0;
+
+        // enable output compare interrupt on channel 0 for least significant timer
+        TIMER1->IEN |= TIMER_IEN_CC0;
+        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    }
+    NVIC_ClearPendingIRQ(TIMER2_IRQn);
+}
+
+/**
+ * TIMER1 interrupt routine
+ * 
+ */
+void __attribute__((naked)) TIMER1_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) TIMER1_IRQHandlerImpl()
+{
+    // second part of output compare. If we reached this interrupt, it means
+    // we already matched the upper part of the timer and we have now matched the lower part.
+    hsc->IRQhandler();
+    NVIC_ClearPendingIRQ(TIMER1_IRQn);
+
+    //miosix::greenLed::low();
+}
+
+// TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
+/**
+ * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
+ */
+void __attribute__((naked)) RTC_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z14RTChandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) RTChandlerImpl()
+{    
+    rtc->IRQoverflowHandler();
+}

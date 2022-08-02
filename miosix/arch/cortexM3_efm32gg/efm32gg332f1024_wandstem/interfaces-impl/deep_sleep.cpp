@@ -28,25 +28,27 @@ void IRQdeepSleepInit()
     rtc     = &Rtc::instance();
     hsc     = &Hsc::instance();
 
-    FastInterruptDisableLock l;
-    HSCtc      = new TimeConversion(hsc->IRQTimerFrequency());
-    RTCtc      = new TimeConversion(rtc->IRQTimerFrequency());
+    HSCtc   = new TimeConversion(hsc->IRQTimerFrequency());
+    RTCtc   = new TimeConversion(rtc->IRQTimerFrequency());
 }
 
 bool IRQdeepSleep(long long abstime)
 {
+    PauseKernelLock pkLock; //To run unexpected IRQs without context switch
     miosix::ledOn();
+
     // 1. RTC set ticks from High Speed Clock
+    // not working if sleep of 5s? 
     rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
-    iprintf("%lld\n", rtc->IRQgetTimeNs() - hsc->IRQgetTimeNs());
 
     // 2. Perform deep sleep
-    //doIRQdeepSleep(abstime);
-
+    doIRQdeepSleep(abstime);
+    
     // 3. Set HSC ticks from Real Time Clock
-    //hsc->IRQsetTimeNs(rtc->IRQgetTimeNs());
+    hsc->IRQsetTimeNs(rtc->IRQgetTimeNs()); // FIXME: (s) stack overflow, i think it has to do with new irq set
 
     miosix::ledOff();
+
     return true;
 }
 
@@ -75,23 +77,19 @@ void doIRQdeepSleep(long long abstime)
     // This operation is of course slower than usual, but affordable given 
     // the fact that the deep sleep should be called quite with large time span.
     unsigned long long ticks = RTCtc->ns2tick(abstime);
-    //abstime = ticks / 46875 * 32; ?????
+    //ticks = ticks * 32 / 46875;
 
     ioctl(STDOUT_FILENO,IOCTL_SYNC,0);
     
-    PauseKernelLock pkLock; //To run unexpected IRQs without context switch
-
     // RTC deep sleep function that sets RTC compare register
     rtc->IRQsetDeepSleepIrqTick(ticks);
-
+    
     // TODO: (s) bring everything inside os_timer RTCTimerAdapter (modify IRQhandler)
     // Flag to enable the deepsleep when we will call _WFI, 
     // otherwise _WFI is translated as a simple sleep status, this means that the core is not running 
     // but all the peripheral (HF and LF), are still working and they can trigger exception
     SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; 
-    EMU->CTRL=0;
-
-    miosix::greenLed::high();
+    EMU->CTRL = 0;
 
     // deep sleep loop
     for(;;)
@@ -99,15 +97,15 @@ void doIRQdeepSleep(long long abstime)
         // if for whatever reason we're past the deep sleep time, wake up
         if(ticks <= rtc->IRQgetTimeTick())
         {
+            rtc->IRQclearMatchFlag();
+            NVIC_ClearPendingIRQ(RTC_IRQn);
             break;
         }
         
         // Goes into low power mode and waits for RTC pending interrupt
-        /*__WFI(); // blocking statement.  
+        __WFI(); // blocking statement.  
 
         IRQrestartHFXO(); // restarts High frequency oscillator
-
-        rtc->IRQoverflowHandler(); // check if interrupt was because of an overflow
 
         // checks if we went out of deep sleep because of the RTC interrupt
         if(NVIC_GetPendingIRQ(RTC_IRQn))
@@ -116,11 +114,53 @@ void doIRQdeepSleep(long long abstime)
             //this is important as pending IRQ prevent WFI from working
             NVIC_ClearPendingIRQ(RTC_IRQn);
 
+            // checks if wake up because of RTC overflow
+            if(rtc->IRQgetOverflowFlag())
+            {
+                rtc->IRQoverflowHandler(); // check if interrupt was because of an overflow
+            }
+            
             // wake up time has past already
             if(ticks <= rtc->IRQgetTimeTick())
             {
-                miosix::greenLed::low();
-                RTC->IFC |= RTC_IFC_COMP0;
+                rtc->IRQclearMatchFlag();
+                break;
+            }
+
+            if(!rtc->IRQgetOverflowFlag() && !(ticks <= rtc->IRQgetTimeTick()))
+            {
+                // Se ho altri interrupt (> 1) vanno tutti con clock non corretto
+                // Reimplement RTC timer adapter
+                //FastInterruptEnableLock eLock(dLock);
+                // Here interrupts are enabled, so the software part of RTC 
+                // can be updated
+                // NOP operation to be sure that the interrupt can be executed
+
+                fastEnableInterrupts();
+                __NOP();
+                fastDisableInterrupts();
+            }
+        }
+        else
+        {
+            // we have an interrupt set before going to deep sleep, we have to serve it 
+            // or the micro will never go into sleep mode and __WFI() macro becomes a NOP instruction
+
+            fastEnableInterrupts();
+            __NOP();
+            fastDisableInterrupts();
+        }
+
+        /*if(NVIC_GetPendingIRQ(RTC_IRQn))
+        {
+            //Clear the interrupt (both in the RTC peripheral and NVIC),
+            //this is important as pending IRQ prevent WFI from working
+            NVIC_ClearPendingIRQ(RTC_IRQn);
+
+            // wake up time has past already
+            if(ticks <= rtc->IRQgetTimeTick())
+            {
+                rtc->IRQclearMatchFlag();
                 break;
             }
             else
@@ -147,13 +187,12 @@ void doIRQdeepSleep(long long abstime)
             //    //Here interrupts are enabled, so the interrupt gets served
             //    __NOP();
             //}
+            __NOP();
         }*/
     }
 
     // post deep sleep
     SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk; 
-    //We need this interrupt to continue the sync of HRT with RTC
-    //RTC->IEN &= ~RTC_IEN_COMP1; 
 }
 
 void IRQrestartHFXO()
