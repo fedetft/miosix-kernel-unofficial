@@ -43,6 +43,7 @@
 #include <limits>
 #include <string.h>
 #include <reent.h>
+#include <list>
 #include "interfaces/deep_sleep.h"
 #include "interfaces/peripheral.h"
 
@@ -85,7 +86,10 @@ static unsigned char interruptDisableNesting=0;
 ///  This variable is used to keep count of how many peripherals are actually used.
 /// If it 0 then the system can enter the deep sleep state
 static int deepSleepCounter = 0;
-static list<std::pair<PowerManageablePeripheral&, bool>> deepSleepPeripherals;
+
+// this list contains all peripheral that have a power dependency
+// so that the kernel can turn them all off before going into deep sleep
+static std::list<std::pair<PowerManageablePeripheral&, bool>> deepSleepPeripherals;
 
 #endif // WITH_DEEP_SLEEP
 
