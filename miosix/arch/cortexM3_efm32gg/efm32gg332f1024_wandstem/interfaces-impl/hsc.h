@@ -25,11 +25,12 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+
 #ifndef HSC_H
 #define HSC_H
 
 #include "interfaces/os_timer.h"
-#include "interfaces-impl/bsp_impl.h" // DELETEME: (s) for led
+#include "interfaces-impl/bsp_impl.h"
 
 namespace miosix {
 /**
@@ -86,6 +87,16 @@ public:
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
+        IRQclearMatchFlag();
+
+        // set output compare timer register
+        // because of an undocumented quirk, the compare register is checked 
+        // 1 tick late. By subtracting one tick, we have to make sure we do not underflow!
+        uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
+        uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
+        TIMER1->CC[0].CCV = lower_ticks-1; // FIXME: (s) check underflow
+        TIMER2->CC[0].CCV = upper_ticks-1;
+
         // enable output compare interrupt on channel 0 for most significant timer
         TIMER2->IEN |= TIMER_IEN_CC0;
         TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -93,10 +104,7 @@ public:
         // disable output compare interrupt on channel 0 for least significant timer
         TIMER1->IEN &= ~TIMER_IEN_CC0;
         TIMER1->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        // set output compare timer register
-        TIMER1->CC[0].CCV = (uint16_t) (v & 0xFFFFUL); // lower part
-        TIMER2->CC[0].CCV = (uint16_t) ((v >> 16) & 0xFFFFUL); // upper part
+        
     }
 
     static inline bool IRQgetOverflowFlag()
@@ -124,6 +132,11 @@ public:
 
         // clear output compare flag
         TIMER1->IFC |= TIMER_IFC_CC0;
+        TIMER2->IFC |= TIMER_IFC_CC0;
+
+        // clear pending interrupt
+        NVIC_ClearPendingIRQ(TIMER1_IRQn);
+        NVIC_ClearPendingIRQ(TIMER2_IRQn);
     }
 
     static inline void IRQforcePendingIrq()
@@ -234,65 +247,66 @@ private:
 
 }//end miosix namespace
 
-/**
- * TIMER2 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER2_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
-    restoreContext();
-}
+// /**
+//  * TIMER2 interrupt routine
+//  * 
+//  */
+// void __attribute__((naked)) TIMER2_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) TIMER2_IRQHandlerImpl()
-{
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
-
-    miosix::ledOn();
+// void __attribute__((used)) TIMER2_IRQHandlerImpl()
+// {
+//     static miosix::Hsc * hsc = &miosix::Hsc::instance(); // TODO: (s) 4ms delay? or undocumented quirk?
     
-    if(hsc->IRQgetOverflowFlag())
-    {
-        // TIMER2 overflow, pending bit trick
-        hsc->IRQhandler();
-    }
-    else
-    {
-        // first part of output compare, disable output compare interrupt
-        // for TIMER2 and turn of output comapre interrupt of TIMER1
+//     // TIMER2 overflow, pending bit trick
+//     if(hsc->IRQgetOverflowFlag())
+//     {
+//         hsc->IRQhandler();
+//     }
+//     // first part of output compare, disable output compare interrupt
+//     // for TIMER2 and turn of output comapre interrupt of TIMER1
+//     else
+//     {
+//         miosix::greenLed::high();
 
-        // disable output compare interrupt on channel 0 for most significant timer
-        TIMER2->IEN &= ~TIMER_IEN_CC0;
-        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->IFC |= TIMER_IFC_CC0;
+//         // disable output compare interrupt on channel 0 for most significant timer
+//         TIMER2->IEN &= ~TIMER_IEN_CC0;
+//         TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//         TIMER2->IFC |= TIMER_IFC_CC0;
 
-        // enable output compare interrupt on channel 0 for least significant timer
-        TIMER1->IEN |= TIMER_IEN_CC0;
-        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    }
-}
+//         // enable output compare interrupt on channel 0 for least significant timer
+//         TIMER1->IEN |= TIMER_IEN_CC0;
+//         TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//     }
+//     NVIC_ClearPendingIRQ(TIMER2_IRQn);
+// }
 
-/**
- * TIMER1 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
-    restoreContext();
-}
+// /**
+//  * TIMER1 interrupt routine
+//  * 
+//  */
+// void __attribute__((naked)) TIMER1_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) TIMER1_IRQHandlerImpl()
-{
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
+// void __attribute__((used)) TIMER1_IRQHandlerImpl()
+// {
+//     static miosix::Hsc * hsc = &miosix::Hsc::instance();
 
-    // second part of output compare. If we reached this interrupt, it means
-    // we already matched the upper part of the timer and we have now matched the lower part.
-    hsc->IRQhandler();
-    
-    miosix::ledOff();
-}
+//     // second part of output compare. If we reached this interrupt, it means
+//     // we already matched the upper part of the timer and we have now matched the lower part.
+//     hsc->IRQhandler();
+//     NVIC_ClearPendingIRQ(TIMER1_IRQn);
+
+//     miosix::greenLed::low();
+// }
 
 #endif /* HIGH_SPEED_CLOCK */
 

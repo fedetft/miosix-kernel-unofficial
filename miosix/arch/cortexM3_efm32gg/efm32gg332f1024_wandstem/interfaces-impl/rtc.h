@@ -25,11 +25,11 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+
 #ifndef RTC_H
 #define RTC_H
 
 #include "interfaces/os_timer.h"
-#include "hwmapping.h"
 
 namespace miosix
 {
@@ -89,7 +89,7 @@ public:
      */
     static inline void IRQsetTimerCounter(unsigned int v)
     {
-        RTC->CNT = v;
+        RTC->CNT = v & 0xFFFFFF;
     }
 
     /**
@@ -108,9 +108,11 @@ public:
      */
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
-        RTC->COMP0 = v;
+        IRQclearMatchFlag();
+
+        RTC->COMP0 = v & 0xFFFFFF;
         while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0) ;
-        RTC->IEN |= RTC_IEN_COMP0; // TODO: (s) move into init?
+        RTC->IEN |= RTC_IEN_COMP0;
     }
 
     /**
@@ -129,7 +131,6 @@ public:
      */
     static inline void IRQclearOverflowFlag()
     {
-        // missing NVIC clear pending?
         RTC->IFC |= RTC_IFC_OF;
     }
 
@@ -149,6 +150,7 @@ public:
      */
     static inline void IRQclearMatchFlag()
     {
+        RTC->IEN &= ~RTC_IEN_COMP0;
         RTC->IFC |= RTC_IFC_COMP0;
     }
 
@@ -234,21 +236,23 @@ private:
 
 } /* end of namespace miosix */
 
-/**
- * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
- */
-void __attribute__((naked)) RTC_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z14RTChandlerImplv");
-    restoreContext();
-}
+// /**
+//  * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
+//  */
+// void __attribute__((naked)) RTC_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z14RTChandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) RTChandlerImpl()
-{
-    //miosix::ledOn();
-    //iprintf("RTC Int...\n"); // DELETEME: (s)
-    (&miosix::Rtc::instance())->IRQoverflowHandler(); // FIXME: (s) very ugly and slow!
-}
+// void __attribute__((used)) RTChandlerImpl()
+// {
+//     static miosix::Rtc * rtc = &miosix::Rtc::instance();
+    
+//     //miosix::ledOn();
+//     rtc->IRQoverflowHandler();
+//     //miosix::ledOff();
+// }
 
 #endif /* REAL_TIME_CLOCK */
