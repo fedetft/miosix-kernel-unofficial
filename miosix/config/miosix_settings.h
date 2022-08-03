@@ -32,7 +32,7 @@
 // The PARSING_FROM_IDE is because Netbeans gets confused by this, it is never
 // defined when compiling the code.
 #ifndef PARSING_FROM_IDE
-#error This error is a reminder that you have not edited miosix_settings.h yet.
+//#error This error is a reminder that you have not edited miosix_settings.h yet.
 #endif //PARSING_FROM_IDE
 
 /**
@@ -135,7 +135,19 @@ const unsigned char MAX_OPEN_FILES=8;
 /// By default it is defined (error information is printed)
 #define WITH_ERRLOG
 
+//
+// Clock correction options
+//
 
+/// \def WITH_VHT
+/// Uncomment to apply VHT clock correction between RTC and HSC
+/// with the use of the internal FLOPSYNC_VHT controller
+#define WITH_VHT
+
+/// \def WITH_VIRTUAL_CLOCK
+/// Uncomment to apply clock correction updated with error coming from
+/// the network module with the use of the internal FLOPSYNC controller
+#define WITH_VIRTUAL_CLOCK
 
 //
 // Kernel related options (stack sizes, priorities)
@@ -152,7 +164,7 @@ const unsigned char MAX_OPEN_FILES=8;
  * mode, so to use debugging it is necessary to disable sleep in the idle thread.
  * By default it is not defined (idle thread calls sleep).
  */
-//#define JTAG_DISABLE_SLEEP
+#define JTAG_DISABLE_SLEEP
 
 #if defined(WITH_DEEP_SLEEP) && defined(JTAG_DISABLE_SLEEP)
 #error Deep sleep cannot work together with jtag
