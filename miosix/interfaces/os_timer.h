@@ -278,6 +278,7 @@ public:
                 }
             }
         }
+        // FIXME: (s) and if we have to go back in time? no?
         D::IRQstartTimer();
     }
     
@@ -413,23 +414,8 @@ public:
             upperTimeTick = tick & upperMask;
             D::IRQsetTimerCounter(static_cast<unsigned int>(tick & lowerMask));
             D::IRQclearOverflowFlag();
-            //Adjust also when the next interrupt will be fired
-            long long nextIrqTick = IRQgetIrqTick();
-            if(nextIrqTick>oldTick)
-            {
-                //Avoid using IRQsetIrqTick(nextIrqTick) as in some weird timers
-                //IRQgetTimeTick() does not work after setting the timer counter
-                //and before starting the timer (ATsam4l is an example)
-                auto tick2 = nextIrqTick + quirkAdvance;
-                upperIrqTick = tick2 & upperMask;
-                D::IRQsetTimerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
-                if(tick >= nextIrqTick)
-                {
-                    D::IRQforcePendingIrq();
-                    lateIrq=true;
-                }
-            }
         }
+        
         D::IRQstartTimer();
     }
     
@@ -444,11 +430,6 @@ public:
         auto tick2 = tick + quirkAdvance;
         upperIrqTick = tick2 & upperMask;
         D::IRQsetTimerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
-        /*if(IRQgetTimeTick() >= tick) // TODO: (s) remove?
-        {
-            D::IRQforcePendingIrq();
-            lateIrq=true;
-        }*/
     }
     
     /**
@@ -467,32 +448,17 @@ public:
      */
     inline void IRQoverflowHandler()
     {
-        /*if(D::IRQgetMatchFlag() || lateIrq)
-        {
-            D::IRQclearMatchFlag();
-            long long tick=IRQgetTimeTick();
-            if(tick >= IRQgetIrqTick() || lateIrq)
-            {
-                lateIrq=false;
-                //IRQtimerInterrupt(tc.tick2ns(tick));
-                // simply return
-            }
-        }*/
-        if(D::IRQgetOverflowFlag())
-        {
-            D::IRQclearOverflowFlag();
-            upperTimeTick += upperIncr;
-        }
+        D::IRQclearOverflowFlag();
+        upperTimeTick += upperIncr;
     }
     
     /**
-     * Initializes and starts the timer.
+     * Initializes the timer.
      */
     void IRQinit()
     {
         D::IRQinitTimer();
         tc=TimeConversion(D::IRQTimerFrequency());
-        D::IRQstartTimer();
     }
 };
 

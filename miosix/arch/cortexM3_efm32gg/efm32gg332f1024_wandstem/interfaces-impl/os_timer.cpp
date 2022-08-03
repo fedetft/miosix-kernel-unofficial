@@ -53,11 +53,11 @@ namespace internal {
 
 void IRQosTimerInit()
 {
-    rtc = &Rtc::instance();
-    rtc->IRQinit();
-
     hsc = &Hsc::instance();
     hsc->IRQinit();
+
+    rtc = &Rtc::instance();
+    rtc->IRQinit();
 
     tc = TimeConversion(osTimerGetFrequency());
 }
@@ -70,6 +70,7 @@ void IRQosTimerSetTime(long long ns) noexcept
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
     // TODO: (s) check if in the past?
+    // FIXME: (s) called twice every pause?? one from SVC_Handler and other form TIMER1_HandlerImpl
     hsc->IRQsetIrqNs(ns); 
 }
 
@@ -105,7 +106,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     // for TIMER2 and turn of output comapre interrupt of TIMER1
     else
     {
-        //miosix::greenLed::high();
+        miosix::greenLed::high();
 
         // disable output compare interrupt on channel 0 for most significant timer
         TIMER2->IEN &= ~TIMER_IEN_CC0;
@@ -116,7 +117,6 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         TIMER1->IEN |= TIMER_IEN_CC0;
         TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
-    NVIC_ClearPendingIRQ(TIMER2_IRQn);
 }
 
 /**
@@ -135,16 +135,15 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     // second part of output compare. If we reached this interrupt, it means
     // we already matched the upper part of the timer and we have now matched the lower part.
     hsc->IRQhandler();
-    NVIC_ClearPendingIRQ(TIMER1_IRQn);
 
-    //miosix::greenLed::low();
+    miosix::greenLed::low();
 }
 
 // TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
 /**
  * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
  */
-void __attribute__((naked)) RTC_IRQHandler()
+/*void __attribute__((naked)) RTC_IRQHandler()
 {
     saveContext();
     asm volatile("bl _Z14RTChandlerImplv");
@@ -154,4 +153,4 @@ void __attribute__((naked)) RTC_IRQHandler()
 void __attribute__((used)) RTChandlerImpl()
 {    
     rtc->IRQoverflowHandler();
-}
+}*/
