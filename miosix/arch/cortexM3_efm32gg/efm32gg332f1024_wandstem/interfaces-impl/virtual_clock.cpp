@@ -25,7 +25,7 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "virtual_clock.h"
+#include "interfaces/virtual_clock.h"
 #include "kernel/timeconversion.h"
 
 namespace miosix {
@@ -37,7 +37,9 @@ VirtualClock& VirtualClock::instance(){
 
 void VirtualClock::updateVC(long long vc_k)
 {
+    assertInit();
     assertNonNegativeTime(vc_k);
+    
     if(syncPeriod == 0) { throw std::logic_error("No sync period has been set yet"); };  
 
     int kT = this->k * this->syncPeriod;
@@ -46,7 +48,7 @@ void VirtualClock::updateVC(long long vc_k)
     int e_k = (kT + T0) - vc_k; // TODO: (s) the error should be passed from timesync for a more abstraction level
 
     // controller correction
-    int u_k = 1 + 0.15 * e_k; // should call flopsync3!
+    int u_k = 1 + 0.15 * e_k; // TODO: (s) should call flopsync3 for correction!
     
     // performing virtual clock slope correction
     this->vcdot_k = u_k; 
@@ -58,27 +60,43 @@ void VirtualClock::updateVC(long long vc_k)
     this->vcdot_km1 = this->vcdot_k;
 }
 
-long long VirtualClock::getVirtualTime(long long tsnc)
+long long VirtualClock::getVirtualTimeNs(long long tsnc)
 {
+    //assertInit();
     assertNonNegativeTime(tsnc);
-    return vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
+
+    if(!init) return tsnc; // needed when system is booting up and no sync period was recieved
+    else return vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
 }
 
-// DELETEME: (s) legacy?
-long long VirtualClock::corrected2uncorrected(long long vc_t)
+long long VirtualClock::getVirtualTimeTicks(long long tsnc)
 {
-    #warning "This function is part of the legacy compatibility and may be removed in next udpates."
-   // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-   static TimeConversion tc;
-   return tc.ns2tick(deriveTsnc(vc_t));
+    return tc.ns2tick(getVirtualTimeNs(tsnc));
+}
+
+long long VirtualClock::getUncorrectedTimeNs(long long vc_t)
+{
+    assertInit();
+
+    // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
+    return deriveTsnc(vc_t);
+}
+
+long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
+{
+    return tc.ns2tick(getUncorrectedTimeNs(vc_t));
 }
 
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 {
     if(syncPeriod > VirtualClock::maxPeriod) throw 0;
-    this->syncPeriod = syncPeriod;
-    this->vc_km1 = -syncPeriod;
-    this->tsnc_km1 = -syncPeriod;
+
+    // init values with T or -T
+    this->syncPeriod    = syncPeriod;
+    this->vc_km1        = -syncPeriod;
+    this->tsnc_km1      = -syncPeriod;
+    
+    this->init = true;
 }
 
 void VirtualClock::setInitialOffset(long long T0)
@@ -87,9 +105,11 @@ void VirtualClock::setInitialOffset(long long T0)
     this->T0 = T0;
 }
 
-long long VirtualClock::deriveTsnc(long long vc_t)
+inline long long VirtualClock::deriveTsnc(long long vc_t)
 {
+    assertInit();
     assertNonNegativeTime(vc_t);
+
     return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1)/ vcdot_km1;
 }
 
@@ -100,6 +120,16 @@ void VirtualClock::assertNonNegativeTime(long long time)
         throw std::invalid_argument(
             std::string("[ ") +  typeid(*this).name() +  std::string(" | ") + __FUNCTION__ + std::string(" ] Time cannot be negative")
         ); 
+    }
+}
+
+void VirtualClock::assertInit()
+{
+    if(!init)
+    {
+        throw std::runtime_error(
+            std::string("[ ") +  typeid(*this).name() +  std::string(" | ") + __FUNCTION__ + std::string(" ] Virtual clock has not been initialized yet.")
+        );
     }
 }
 

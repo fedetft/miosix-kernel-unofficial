@@ -27,13 +27,16 @@
 
 #include "interfaces/deep_sleep.h"
 #include "interfaces/os_timer.h"
-#include "interfaces/vht.h"
 #include "rtc.h"
 #include "hsc.h"
 #include "time/timeconversion.h"
 #include <sys/ioctl.h>
 #include "stdio.h"
 #include "miosix.h" // DELETEME: (s)
+
+#ifdef WITH_VHT
+#include "interfaces/vht.h"
+#endif
 
 namespace miosix {
 

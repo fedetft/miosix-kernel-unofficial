@@ -46,22 +46,35 @@ class VirtualClock
 {
 public:
     static VirtualClock& instance();
-    
-    //FIXME: (s) does it make sense to have uncorrected time here? I don't want propagazion of tsnc!! 
-    /**
-     * Converts a corrected time, expressed in ticks, into an uncorrected one
-     * @param t_corr corrected time (ns)
-     * @return the uncorrected time (ticks)
-     */
-    long long corrected2uncorrected(long long vc_t);
         
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
      * @param tsnc uncorrected time (ns)
      * @return the corrected time (ns) according to Flopsync3 correction
      */
-    long long getVirtualTime(long long tsnc);
+    long long getVirtualTimeNs(long long tsnc);
     
+    /**
+     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
+     * @param vc_t corrected time (ns)
+     * @return the uncorrected time (ns)
+     */
+    long long getUncorrectedTimeNs(long long vc_t);
+
+    /**
+     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
+     * @param tsnc uncorrected time (ns)
+     * @return the corrected time (ticks) according to Flopsync3 correction
+     */
+    long long getVirtualTimeTicks(long long tsnc);
+    
+    /**
+     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
+     * @param vc_t corrected time (ns)
+     * @return the uncorrected time (ticks)
+     */
+    long long getUncorrectedTimeTicks(long long vc_t);
+
     /**
      * Updates the internal value of the virtual clock
      * @param vc_k time of the virtual clock at the step t_0 + kT
@@ -92,7 +105,7 @@ public:
     void setInitialOffset(long long T0);
     
 private:
-    VirtualClock(){};
+    VirtualClock() : tc(EFM32_HFXO_FREQ) {};
     VirtualClock(const VirtualClock&)=delete;
     VirtualClock& operator=(const VirtualClock&)=delete;
 
@@ -105,7 +118,7 @@ private:
      * @param vc_t virtual clock time (ns)
      * @return long long uncorrected time (ns)
      */
-    long long deriveTsnc(long long vc_t);
+    inline long long deriveTsnc(long long vc_t);
 
     /**
      * Checks whether a passed time is negative or not. 
@@ -114,6 +127,14 @@ private:
      * @param time time to be checked
      */
     void assertNonNegativeTime(long long time);
+
+    /**
+     * This function verifies that the virtual clock has been initialized with
+     * the sync period needed in order for the controller to work.
+     * 
+     * @throws runtime_error if the virtual clock is missing some initialization parameters
+     */
+    void assertInit();
 
     /* class variables */
 
@@ -132,9 +153,16 @@ private:
     unsigned long long k = 0;   // synchronizer step
     long long T0 = 0;           // initial offset
 
+    // this variable verifies that the virtual clock has been initialized
+    // with the sync period
+    bool init = false;
+
     // lazy init since we get the sync period at runtime (see setSyncPeriod function)
     long long tsnc_km1; // -T
     long long vc_km1;   // -T
+
+    TimeConversion tc;
+
 };
 }
 

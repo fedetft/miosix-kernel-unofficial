@@ -27,16 +27,41 @@
 
 #include "interfaces/os_timer.h"
 #include "kernel/timeconversion.h"
-#include "rtc.h"
 #include "hsc.h"
+
+#ifdef WITH_DEEP_SLEEP
+#include "rtc.h"
+#endif
+
+#ifdef WITH_VIRTUAL_CLOCK
+#include "interfaces/virtual_clock.h"
+#endif
+
+//#include "e20/e20.h" // DELETEME: (s)
+//#include "thread" // DELETEME: (s)
 
 using namespace miosix;
 
+//static FixedEventQueue<100,12> queue; // DELETEME: (s)
+
+// DELETEME: (s)
+/*void startThread()
+{
+	std::thread t([]() { queue.run(); });
+	t.detach();
+}*/
+
 namespace miosix {
 
-static Rtc *rtc = nullptr;
 static Hsc *hsc = nullptr;
-static TimeConversion tc;
+
+#ifdef WITH_DEEP_SLEEP
+static Rtc *rtc = nullptr;
+#endif
+
+#ifdef WITH_VIRTUAL_CLOCK
+static VirtualClock *vc = nullptr;
+#endif
 
 long long getTime() noexcept
 {
@@ -46,20 +71,30 @@ long long getTime() noexcept
 
 long long IRQgetTime() noexcept
 {
+    #ifdef WITH_VIRTUAL_CLOCK
+    return vc->getVirtualTimeNs(hsc->IRQgetTimeNs());
+    #else
     return hsc->IRQgetTimeNs();
+    #endif
 }
 
 namespace internal {
 
 void IRQosTimerInit()
 {
+    //startThread(); // DELETEME: (s)
+
     hsc = &Hsc::instance();
     hsc->IRQinit();
 
+    #ifdef WITH_DEEP_SLEEP
     rtc = &Rtc::instance();
     rtc->IRQinit();
+    #endif
 
-    tc = TimeConversion(osTimerGetFrequency());
+    #ifdef WITH_VIRTUAL_CLOCK
+    vc = &VirtualClock::instance();
+    #endif
 }
 
 void IRQosTimerSetTime(long long ns) noexcept
@@ -69,6 +104,8 @@ void IRQosTimerSetTime(long long ns) noexcept
 
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
+    //queue.IRQpost([=]() { iprintf("Next int: %lld (ns)\n", ns); }); // DELETEME: (s)
+    
     // TODO: (s) check if in the past?
     // FIXME: (s) called twice every pause?? one from SVC_Handler and other form TIMER1_HandlerImpl
     hsc->IRQsetIrqNs(ns); 
