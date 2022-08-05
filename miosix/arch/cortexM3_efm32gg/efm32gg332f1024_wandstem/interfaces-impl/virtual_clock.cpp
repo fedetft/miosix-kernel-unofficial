@@ -35,31 +35,6 @@ VirtualClock& VirtualClock::instance(){
     return vt;
 }
 
-void VirtualClock::updateVC(long long vc_k)
-{
-    assertInit();
-    assertNonNegativeTime(vc_k);
-    
-    if(syncPeriod == 0) { throw std::logic_error("No sync period has been set yet"); };  
-
-    int kT = this->k * this->syncPeriod;
-
-    // calculating sync error
-    int e_k = (kT + T0) - vc_k; // TODO: (s) the error should be passed from timesync for a more abstraction level
-
-    // controller correction
-    int u_k = 1 + 0.15 * e_k; // TODO: (s) should call flopsync3 for correction!
-    
-    // performing virtual clock slope correction
-    this->vcdot_k = u_k; 
-    
-    // next iteration values (k + 1 done in dynamic timesync downlink, ma non sono molto d'accordo)
-    this->tsnc_km1 = deriveTsnc(vc_k);
-    this->k += 1; // TODO: (s) move it to the synchronizer?
-    this->vc_km1 = vc_k;
-    this->vcdot_km1 = this->vcdot_k;
-}
-
 long long VirtualClock::getVirtualTimeNs(long long tsnc)
 {
     //assertInit();
@@ -87,9 +62,34 @@ long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
     return tc.ns2tick(getUncorrectedTimeNs(vc_t));
 }
 
+void VirtualClock::updateVC(long long vc_k)
+{
+    assertInit();
+    assertNonNegativeTime(vc_k);
+
+    long long kT = this->k * this->syncPeriod;
+
+    // calculating sync error
+    long long e_k = (kT + T0) - vc_k; // TODO: (s) the error should be passed from timesync for a more abstraction level
+
+    // controller correction
+    // TODO: (s) need saturation for correction!
+    /*long long*/ double u_k = 1 + 0.15 * e_k * 1e-9; // TODO: (s) should call flopsync3 for correction!
+    
+    // performing virtual clock slope correction
+    this->vcdot_k = u_k; 
+    
+    // next iteration values (k + 1 done in dynamic timesync downlink, ma non sono molto d'accordo)
+    this->tsnc_km1 = deriveTsnc(vc_k);
+    this->k += 1; // TODO: (s) move it to the synchronizer?
+    this->vc_km1 = vc_k;
+    this->vcdot_km1 = this->vcdot_k;
+}
+
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 {
-    if(syncPeriod > VirtualClock::maxPeriod) throw 0;
+    if(syncPeriod > VirtualClock::maxPeriod) { throw std::logic_error("Sync period cannot be more than maximum!"); };  
+    if(syncPeriod == 0) { throw std::logic_error("Sync period cannot be zero!"); };  
 
     // init values with T or -T
     this->syncPeriod    = syncPeriod;
@@ -110,7 +110,7 @@ inline long long VirtualClock::deriveTsnc(long long vc_t)
     assertInit();
     assertNonNegativeTime(vc_t);
 
-    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1)/ vcdot_km1;
+    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1;
 }
 
 void VirtualClock::assertNonNegativeTime(long long time)

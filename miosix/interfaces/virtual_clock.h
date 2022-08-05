@@ -147,8 +147,9 @@ private:
     long long baseTheoretical = 0;
     long long baseComputed    = 0;
 
-    long long vcdot_k   = 1;    // slope of virtual clock at step k 
-    long long vcdot_km1 = 1;    // slope of virtual clock at step k-1
+    // FIXME: (s) should be double?
+    /*long long*/ double vcdot_k   = 1;    // slope of virtual clock at step k 
+    /*long long*/ double vcdot_km1 = 1;    // slope of virtual clock at step k-1
 
     unsigned long long k = 0;   // synchronizer step
     long long T0 = 0;           // initial offset
