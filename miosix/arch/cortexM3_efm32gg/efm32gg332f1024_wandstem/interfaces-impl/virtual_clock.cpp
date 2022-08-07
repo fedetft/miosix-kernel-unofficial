@@ -26,7 +26,7 @@
  ***************************************************************************/
 
 #include "interfaces/virtual_clock.h"
-#include "kernel/timeconversion.h"
+#include "time/timeconversion.h"
 
 namespace miosix {
 
@@ -35,26 +35,40 @@ VirtualClock& VirtualClock::instance(){
     return vt;
 }
 
-long long VirtualClock::getVirtualTimeNs(long long tsnc)
+long long VirtualClock::IRQgetVirtualTimeNs(long long tsnc) noexcept
 {
     //assertInit();
     assertNonNegativeTime(tsnc);
-
-    if(!init) return tsnc; // needed when system is booting up and no sync period was recieved
-    else return vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
+    
+    if(!init) return tsnc; // needed when system is booting up and until no sync period is set
+    else return /*T0 +*/ vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
 }
 
-long long VirtualClock::getVirtualTimeTicks(long long tsnc)
+long long VirtualClock::getVirtualTimeNs(long long tsnc) noexcept
+{
+    FastInterruptDisableLock lck;
+    return IRQgetVirtualTimeNs(tsnc);
+}
+
+long long VirtualClock::getVirtualTimeTicks(long long tsnc) noexcept
 {
     return tc.ns2tick(getVirtualTimeNs(tsnc));
 }
 
+long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
+{   
+    //assertInit();
+    assertNonNegativeTime(vc_t);
+
+    if(!init) return vc_t;// needed when system is booting up and until no sync period is set
+    // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
+    else return deriveTsnc(vc_t);
+}
+
 long long VirtualClock::getUncorrectedTimeNs(long long vc_t)
 {
-    assertInit();
-
-    // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-    return deriveTsnc(vc_t);
+    FastInterruptDisableLock lck;
+    return IRQgetUncorrectedTimeNs(vc_t);
 }
 
 long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
@@ -62,6 +76,7 @@ long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
     return tc.ns2tick(getUncorrectedTimeNs(vc_t));
 }
 
+// TODO: (s) the error should be passed from timesync for a more abstraction level
 void VirtualClock::updateVC(long long vc_k)
 {
     assertInit();
@@ -70,18 +85,31 @@ void VirtualClock::updateVC(long long vc_k)
     long long kT = this->k * this->syncPeriod;
 
     // calculating sync error
-    long long e_k = (kT + T0) - vc_k; // TODO: (s) the error should be passed from timesync for a more abstraction level
+    long long e_k = (kT/* + T0*/) - vc_k;
+
+    VirtualClock::updateVC(vc_k, e_k);
+
+    // next iteration values update
+    this->k += 1;
+}
+
+void VirtualClock::updateVC(long long vc_k, long long e_k)
+{
+    assertInit();
+    assertNonNegativeTime(vc_k);
 
     // controller correction
     // TODO: (s) need saturation for correction!
-    /*long long*/ double u_k = 1 + 0.15 * e_k * 1e-9; // TODO: (s) should call flopsync3 for correction!
-    
+    double u_k = fsync->computeCorrection(e_k);
+
+    // estimating clock skew
+    double D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
+
     // performing virtual clock slope correction
-    this->vcdot_k = u_k; 
-    
-    // next iteration values (k + 1 done in dynamic timesync downlink, ma non sono molto d'accordo)
+    this->vcdot_k = (u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
+
+    // next iteration values update
     this->tsnc_km1 = deriveTsnc(vc_k);
-    this->k += 1; // TODO: (s) move it to the synchronizer?
     this->vc_km1 = vc_k;
     this->vcdot_km1 = this->vcdot_k;
 }
@@ -96,6 +124,8 @@ void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
     this->vc_km1        = -syncPeriod;
     this->tsnc_km1      = -syncPeriod;
     
+    this->fsync = &Flopsync3::instance();
+
     this->init = true;
 }
 

@@ -28,7 +28,7 @@
 #ifndef FLOPSYNC_3_H
 #define	FLOPSYNC_3_H
 
-#include "synchronizer.h"
+//#include "synchronizer.h"
 #include <cstdio>
 
 /**
@@ -38,26 +38,18 @@
  * so slowly with respect to the controller operation to look like ramp
  * changes in clock skew.
  */
-class Flopsync3 : public Synchronizer
+// TODO: (s) redefine Syncrhonizer interface according to new Flopsync3 implementation
+class Flopsync3 //: public Synchronizer
 {
 public:
-    /**
-     * Constructor
-     */
-    Flopsync3() { reset(); }
+    static Flopsync3& instance();
     
     /**
      * Compute clock correction and receiver window given synchronization error
      * \param error synchronization error
      * \return a pair with the clock correction, and the receiver window
      */
-    std::pair<int,int> computeCorrection(int error);
-    
-    /**
-     * Compute clock correction and receiver window when a packet is lost
-     * \return a pair with the clock correction, and the receiver window
-     */
-    std::pair<int,int> lostPacket();
+    double computeCorrection(long long e_k);
     
     /**
      * Used after a resynchronization to reset the controller state
@@ -67,34 +59,30 @@ public:
     /**
      * \return the synchronization error e(k)
      */
-    int getSyncError() const { return eo*controllerScaleFactor; }
+    long long getSyncError();
     
     /**
-     * \return the clock correction u(k)
+     * \return getter for the clock correction u(k)
      */
-    int getClockCorrection() const;
-    
-    /**
-     * \return the receiver window (w)
-     */
-    int getReceiverWindow() const { return dw; }
+    double getClockCorrection();
     
 private:
-    int eo, eoo;
-    int uo, uoo;
-    int sum;
-    int squareSum;
-    int threeSigma;
-    int dw;
-    unsigned char count;
-    char init;
-    
-    static const int wMin=  50000; //50us
-    static const int wMax=6000000; //6ms
+    /**
+     * Base constructor
+     */
+    Flopsync3();
+    Flopsync3(const Flopsync3&)=delete;
+    Flopsync3& operator=(const Flopsync3&)=delete;
 
-    static const int numSamples=5; //Number of samples for variance compuation
-    static const int controllerScaleFactor=6;
-    static const int varianceScaleFactor=300;
+    // errors
+    long long e_k;
+    long long e_km1;
+    long long e_km2;
+
+    // corrections
+    double u_k;
+    double u_km1;
+    double u_km2;
 };
 
 #endif //FLOPSYNC_3_H

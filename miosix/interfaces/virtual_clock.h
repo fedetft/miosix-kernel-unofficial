@@ -28,7 +28,8 @@
 #ifndef VIRTUAL_CLOCK_H
 #define VIRTUAL_CLOCK_H
 
-#include "kernel/timeconversion.h"
+#include "time/timeconversion.h"
+#include "time/flopsync3.h"
 #include "cassert"
 #include "stdio.h"
 #include "miosix.h"
@@ -46,13 +47,34 @@ class VirtualClock
 {
 public:
     static VirtualClock& instance();
-        
+    
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
      * @param tsnc uncorrected time (ns)
      * @return the corrected time (ns) according to Flopsync3 correction
      */
-    long long getVirtualTimeNs(long long tsnc);
+    long long IRQgetVirtualTimeNs(long long tsnc) noexcept;
+
+    /**
+     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
+     * @param tsnc uncorrected time (ns)
+     * @return the corrected time (ns) according to Flopsync3 correction
+     */
+    long long getVirtualTimeNs(long long tsnc) noexcept;
+    
+    /**
+     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
+     * @param tsnc uncorrected time (ns)
+     * @return the corrected time (ticks) according to Flopsync3 correction
+     */
+    long long getVirtualTimeTicks(long long tsnc) noexcept;
+
+    /**
+     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
+     * @param vc_t corrected time (ns)
+     * @return the uncorrected time (ns)
+     */
+    long long IRQgetUncorrectedTimeNs(long long vc_t);
     
     /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns
@@ -60,13 +82,6 @@ public:
      * @return the uncorrected time (ns)
      */
     long long getUncorrectedTimeNs(long long vc_t);
-
-    /**
-     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
-     * @param tsnc uncorrected time (ns)
-     * @return the corrected time (ticks) according to Flopsync3 correction
-     */
-    long long getVirtualTimeTicks(long long tsnc);
     
     /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns
@@ -87,6 +102,20 @@ public:
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
     void updateVC(long long vc_k);
+
+    // TODO: (s) change description
+    /**
+     * Updates the internal value of the virtual clock
+     * @param vc_k time of the virtual clock at the step t_0 + kT
+     * - t_0 is the first synchronization time point in the local clock, in ns, corrected by FLOPSYNC-2 and VHT.
+     * - k is the number of iterations of the synchronizer.
+     * - T is the synchronization interval, as passed in the setSyncPeriod function
+     * 
+     * Please note that vc_k is in function of the tsnc_k (uncorrected time at current pase t_0 + kT)
+     * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
+     * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
+     */
+    void updateVC(long long vc_k, long long e_k);
 
     /**
      * To be used only while initializing the time synchronization. Its purpose is initializing the T value
@@ -147,9 +176,12 @@ private:
     long long baseTheoretical = 0;
     long long baseComputed    = 0;
 
-    // FIXME: (s) should be double?
+    // FIXME: (s) should or not be double?
     /*long long*/ double vcdot_k   = 1;    // slope of virtual clock at step k 
     /*long long*/ double vcdot_km1 = 1;    // slope of virtual clock at step k-1
+
+    const float a     = 0.05;
+    const float beta  = a/2;    // denormalized pole for feedback linearization dynamics
 
     unsigned long long k = 0;   // synchronizer step
     long long T0 = 0;           // initial offset
@@ -163,7 +195,7 @@ private:
     long long vc_km1;   // -T
 
     TimeConversion tc;
-
+    Flopsync3* fsync = nullptr; // late init
 };
 }
 

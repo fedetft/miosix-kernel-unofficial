@@ -26,7 +26,7 @@
  ***************************************************************************/
 
 #include "interfaces/os_timer.h"
-#include "kernel/timeconversion.h"
+#include "time/timeconversion.h"
 #include "hsc.h"
 
 #ifdef WITH_DEEP_SLEEP
@@ -37,19 +37,19 @@
 #include "interfaces/virtual_clock.h"
 #endif
 
-//#include "e20/e20.h" // DELETEME: (s)
-//#include "thread" // DELETEME: (s)
+#include "e20/e20.h" // DELETEME: (s)
+#include "thread" // DELETEME: (s)
 
 using namespace miosix;
 
-//static FixedEventQueue<100,12> queue; // DELETEME: (s)
+static FixedEventQueue<100,12> queue; // DELETEME: (s)
 
 // DELETEME: (s)
-/*void startThread()
+void startThread()
 {
 	std::thread t([]() { queue.run(); });
 	t.detach();
-}*/
+}
 
 namespace miosix {
 
@@ -102,13 +102,19 @@ void IRQosTimerSetTime(long long ns) noexcept
     hsc->IRQsetTimeNs(ns);
 }
 
+// TODO: (s) check if in the past?
+// FIXME: (s) called twice every pause?? one from SVC_Handler and other form TIMER1_HandlerImpl
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
-    //queue.IRQpost([=]() { iprintf("Next int: %lld (ns)\n", ns); }); // DELETEME: (s)
-    
-    // TODO: (s) check if in the past?
-    // FIXME: (s) called twice every pause?? one from SVC_Handler and other form TIMER1_HandlerImpl
+    //queue.IRQpost([=]() { iprintf("Next int: %lld (uncorr ns) vs %lld (ns)\n", vc->IRQgetUncorrectedTimeNs(ns), ns); }); // DELETEME: (s)
+
+    // TODO: (s) makes sense to have sleep time in the sleep queue corrected and then de-correct them here?
+    #ifdef WITH_VIRTUAL_CLOCK
+    hsc->IRQsetIrqNs(vc->IRQgetUncorrectedTimeNs(ns));
+    #else
     hsc->IRQsetIrqNs(ns); 
+    #endif
+    
 }
 
 unsigned int osTimerGetFrequency()

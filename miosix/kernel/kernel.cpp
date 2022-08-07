@@ -37,7 +37,7 @@
 #include "kernel/scheduler/scheduler.h"
 #include "stdlib_integration/libc_integration.h"
 #include "interfaces/os_timer.h"
-#include "timeconversion.h"
+#include "time/timeconversion.h"
 #include <stdexcept>
 #include <algorithm>
 #include <limits>
