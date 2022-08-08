@@ -29,6 +29,7 @@
 
 #include "time/timeconversion.h"
 #include "kernel/scheduler/timer_interrupt.h"
+#include "virtual_clock.h"
 
 /**
  * \addtogroup Interfaces
@@ -324,6 +325,7 @@ public:
                 IRQtimerInterrupt(tc.tick2ns(tick));
             }
         }
+        
         if(D::IRQgetOverflowFlag())
         {
             D::IRQclearOverflowFlag();
@@ -460,6 +462,116 @@ public:
         D::IRQinitTimer();
         tc=TimeConversion(D::IRQTimerFrequency());
     }
+};
+
+
+/** 
+ * ...
+ */
+template <typename Hsc_TA, typename... CorrectionStack>
+class TimerProxy
+{
+public:
+    /**
+     * @brief 
+     * 
+     * @return TimerProxy& 
+     */
+    static TimerProxy& instance(){
+        static TimerProxy tp;
+        return tp;
+    }
+    
+    /**
+     * @brief 
+     * 
+     * @return long long 
+     */
+    inline long long IRQgetTimeNs()
+    {
+        return correctTime<CorrectionStack...>(hsc->IRQgetTimeNs());
+    }
+
+    /**
+     * @brief 
+     * 
+     * @param ns 
+     */
+    inline void IRQsetIrqNs(long long ns)
+    {
+        hsc->IRQsetIrqNs(uncorrectTime<CorrectionStack...>(ns));
+    }
+
+    /**
+     * @brief 
+     * 
+     */
+    inline void IRQinit()
+    {
+        hsc = &Hsc_TA::instance();
+        hsc->IRQinit();
+    } 
+
+    /**
+     * @brief 
+     * 
+     * @param ns 
+     */
+    inline void IRQsetTimeNs(long long ns)
+    {
+        hsc->IRQsetTimeNs(uncorrectTime<CorrectionStack...>(ns));
+    }
+
+    /**
+     * @brief 
+     * 
+     * @return unsigned int 
+     */
+    inline unsigned int IRQTimerFrequency()
+    {
+        return hsc->IRQTimerFrequency();
+    }
+
+private:
+    ///
+    // Constructors
+    ///
+    TimerProxy(){}
+    TimerProxy(const TimerProxy&)=delete;
+    TimerProxy& operator=(const TimerProxy&)=delete;
+
+    ///
+    // Clock correction recursion functions
+    ///
+    template <typename Head, typename Head2, typename ...Tail>
+    inline long long correctTime(long long ns)
+    {
+        return (&Head::instance())->IRQcorrect(correctTime<Head2, Tail...>(ns));
+    }
+
+    template<typename Head>
+    inline long long correctTime(long long ns) {
+        return (&Head::instance())->IRQcorrect(ns);
+    }
+
+    ///
+    // Clock uncorrection recursion functions (derive tsnc)
+    ///
+    template <typename ...Head, typename Tail2, typename Tail>
+    inline long long uncorrectTime(long long ns)
+    {
+        return (&Tail::instance())->IRQuncorrect(uncorrectTime<Head..., Tail2>(ns));
+    }
+
+    template<typename Tail>
+    inline long long uncorrectTime(long long ns) {
+        return (&Tail::instance())->IRQuncorrect(ns);
+    }
+
+    ///
+    // class variables
+    ///
+    Hsc_TA * hsc = nullptr;
 };
 
 } //namespace miosix

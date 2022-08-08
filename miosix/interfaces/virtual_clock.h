@@ -47,6 +47,13 @@ class VirtualClock
 {
 public:
     static VirtualClock& instance();
+
+    /**
+     * @brief same as IRQgetVirtualTimeNs, just unified according to clock correction
+     * interfaces names
+     *  
+     */
+    long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
     
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
@@ -68,6 +75,13 @@ public:
      * @return the corrected time (ticks) according to Flopsync3 correction
      */
     long long getVirtualTimeTicks(long long tsnc) noexcept;
+
+    /**
+     * @brief same as IRQgetUncorrectedTimeNs, just unified according to clock correction
+     * interfaces names
+     *  
+     */
+    long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
 
     /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns

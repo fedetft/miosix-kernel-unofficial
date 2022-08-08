@@ -136,20 +136,6 @@ const unsigned char MAX_OPEN_FILES=8;
 #define WITH_ERRLOG
 
 //
-// Clock correction options
-//
-
-/// \def WITH_VHT
-/// Uncomment to apply VHT clock correction between RTC and HSC
-/// with the use of the internal FLOPSYNC_VHT controller
-//#define WITH_VHT
-
-/// \def WITH_VIRTUAL_CLOCK
-/// Uncomment to apply clock correction updated with error coming from
-/// the network module with the use of the internal FLOPSYNC controller
-#define WITH_VIRTUAL_CLOCK
-
-//
 // Kernel related options (stack sizes, priorities)
 //
 
@@ -220,6 +206,28 @@ const unsigned char MAIN_PRIORITY=1;
 const unsigned int MAX_TIME_SLICE=1000000;
 #endif //SCHED_TYPE_PRIORITY
 
+//
+// Clock correction options
+//
+
+/// \def WITH_VHT
+/// Uncomment to apply VHT clock correction between RTC and HSC
+/// with the use of the internal FLOPSYNC_VHT controller
+//#define WITH_VHT
+
+/// \def WITH_VIRTUAL_CLOCK
+/// Uncomment to apply clock correction updated with error coming from
+/// the network module with the use of the internal FLOPSYNC controller
+#define WITH_VIRTUAL_CLOCK
+
+// checkes on clock correction compatibilities
+#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
+#warning VHT is specifically designed to work with deep sleep when using virtual clock. This will lead to useless loss of performance.
+#endif
+
+#if defined(WITH_VHT) && !defined(WITH_DEEP_SLEEP)
+#warning VHT is specifically designed to work with deep sleep when using virtual clock. This will lead to useless loss of performance.
+#endif
 
 //
 // Other low level kernel options. There is usually no need to modify these.

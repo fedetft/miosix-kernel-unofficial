@@ -59,9 +59,7 @@ static Hsc *hsc = nullptr;
 static Rtc *rtc = nullptr;
 #endif
 
-#ifdef WITH_VIRTUAL_CLOCK
-static VirtualClock *vc = nullptr;
-#endif
+static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();;
 
 long long getTime() noexcept
 {
@@ -71,11 +69,7 @@ long long getTime() noexcept
 
 long long IRQgetTime() noexcept
 {
-    #ifdef WITH_VIRTUAL_CLOCK
-    return vc->getVirtualTimeNs(hsc->IRQgetTimeNs());
-    #else
-    return hsc->IRQgetTimeNs();
-    #endif
+    return timerProxy->IRQgetTimeNs();
 }
 
 namespace internal {
@@ -84,48 +78,39 @@ void IRQosTimerInit()
 {
     //startThread(); // DELETEME: (s)
 
-    hsc = &Hsc::instance();
-    hsc->IRQinit();
-
+    timerProxy->IRQinit();
+    
     #ifdef WITH_DEEP_SLEEP
     rtc = &Rtc::instance();
     rtc->IRQinit();
     #endif
 
-    #ifdef WITH_VIRTUAL_CLOCK
-    vc = &VirtualClock::instance();
-    #endif
 }
 
 void IRQosTimerSetTime(long long ns) noexcept
 {
-    hsc->IRQsetTimeNs(ns);
+    timerProxy->IRQsetTimeNs(ns);
 }
 
 // TODO: (s) check if in the past?
-// FIXME: (s) called twice every pause?? one from SVC_Handler and other form TIMER1_HandlerImpl
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
     //queue.IRQpost([=]() { iprintf("Next int: %lld (uncorr ns) vs %lld (ns)\n", vc->IRQgetUncorrectedTimeNs(ns), ns); }); // DELETEME: (s)
 
-    // TODO: (s) makes sense to have sleep time in the sleep queue corrected and then de-correct them here?
-    #ifdef WITH_VIRTUAL_CLOCK
-    hsc->IRQsetIrqNs(vc->IRQgetUncorrectedTimeNs(ns));
-    #else
-    hsc->IRQsetIrqNs(ns); 
-    #endif
-    
+    timerProxy->IRQsetIrqNs(ns);
 }
 
 unsigned int osTimerGetFrequency()
 {
     InterruptDisableLock dLock;
-    return hsc->IRQTimerFrequency();
+    return timerProxy->IRQTimerFrequency();
 }
 
 } //namespace internal
 
 } //namespace miosix 
+
+void __attribute__((naked)) TIMER1_IRQHandler(); // forward declaration
 
 /**
  * TIMER2 interrupt routine
@@ -140,22 +125,31 @@ void __attribute__((naked)) TIMER2_IRQHandler()
 
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
-    // TIMER2 overflow, pending bit trick
-    if(hsc->IRQgetOverflowFlag())
-    {
-        hsc->IRQhandler();
-    }
+    static Hsc * hsc = &Hsc::instance();
+
+    // save value of TIMER1 counter right away to check for compare later
+    unsigned int lowerTimerCounter = TIMER1->CNT;
+
+    // TIMER2 overflow, pending bit trick.
+    if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
+
+    // if just overflow, no TIMER2 counter register match, return
+    if(!(TIMER2->IF & TIMER_IF_CC0)) return;
+    
     // first part of output compare, disable output compare interrupt
     // for TIMER2 and turn of output comapre interrupt of TIMER1
+    miosix::ledOn();
+
+    // disable output compare interrupt on channel 0 for most significant timer
+    TIMER2->IEN &= ~TIMER_IEN_CC0;
+    TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    TIMER2->IFC |= TIMER_IFC_CC0;
+
+    // if by the time we get here, the lower part of the counter has already matched
+    // the counter register or got past it, call TIMER1 handler directly
+    if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
     else
     {
-        miosix::greenLed::high();
-
-        // disable output compare interrupt on channel 0 for most significant timer
-        TIMER2->IEN &= ~TIMER_IEN_CC0;
-        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->IFC |= TIMER_IFC_CC0;
-
         // enable output compare interrupt on channel 0 for least significant timer
         TIMER1->IEN |= TIMER_IEN_CC0;
         TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -175,11 +169,13 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {
+    static Hsc * hsc = &Hsc::instance();
+
     // second part of output compare. If we reached this interrupt, it means
     // we already matched the upper part of the timer and we have now matched the lower part.
     hsc->IRQhandler();
 
-    miosix::greenLed::low();
+    miosix::ledOff();
 }
 
 // TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
