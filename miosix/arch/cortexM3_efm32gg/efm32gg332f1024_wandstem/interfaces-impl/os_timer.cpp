@@ -33,10 +33,6 @@
 #include "rtc.h"
 #endif
 
-#ifdef WITH_VIRTUAL_CLOCK
-#include "interfaces/virtual_clock.h"
-#endif
-
 #include "e20/e20.h" // DELETEME: (s)
 #include "thread" // DELETEME: (s)
 
@@ -53,13 +49,13 @@ void startThread()
 
 namespace miosix {
 
-static Hsc *hsc = nullptr;
-
 #ifdef WITH_DEEP_SLEEP
 static Rtc *rtc = nullptr;
 #endif
 
-static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();;
+//static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();
+//static TimerProxy<Hsc> * timerProxy = &TimerProxy<Hsc>::instance();
+static TimerProxy<Hsc> * timerProxy = &(miosix::TimerProxy<Hsc>::instance(miosix::defaultCorrectionStack));
 
 long long getTime() noexcept
 {

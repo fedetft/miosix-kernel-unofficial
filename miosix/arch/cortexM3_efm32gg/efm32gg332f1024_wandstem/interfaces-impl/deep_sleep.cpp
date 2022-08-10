@@ -33,6 +33,7 @@
 #include <sys/ioctl.h>
 #include "stdio.h"
 #include "miosix.h" // DELETEME: (s)
+#include "bsp_impl.h"
 
 #ifdef WITH_VHT
 #include "interfaces/vht.h"
@@ -68,7 +69,7 @@ void IRQdeepSleepInit()
 bool IRQdeepSleep(long long abstime)
 {
     PauseKernelLock pkLock; //To run unexpected IRQs without context switch
-    miosix::ledOn();
+    miosix::greenLedOn();
 
     // 1. RTC set ticks from High Speed Clock and starts
     rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
@@ -81,7 +82,7 @@ bool IRQdeepSleep(long long abstime)
     hsc->IRQsetTimeNs(rtc->IRQgetTimeNs()); // FIXME: (s) stack overflow, i think it has to do with new irq set
     rtc->IRQstopTimer(); // TODO: (s) should do power gating?
     
-    miosix::ledOff();
+    miosix::greenLedOff();
 
     return true;
 }

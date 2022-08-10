@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2022 by Alessandro Sorrentino                           *
+ *   Copyright (C)  2013 by Terraneo Federico                              *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -26,14 +26,52 @@
  ***************************************************************************/
 
 #ifndef SYNCHRONIZER_H
-#define SYNCHRONIZER_H
+#define	SYNCHRONIZER_H
+#include <utility>
 
+/**
+ * Base class from which synchronization schemes derive
+ */
 class Synchronizer
 {
 public:
-    virtual long long correct(long long ns)=0;
+    /**
+     * Compute clock correction and receiver window given synchronization error
+     * \param e synchronization error
+     * \return a pair with the clock correction, and the receiver window
+     */
+    virtual std::pair<int,int> computeCorrection(int e)=0;
     
-    virtual long long uncorrect(long long ns)=0;
+    /**
+     * Compute clock correction and receiver window when a packet is lost
+     * \return a pair with the clock correction, and the receiver window
+     */
+    virtual std::pair<int,int> lostPacket()=0;
+    
+    /**
+     * Used after a resynchronization to reset the controller state
+     */
+    virtual void reset()=0;
+    
+    /**
+     * \return the synchronization error e(k)
+     */
+    virtual int getSyncError() const=0;
+    
+    /**
+     * \return the clock correction u(k)
+     */
+    virtual int getClockCorrection() const=0;
+    
+    /**
+     * \return the receiver window (w)
+     */
+    virtual int getReceiverWindow() const=0;
+    
+    /**
+     * Destructor
+     */
+    virtual ~Synchronizer();
 };
 
-#endif
+#endif //SYNCHRONIZER_H

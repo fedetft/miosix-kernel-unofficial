@@ -34,6 +34,7 @@
 #include "stdio.h"
 #include "miosix.h"
 #include <stdexcept>
+#include "time/synchronizer.h"
 
 namespace miosix {
 // TODO: (s) fix description in the future
@@ -43,7 +44,7 @@ namespace miosix {
  * and parameters as input, preserving a state capable of correcting an arbitrary
  * timestamp, using an equation of type texpected = tstart + coeff * skew
  */
-class VirtualClock 
+class VirtualClock  : public Synchronizer
 {
 public:
     static VirtualClock& instance();
@@ -53,7 +54,7 @@ public:
      * interfaces names
      *  
      */
-    long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
+    long long correct(long long tsnc) { return getVirtualTimeNs(tsnc); }
     
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
@@ -81,7 +82,7 @@ public:
      * interfaces names
      *  
      */
-    long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
+    long long uncorrect(long long vc_t) { return getUncorrectedTimeNs(vc_t); }
 
     /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns
