@@ -29,7 +29,7 @@
 
 #include "time/timeconversion.h"
 #include "kernel/scheduler/timer_interrupt.h"
-#include "time/syncrhonizer.h"
+#include "time/synchronizer.h"
 #include <vector>
 
 #ifdef WITH_VIRTUAL_CLOCK
