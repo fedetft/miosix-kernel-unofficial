@@ -60,7 +60,7 @@ long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
     //assertInit();
     assertNonNegativeTime(vc_t);
 
-    if(!init) return vc_t;// needed when system is booting up and until no sync period is set
+    if(!init) return vc_t; // needed when system is booting up and until no sync period is set
     // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
     else return deriveTsnc(vc_t);
 }
@@ -79,6 +79,12 @@ long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
 // TODO: (s) the error should be passed from timesync for a more abstraction level
 void VirtualClock::updateVC(long long vc_k)
 {
+    FastInterruptDisableLock lck;
+    IRQupdateVC(vc_k);
+}
+
+void VirtualClock::IRQupdateVC(long long vc_k)
+{
     assertInit();
     assertNonNegativeTime(vc_k);
 
@@ -87,13 +93,19 @@ void VirtualClock::updateVC(long long vc_k)
     // calculating sync error
     long long e_k = (kT/* + T0*/) - vc_k;
 
-    VirtualClock::updateVC(vc_k, e_k);
+    VirtualClock::IRQupdateVC(vc_k, e_k);
 
     // next iteration values update
     this->k += 1;
 }
 
 void VirtualClock::updateVC(long long vc_k, long long e_k)
+{
+    FastInterruptDisableLock lck;
+    IRQupdateVC(vc_k, e_k);
+}
+
+void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
 {
     assertInit();
     assertNonNegativeTime(vc_k);
@@ -116,6 +128,12 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
 
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 {
+    FastInterruptDisableLock lck;
+    IRQsetSyncPeriod(syncPeriod);
+}
+
+void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
+{
     if(syncPeriod > VirtualClock::maxPeriod) { throw std::logic_error("Sync period cannot be more than maximum!"); };  
     if(syncPeriod == 0) { throw std::logic_error("Sync period cannot be zero!"); };  
 
@@ -124,18 +142,24 @@ void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
     this->vc_km1        = -syncPeriod;
     this->tsnc_km1      = -syncPeriod;
     
-    this->fsync = &Flopsync3::instance();
+    this->fsync = &(Flopsync3::instance());
 
     this->init = true;
 }
 
 void VirtualClock::setInitialOffset(long long T0)
 {
+    FastInterruptDisableLock lck;
+    IRQsetInitialOffset(T0);
+}
+
+void VirtualClock::IRQsetInitialOffset(long long T0)
+{
     assertNonNegativeTime(T0);
     this->T0 = T0;
 }
 
-inline long long VirtualClock::deriveTsnc(long long vc_t)
+long long VirtualClock::deriveTsnc(long long vc_t)
 {
     assertInit();
     assertNonNegativeTime(vc_t);

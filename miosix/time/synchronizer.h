@@ -28,12 +28,30 @@
 #ifndef SYNCHRONIZER_H
 #define SYNCHRONIZER_H
 
+#include "miosix.h"
+
+namespace miosix {
+
 class Synchronizer
 {
 public:
-    virtual long long correct(long long ns)=0;
-    
-    virtual long long uncorrect(long long ns)=0;
+
+    long long correct(long long ns)
+    {
+        FastInterruptDisableLock lck;
+        return IRQcorrect(ns);
+    }
+
+    long long uncorrect(long long ns)
+    {
+        FastInterruptDisableLock lck;
+        return IRQuncorrect(ns);
+    }
+
+    virtual long long IRQcorrect(long long ns)=0;
+    virtual long long IRQuncorrect(long long ns)=0;
 };
+
+}
 
 #endif

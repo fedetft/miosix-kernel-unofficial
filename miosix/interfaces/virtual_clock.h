@@ -49,12 +49,20 @@ class VirtualClock  : public Synchronizer
 public:
     static VirtualClock& instance();
 
+    // FIXME: (s) IRQ correct! define normal in interface
     /**
      * @brief same as IRQgetVirtualTimeNs, just unified according to clock correction
      * interfaces names
      *  
      */
-    long long correct(long long tsnc) { return getVirtualTimeNs(tsnc); }
+    long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
+
+    /**
+     * @brief same as IRQgetUncorrectedTimeNs, just unified according to clock correction
+     * interfaces names
+     *  
+     */
+    long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
     
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
@@ -62,12 +70,6 @@ public:
      * @return the corrected time (ns) according to Flopsync3 correction
      */
     long long IRQgetVirtualTimeNs(long long tsnc) noexcept;
-
-    /**
-     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
-     * @param tsnc uncorrected time (ns)
-     * @return the corrected time (ns) according to Flopsync3 correction
-     */
     long long getVirtualTimeNs(long long tsnc) noexcept;
     
     /**
@@ -78,24 +80,11 @@ public:
     long long getVirtualTimeTicks(long long tsnc) noexcept;
 
     /**
-     * @brief same as IRQgetUncorrectedTimeNs, just unified according to clock correction
-     * interfaces names
-     *  
-     */
-    long long uncorrect(long long vc_t) { return getUncorrectedTimeNs(vc_t); }
-
-    /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns
      * @param vc_t corrected time (ns)
      * @return the uncorrected time (ns)
      */
     long long IRQgetUncorrectedTimeNs(long long vc_t);
-    
-    /**
-     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
-     * @param vc_t corrected time (ns)
-     * @return the uncorrected time (ns)
-     */
     long long getUncorrectedTimeNs(long long vc_t);
     
     /**
@@ -116,6 +105,7 @@ public:
      * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
+    void IRQupdateVC(long long vc_k);
     void updateVC(long long vc_k);
 
     // TODO: (s) change description
@@ -130,6 +120,7 @@ public:
      * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
+    void IRQupdateVC(long long vc_k, long long e_k);
     void updateVC(long long vc_k, long long e_k);
 
     /**
@@ -139,14 +130,17 @@ public:
      * a monotonic clock.
      * @param syncPeriod the time T (ns), also known as synchronization interval
      */
-    void setSyncPeriod(unsigned long long syncPeriod);
+    void IRQsetSyncPeriod(unsigned long long syncPeriod);
+    void setSyncPeriod(unsigned long long syncPeriod);    
 
     /**
      * Set the initial offset for the virtual clock
      * 
      * @param T0 initial offset (ns)
      */
+    void IRQsetInitialOffset(long long T0);
     void setInitialOffset(long long T0);
+    
     
 private:
     VirtualClock() : tc(EFM32_HFXO_FREQ) {};
@@ -162,7 +156,7 @@ private:
      * @param vc_t virtual clock time (ns)
      * @return long long uncorrected time (ns)
      */
-    inline long long deriveTsnc(long long vc_t);
+    long long deriveTsnc(long long vc_t);
 
     /**
      * Checks whether a passed time is negative or not. 
@@ -195,6 +189,7 @@ private:
     /*long long*/ double vcdot_k   = 1;    // slope of virtual clock at step k 
     /*long long*/ double vcdot_km1 = 1;    // slope of virtual clock at step k-1
 
+    // TODO: (s) move this to flopsync controller
     const float a     = 0.05;
     const float beta  = a/2;    // denormalized pole for feedback linearization dynamics
 

@@ -237,6 +237,7 @@ public:
     /**
      * \return the current time in nanoseconds
      */
+    // FIXME: (s) getTime is a noexcept function!
     inline long long IRQgetTimeNs()
     {
         return tc.tick2ns(IRQgetTimeTick());
@@ -474,164 +475,38 @@ public:
 
 
 /** 
- * tenativo variadic templates FALLITO!
+ * ...
  */
-// template <typename Hsc_TA, typename... CorrectionStack>
-// class TimerProxy
-// {
-// public:
-//     /**
-//      * @brief 
-//      * 
-//      * @return TimerProxy& 
-//      */
-//     static TimerProxy& instance(){
-//         static TimerProxy tp;
-//         return tp;
-//     }
-    
-//     /**
-//      * @brief 
-//      * 
-//      * @return long long 
-//      */
-//     inline long long IRQgetTimeNs()
-//     {
-//         // FIXME: (s) fix empty pack!
-//         return correctTime<CorrectionStack...>(hsc->IRQgetTimeNs());
-//     }
 
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetIrqNs(long long ns)
-//     {
-//         hsc->IRQsetIrqNs(uncorrectTime<CorrectionStack...>(ns));
-//     }
+//static ... defaultCorrectionStack ...
 
-//     /**
-//      * @brief 
-//      * 
-//      */
-//     inline void IRQinit()
-//     {
-//         hsc = &Hsc_TA::instance();
-//         hsc->IRQinit();
-//     } 
+///
+// Reverse typelist logic
+///
+template<class... Ts>
+struct typelist{};
 
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetTimeNs(long long ns)
-//     {
-//         hsc->IRQsetTimeNs(uncorrectTime<CorrectionStack...>(ns));
-//     }
+template<class... Ts, class... Us>
+auto concat(typelist<Ts...>, typelist<Us...>) -> typelist<Ts..., Us...>;
 
-//     /**
-//      * @brief 
-//      * 
-//      * @return unsigned int 
-//      */
-//     inline unsigned int IRQTimerFrequency()
-//     {
-//         return hsc->IRQTimerFrequency();
-//     }
+auto reverse(typelist<>) -> typelist<>;
 
-// private:
-//     ///
-//     // Constructors
-//     ///
-//     TimerProxy(){}
-//     TimerProxy(const TimerProxy&)=delete;
-//     TimerProxy& operator=(const TimerProxy&)=delete;
+template<class Head, class... Tail>
+auto reverse(typelist<Head, Tail...>)
+    -> decltype(
+        concat(
+               reverse(std::declval<typelist<Tail...>>()),
+               std::declval<typelist<Head>>()
+               ) // concat
+      ); // decltype
 
-//     ///
-//     // Clock correction recursion functions
-//     ///
+template<class... Ts>
+using reversed_typelist = decltype(reverse(std::declval<typelist<Ts...>>()));
 
-//     // 1st attempt
-//     // template <typename Head, typename Head2, typename ...Tail>
-//     // inline long long correctTime(long long ns)
-//     // {
-//     //     return (&Head::instance())->IRQcorrect(correctTime<Head2, Tail...>(ns));
-//     // }
-
-//     // template<typename Head>
-//     // inline long long correctTime(long long ns) {
-//     //     return (&Head::instance())->IRQcorrect(ns);
-//     // }
-
-//     // // no correction, empty Pack
-//     // inline long long correctTime(long long ns) {
-//     //     return ns;
-//     // }
-
-//     // 2nd attempt FAILED
-//     // error: explicit specialization in non-namespace scope 'class miosix::TimerProxy<Hsc_TA, CorrectionStack>
-//     template <typename Head, typename ...Tail>
-//     inline long long correctTime(long long ns)
-//     {
-//         return (&Head::instance())->IRQcorrect(correctTime<Tail...>(ns));
-//     }
-
-//     // no correction, empty Pack
-//     template<>
-//     inline long long correctTime<>(long long ns) {
-//         return ns;
-//     }
-
-
-//     ///
-//     // Clock uncorrection recursion functions (derive tsnc)
-//     ///
-//     // template <typename ...Head, typename Tail2, typename Tail>
-//     // inline long long uncorrectTime(long long ns)
-//     // {
-//     //     return (&Tail::instance())->IRQuncorrect(uncorrectTime<Head..., Tail2>(ns));
-//     // }
-
-//     // template<typename Tail>
-//     // inline long long uncorrectTime(long long ns) {
-//     //     return (&Tail::instance())->IRQuncorrect(ns);
-//     // }
-
-//     // // no correction, empty Pack
-//     // inline long long uncorrectTime(long long ns) {
-//     //     return ns;
-//     // }
-
-//     template <typename ...Head, typename Tail>
-//     inline long long uncorrectTime(long long ns)
-//     {
-//         return (&Tail::instance())->IRQuncorrect(uncorrectTime<Head...>(ns));
-//     }
-
-//     template<typename... Head>
-//     inline long long uncorrectTime(long long ns) {
-//         return ns;
-//     }
-
-//     ///
-//     // class variables
-//     ///
-//     Hsc_TA * hsc = nullptr;
-// };
-
-
-static const std::initializer_list<Synchronizer *> defaultCorrectionStack = {
-    #ifdef WITH_VIRTUAL_CLOCK
-    &(VirtualClock::instance()),
-    #endif
-    #ifdef WITH_VHT
-    //&(Vht::instance()),
-    #endif
-};
-
-template <typename Hsc_TA>
+///
+// Actual time proxy implementation
+///
+template <typename Hsc_TA, typename... CorrectionStack>
 class TimerProxy
 {
 public:
@@ -640,11 +515,11 @@ public:
      * 
      * @return TimerProxy& 
      */
-    static TimerProxy& instance(std::initializer_list<Synchronizer*> correctionStack = {}){
-        static TimerProxy tp(correctionStack);
+    static TimerProxy& instance(){
+        static TimerProxy tp;
         return tp;
     }
-
+    
     /**
      * @brief 
      * 
@@ -652,7 +527,7 @@ public:
      */
     inline long long IRQgetTimeNs()
     {
-        return applyCorrectionStack(hsc->IRQgetTimeNs());
+        return IRQcorrectTime<CorrectionStack...>::call(hsc->IRQgetTimeNs());
     }
 
     /**
@@ -662,7 +537,7 @@ public:
      */
     inline void IRQsetIrqNs(long long ns)
     {
-        hsc->IRQsetIrqNs(applyUncorrectionStack(ns));
+        hsc->IRQsetIrqNs(IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns));
     }
 
     /**
@@ -682,7 +557,7 @@ public:
      */
     inline void IRQsetTimeNs(long long ns)
     {
-        hsc->IRQsetTimeNs(applyUncorrectionStack(ns));
+        hsc->IRQsetTimeNs(IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns));
     }
 
     /**
@@ -699,51 +574,195 @@ private:
     ///
     // Constructors
     ///
-    TimerProxy(std::initializer_list<Synchronizer*> correctionStack = {}):correctionStack(correctionStack) {}
+    TimerProxy(){}
     TimerProxy(const TimerProxy&)=delete;
     TimerProxy& operator=(const TimerProxy&)=delete;
 
     ///
-    // Clock correction
+    // Clock correction recursion functions
     ///
-    inline long long applyCorrectionStack(long long tsnc)
+
+    // no correction, empty Pack
+    template<typename... Ts>
+    struct IRQcorrectTime
     {
-        long long time = tsnc;
+        static inline long long call(long long ns) {
+            return ns;
+        }
+    };
 
-        // apply correction using reversed iterator to avoid wasting time
-        // reversing correction stack vector each time
-        std::vector<Synchronizer*>::reverse_iterator riter = correctionStack.rbegin();
-        for (; riter!= correctionStack.rend(); ++riter)
-            time = (*riter)->correct(time);
+    // 1 or more elements
+    template <typename Head, typename ...Tail>
+    struct IRQcorrectTime<Head, Tail...>
+    {
+        static inline long long call(long long ns)
+        {
+            // TODO: (s) maybe use static?
+            return (&Head::instance())->IRQcorrect(IRQcorrectTime<Tail...>::call(ns));
+        }
+    };
 
-        return time;
+
+    ///
+    // Clock uncorrection recursion functions (derive tsnc)
+    ///
+
+    // entry point for template pack call
+    template<class... Ts>
+    inline long long IRQuncorrect_impl(typelist<Ts...>, long long x)
+    {
+        return IRQuncorrectTime<Ts...>::call(x);
     }
 
-    ///
-    // Clock uncorrection (derive tsnc)
-    ///
-    inline long long applyUncorrectionStack(long long tsnc)
+    // no correction, empty Pack
+    template<typename... Ts>
+    struct IRQuncorrectTime
     {
-        long long time = tsnc;
+        static inline long long call(long long ns) {
+            return ns;
+        }
+    };
 
-        // apply uncorrection
-        for(auto synch : correctionStack)
-            time = synch->uncorrect(time);
+    // 1 or more elements
+    template <typename Head, typename ...Tail>
+    struct IRQuncorrectTime<Head, Tail...>
+    {
+        static inline long long call(long long ns)
+        {
+            return (&Head::instance())->IRQuncorrect(IRQuncorrectTime<Tail...>::call(ns));
+        }
+    };
 
-        return time;
-    }
-    
     ///
-    // Other helper functions
-    ///
-
-    ///
-    // Class variables
+    // class variables
     ///
     Hsc_TA * hsc = nullptr;
-    std::vector<Synchronizer*> correctionStack;
-
 };
+
+
+
+// static const std::initializer_list<Synchronizer *> defaultCorrectionStack = {
+//     #ifdef WITH_VIRTUAL_CLOCK
+//     &(VirtualClock::instance()),
+//     #endif
+//     #ifdef WITH_VHT
+//     //&(Vht::instance()),
+//     #endif
+// };
+
+// template <typename Hsc_TA>
+// class TimerProxy
+// {
+// public:
+//     /**
+//      * @brief 
+//      * 
+//      * @return TimerProxy& 
+//      */
+//     static TimerProxy& instance(std::initializer_list<Synchronizer*> correctionStack = {}){
+//         static TimerProxy tp(correctionStack);
+//         return tp;
+//     }
+
+//     /**
+//      * @brief 
+//      * 
+//      * @return long long 
+//      */
+//     inline long long IRQgetTimeNs()
+//     {
+//         return applyCorrectionStack(hsc->IRQgetTimeNs());
+//     }
+
+//     /**
+//      * @brief 
+//      * 
+//      * @param ns 
+//      */
+//     inline void IRQsetIrqNs(long long ns)
+//     {
+//         hsc->IRQsetIrqNs(applyUncorrectionStack(ns));
+//     }
+
+//     /**
+//      * @brief 
+//      * 
+//      */
+//     inline void IRQinit()
+//     {
+//         hsc = &Hsc_TA::instance();
+//         hsc->IRQinit();
+//     } 
+
+//     /**
+//      * @brief 
+//      * 
+//      * @param ns 
+//      */
+//     inline void IRQsetTimeNs(long long ns)
+//     {
+//         hsc->IRQsetTimeNs(applyUncorrectionStack(ns));
+//     }
+
+//     /**
+//      * @brief 
+//      * 
+//      * @return unsigned int 
+//      */
+//     inline unsigned int IRQTimerFrequency()
+//     {
+//         return hsc->IRQTimerFrequency();
+//     }
+
+// private:
+//     ///
+//     // Constructors
+//     ///
+//     TimerProxy(std::initializer_list<Synchronizer*> correctionStack = {}):correctionStack(correctionStack) {}
+//     TimerProxy(const TimerProxy&)=delete;
+//     TimerProxy& operator=(const TimerProxy&)=delete;
+
+//     ///
+//     // Clock correction
+//     ///
+//     inline long long applyCorrectionStack(long long tsnc)
+//     {
+//         long long time = tsnc;
+
+//         // apply correction using reversed iterator to avoid wasting time
+//         // reversing correction stack vector each time
+//         std::vector<Synchronizer*>::reverse_iterator riter = correctionStack.rbegin();
+//         for (; riter!= correctionStack.rend(); ++riter)
+//             time = (*riter)->IRQcorrect(time);
+
+//         return time;
+//     }
+
+//     ///
+//     // Clock uncorrection (derive tsnc)
+//     ///
+//     inline long long applyUncorrectionStack(long long tsnc)
+//     {
+//         long long time = tsnc;
+
+//         // apply uncorrection
+//         for(auto synch : correctionStack)
+//             time = synch->IRQuncorrect(time);
+
+//         return time;
+//     }
+    
+//     ///
+//     // Other helper functions
+//     ///
+
+//     ///
+//     // Class variables
+//     ///
+//     Hsc_TA * hsc = nullptr;
+//     std::vector<Synchronizer*> correctionStack;
+
+// };
 
 } //namespace miosix
 
