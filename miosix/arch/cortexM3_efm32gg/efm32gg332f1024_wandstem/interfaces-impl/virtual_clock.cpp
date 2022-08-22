@@ -110,6 +110,8 @@ void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
     assertInit();
     assertNonNegativeTime(vc_k);
 
+    //FIXME: (s) use fixed point 32x32
+
     // controller correction
     // TODO: (s) need saturation for correction!
     double u_k = fsync->computeCorrection(e_k);
@@ -142,7 +144,7 @@ void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
     this->vc_km1        = -syncPeriod;
     this->tsnc_km1      = -syncPeriod;
     
-    this->fsync = &(Flopsync3::instance());
+    this->fsync = &Flopsync3::instance();
 
     this->init = true;
 }
@@ -187,4 +189,8 @@ void VirtualClock::assertInit()
     }
 }
 
-}
+VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), baseTheoretical(0),
+                            baseComputed(0), vcdot_k(1), vcdot_km1(1), a(0.05), beta(a/2),
+                            k(0), T0(0), init(false), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
+
+} // namespace miosix

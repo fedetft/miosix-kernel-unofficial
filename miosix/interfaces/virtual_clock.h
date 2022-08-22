@@ -25,6 +25,8 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+#pragma once
+
 #ifndef VIRTUAL_CLOCK_H
 #define VIRTUAL_CLOCK_H
 
@@ -34,7 +36,7 @@
 #include "stdio.h"
 #include "miosix.h"
 #include <stdexcept>
-#include "time/synchronizer.h"
+#include "time/correction_tile.h"
 
 namespace miosix {
 // TODO: (s) fix description in the future
@@ -44,7 +46,7 @@ namespace miosix {
  * and parameters as input, preserving a state capable of correcting an arbitrary
  * timestamp, using an equation of type texpected = tstart + coeff * skew
  */
-class VirtualClock  : public Synchronizer
+class VirtualClock  : public CorrectionTile
 {
 public:
     static VirtualClock& instance();
@@ -140,10 +142,16 @@ public:
      */
     void IRQsetInitialOffset(long long T0);
     void setInitialOffset(long long T0);
+
+    /**
+     * @brief 
+     * 
+     */
+    void IRQinit(){}; // TODO: (s) fix empty body, just to avoid compilation error for synchronizer imposed methods
     
     
 private:
-    VirtualClock() : tc(EFM32_HFXO_FREQ) {};
+    VirtualClock();
     VirtualClock(const VirtualClock&)=delete;
     VirtualClock& operator=(const VirtualClock&)=delete;
 
@@ -176,36 +184,38 @@ private:
 
     /* class variables */
 
+    // TODO: (s) move all those values init inside cpp initialization list so user can instanciate them differently
     //Max period, necessary to guarantee the proper behaviour of runUpdate
     //They are 2^40=1099s
-    const unsigned long long maxPeriod = 1099511627775;
+    const unsigned long long maxPeriod;
     
-    unsigned long long syncPeriod = 0;
+    unsigned long long syncPeriod;
     
-    long long baseTheoretical = 0;
-    long long baseComputed    = 0;
+    long long baseTheoretical;
+    long long baseComputed;
 
-    // FIXME: (s) should or not be double?
-    /*long long*/ double vcdot_k   = 1;    // slope of virtual clock at step k 
-    /*long long*/ double vcdot_km1 = 1;    // slope of virtual clock at step k-1
+    // FIXME: (s) should or not be double? NO! should be fast 32x32 dear
+    /*long long*/ double vcdot_k;    // slope of virtual clock at step k 
+    /*long long*/ double vcdot_km1;    // slope of virtual clock at step k-1
 
     // TODO: (s) move this to flopsync controller
-    const float a     = 0.05;
-    const float beta  = a/2;    // denormalized pole for feedback linearization dynamics
+    const float a;
+    const float beta;    // denormalized pole for feedback linearization dynamics
 
-    unsigned long long k = 0;   // synchronizer step
-    long long T0 = 0;           // initial offset
+    unsigned long long k;   // synchronizer step
+    long long T0;           // initial offset
 
     // this variable verifies that the virtual clock has been initialized
     // with the sync period
-    bool init = false;
+    bool init;
 
     // lazy init since we get the sync period at runtime (see setSyncPeriod function)
     long long tsnc_km1; // -T
     long long vc_km1;   // -T
 
+    Flopsync3* fsync; // late init
     TimeConversion tc;
-    Flopsync3* fsync = nullptr; // late init
+
 };
 }
 
