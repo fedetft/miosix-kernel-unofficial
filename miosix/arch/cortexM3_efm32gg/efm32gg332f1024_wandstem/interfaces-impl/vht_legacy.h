@@ -49,8 +49,10 @@ public:
     static bool softEnable;
     static bool hardEnable;
     
+    // FIXME:
     static VHT& instance();
     
+    // FIXME: 
     /**
      * @return 
      */
@@ -58,8 +60,10 @@ public:
         return baseExpected+fastNegMul((tick-baseTheoretical),inverseFactorI,inverseFactorD);
     }
     
+    // FIXME:
     void start();
     
+    // FIXME:
     /**
      * Correct a given tick value with the windows parameter
      * @param tick
@@ -69,6 +73,7 @@ public:
         return baseTheoretical+fastNegMul(tick-baseExpected,factorI,factorD);
     }
     
+    // FIXME: 
     void IRQoffsetUpdate(long long baseTheoretical, long long baseComputed);
     
     void update(long long baseTheoretical, long long baseComputed, long long clockCorrection);
@@ -77,10 +82,12 @@ public:
     void startResyncSoft();
     
 private:
+    // FIXME: 
     VHT();
     VHT(const VHT&)=delete;
     VHT& operator=(const VHT&)=delete;
     
+    // FIXME: 
     static inline long long fastNegMul(long long a,unsigned int bi, unsigned int bf){
         if(a<0){
             return -mul64x32d32(-a,bi,bf);
@@ -93,10 +100,12 @@ private:
     
     void loop();
     
+    // FIXME: 
     static long long baseTheoretical;
     static long long baseExpected;
     static long long error;
     
+    // FIXME: 
     //Multiplicative factor VHT
     static unsigned int factorI;
     static unsigned int factorD;

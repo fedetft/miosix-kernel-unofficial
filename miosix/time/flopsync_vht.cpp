@@ -37,6 +37,14 @@ using namespace std;
 
 FlopsyncVHT::FlopsyncVHT() { reset(); }
 
+FlopsyncVHT& FlopsyncVHT::instance(){
+    static FlopsyncVHT fsync;
+    return fsync;
+}
+
+void FlopsyncVHT::reset() { uo=eo=0; }
+
+
 int FlopsyncVHT::computeCorrection(int e)
 {
     //u(k)=u(k-1)+1.375*e(k)-e(k-1)

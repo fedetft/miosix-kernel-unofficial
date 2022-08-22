@@ -29,8 +29,16 @@
 #include "time/timeconversion.h"
 #include "hsc.h"
 
-#ifdef WITH_DEEP_SLEEP
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
 #include "rtc.h"
+#endif
+
+#ifdef WITH_VIRTUAL_CLOCK
+#include "interfaces/virtual_clock.h"
+#endif
+
+#ifdef WITH_VHT
+#include "interfaces/vht.h"
 #endif
 
 #include "e20/e20.h" // DELETEME: (s)
@@ -54,8 +62,8 @@ static Rtc *rtc = nullptr;
 #endif
 
 //static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();
-//static TimerProxy<Hsc> * timerProxy = &TimerProxy<Hsc>::instance();
-static TimerProxy<Hsc> * timerProxy = &(miosix::TimerProxy<Hsc>::instance(miosix::defaultCorrectionStack));
+using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
+static MyTimerProxy * timerProxy = &MyTimerProxy::instance();
 
 long long getTime() noexcept
 {
@@ -74,7 +82,7 @@ void IRQosTimerInit()
 {
     //startThread(); // DELETEME: (s)
 
-    timerProxy->IRQinit();
+    timerProxy->IRQinit(); // inits HSC and correction stack
     
     #ifdef WITH_DEEP_SLEEP
     rtc = &Rtc::instance();
@@ -89,10 +97,10 @@ void IRQosTimerSetTime(long long ns) noexcept
 }
 
 // TODO: (s) check if in the past?
+// FIXME: (s) quando faccio sleep, questa viene chiamata anche se devo andare in deep sleep! why?
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
     //queue.IRQpost([=]() { iprintf("Next int: %lld (uncorr ns) vs %lld (ns)\n", vc->IRQgetUncorrectedTimeNs(ns), ns); }); // DELETEME: (s)
-
     timerProxy->IRQsetIrqNs(ns);
 }
 
@@ -106,86 +114,93 @@ unsigned int osTimerGetFrequency()
 
 } //namespace miosix 
 
-void __attribute__((naked)) TIMER1_IRQHandler(); // forward declaration
+// void __attribute__((naked)) TIMER1_IRQHandler(); // forward declaration
 
-/**
- * TIMER2 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER2_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
-    restoreContext();
-}
+// /**
+//  * TIMER2 interrupt routine
+//  * 
+//  */
+// void __attribute__((naked)) TIMER2_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) TIMER2_IRQHandlerImpl()
-{
-    static Hsc * hsc = &Hsc::instance();
+// void __attribute__((used)) TIMER2_IRQHandlerImpl()
+// {
+//     static Hsc * hsc = &Hsc::instance();
 
-    // save value of TIMER1 counter right away to check for compare later
-    unsigned int lowerTimerCounter = TIMER1->CNT;
+//     // save value of TIMER1 counter right away to check for compare later
+//     unsigned int lowerTimerCounter = TIMER1->CNT;
 
-    // TIMER2 overflow, pending bit trick.
-    if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
+//     // TIMER2 overflow, pending bit trick.
+//     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
 
-    // if just overflow, no TIMER2 counter register match, return
-    if(!(TIMER2->IF & TIMER_IF_CC0)) return;
+//     // if just overflow, no TIMER2 counter register match, return
+//     if(!(TIMER2->IF & TIMER_IF_CC0)) return;
     
-    // first part of output compare, disable output compare interrupt
-    // for TIMER2 and turn of output comapre interrupt of TIMER1
-    miosix::ledOn();
+//     // first part of output compare, disable output compare interrupt
+//     // for TIMER2 and turn of output comapre interrupt of TIMER1
+//     miosix::ledOn();
 
-    // disable output compare interrupt on channel 0 for most significant timer
-    TIMER2->IEN &= ~TIMER_IEN_CC0;
-    TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    TIMER2->IFC |= TIMER_IFC_CC0;
+//     // disable output compare interrupt on channel 0 for most significant timer
+//     TIMER2->IEN &= ~TIMER_IEN_CC0;
+//     TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//     TIMER2->IFC |= TIMER_IFC_CC0;
 
-    // if by the time we get here, the lower part of the counter has already matched
-    // the counter register or got past it, call TIMER1 handler directly
-    if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
-    else
-    {
-        // enable output compare interrupt on channel 0 for least significant timer
-        TIMER1->IEN |= TIMER_IEN_CC0;
-        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    }
-}
+//     // if by the time we get here, the lower part of the counter has already matched
+//     // the counter register or got past it, call TIMER1 handler directly
+//     if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
+//     else
+//     {
+//         // enable output compare interrupt on channel 0 for least significant timer
+//         TIMER1->IEN |= TIMER_IEN_CC0;
+//         TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//     }
+// }
 
-/**
- * TIMER1 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
-    restoreContext();
-}
+// /**
+//  * TIMER1 interrupt routine
+//  * 
+//  */
+// void __attribute__((naked)) TIMER1_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) TIMER1_IRQHandlerImpl()
-{
-    static Hsc * hsc = &Hsc::instance();
+// void __attribute__((used)) TIMER1_IRQHandlerImpl()
+// {
+//     static Hsc * hsc = &Hsc::instance();
 
-    // second part of output compare. If we reached this interrupt, it means
-    // we already matched the upper part of the timer and we have now matched the lower part.
-    hsc->IRQhandler();
+//     // second part of output compare. If we reached this interrupt, it means
+//     // we already matched the upper part of the timer and we have now matched the lower part.
+//     hsc->IRQhandler();
 
-    miosix::ledOff();
-}
+//     miosix::ledOff();
+// }
 
-// TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
-/**
- * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
- */
-/*void __attribute__((naked)) RTC_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z14RTChandlerImplv");
-    restoreContext();
-}
+// /**
+//  * RTC interrupt routine
+//  */
+// void __attribute__((naked)) RTC_IRQHandler()
+// {
+//     saveContext();
+//     asm volatile("bl _Z14RTChandlerImplv");
+//     restoreContext();
+// }
 
-void __attribute__((used)) RTChandlerImpl()
-{    
-    rtc->IRQoverflowHandler();
-}*/
+// void __attribute__((used)) RTChandlerImpl()
+// {
+//     static miosix::Rtc * rtc = &miosix::Rtc::instance();
+    
+//     // handle RTC overflow
+//     if(rtc->IRQgetOverflowFlag()) { rtc->IRQoverflowHandler(); }
+
+//     // VHT CC1 register clear (already handled by PRS, just clear)
+//     #ifdef WITH_VHT
+//     if(rtc->IRQgetVhtMatchFlag()) { rtc->IRQclearVhtMatchFlag(); }
+//     #endif
+// }

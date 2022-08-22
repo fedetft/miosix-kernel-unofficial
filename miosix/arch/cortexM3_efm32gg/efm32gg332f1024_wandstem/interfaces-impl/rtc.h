@@ -73,6 +73,10 @@ public:
         return timer;
     }
 
+    ///
+    // TimerAdapter extension
+    ///
+
     /**
      * @brief RTC hardware timer counter
      * 
@@ -110,7 +114,9 @@ public:
     {
         IRQclearMatchFlag();
 
-        RTC->COMP0 = v & 0xFFFFFF;
+        // undocumented quirk, CC 1 tick after
+        unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+        RTC->COMP0 = v_quirk & 0xFFFFFF;
         while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0) ;
         RTC->IEN |= RTC_IEN_COMP0;
     }
@@ -220,6 +226,44 @@ public:
         
     }
 
+    ///
+    // VHT extension
+    ///
+    #ifdef WITH_VHT
+
+    static void IRQinitVhtTimer()
+    {
+        // TODO: (s) configure COMP0 IF etc...
+    }
+
+    static void IRQstartVhtTimer()
+    {
+        __NOP();
+    }
+
+    static inline bool IRQgetVhtMatchFlag()
+    {
+        return RTC->IF & RTC_IF_COMP1;
+    }
+
+    static inline void IRQclearVhtMatchFlag()
+    {
+        RTC->IFC=RTC_IFC_COMP1;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
+    }
+
+    static inline void IRQsetVhtMatchReg(unsigned int v)
+    {
+        IRQclearVhtMatchFlag();
+
+        // undocumented quirk, CC 1 tick after
+        unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+        RTC->COMP1 = v_quirk & 0xFFFFFF;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1) ;
+        //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s)?
+    }
+
+    #endif // #ifdef WITH_VHT
 
 
 private:
@@ -236,23 +280,27 @@ private:
 
 } /* end of namespace miosix */
 
-// /**
-//  * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
-//  */
-// void __attribute__((naked)) RTC_IRQHandler()
-// {
-//     saveContext();
-//     asm volatile("bl _Z14RTChandlerImplv");
-//     restoreContext();
-// }
+/**
+ * RTC interrupt routine
+ */
+void __attribute__((naked)) RTC_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z14RTChandlerImplv");
+    restoreContext();
+}
 
-// void __attribute__((used)) RTChandlerImpl()
-// {
-//     static miosix::Rtc * rtc = &miosix::Rtc::instance();
+void __attribute__((used)) RTChandlerImpl()
+{
+    static miosix::Rtc * rtc = &miosix::Rtc::instance();
     
-//     //miosix::ledOn();
-//     rtc->IRQoverflowHandler();
-//     //miosix::ledOff();
-// }
+    // handle RTC overflow
+    if(rtc->IRQgetOverflowFlag()) { rtc->IRQoverflowHandler(); }
+
+    // VHT CC1 register clear (already handled by PRS, just clear)
+    #ifdef WITH_VHT
+    if(rtc->IRQgetVhtMatchFlag()) { rtc->IRQclearVhtMatchFlag(); }
+    #endif
+}
 
 #endif /* REAL_TIME_CLOCK */

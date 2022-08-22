@@ -33,12 +33,14 @@
  */
 class FlopsyncVHT
 {
-public:
+public:    
     /**
-     * Constructor
+     * @brief 
+     * 
+     * @return Vht& 
      */
-    FlopsyncVHT();
-    
+    static FlopsyncVHT& instance();
+
     /**
      * Compute clock correction and receiver window given synchronization error
      * \param e synchronization error
@@ -49,7 +51,7 @@ public:
     /**
      * Used after a resynchronization to reset the controller state
      */
-    void reset() { uo=eo=0; }
+    void reset();
     
     /**
      * \return the synchronization error e(k)
@@ -62,6 +64,11 @@ public:
     int getClockCorrection() const;
     
 private:
+    /**
+     * Constructor
+     */
+    FlopsyncVHT();
+
     int uo;
     int eo;
 };

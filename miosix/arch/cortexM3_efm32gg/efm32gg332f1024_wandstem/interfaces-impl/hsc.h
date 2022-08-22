@@ -69,6 +69,9 @@ public:
         return hsc;
     }
 
+    ///
+    // TimerAdapter extension
+    ///
     static inline unsigned int IRQgetTimerCounter()
     {
         return IRQread32Timer();
@@ -94,8 +97,8 @@ public:
         // 1 tick late. By subtracting one tick, we have to make sure we do not underflow!
         uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
         uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
-        TIMER1->CC[0].CCV = lower_ticks-1; // FIXME: (s) check underflow
-        TIMER2->CC[0].CCV = upper_ticks-1;
+        TIMER1->CC[0].CCV = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        TIMER2->CC[0].CCV = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
 
         // enable output compare interrupt on channel 0 for most significant timer
         TIMER2->IEN |= TIMER_IEN_CC0;
@@ -170,14 +173,16 @@ public:
 
     static void IRQinitTimer()
     {
-        //Power the timers up and PRS system
-        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER1 | CMU_HFPERCLKEN0_TIMER2 | CMU_HFPERCLKEN0_PRS;
-
-        // configure timers (chaning two 16 bit timers to get a 32 one)
+        // clock timers configuration (chaning two 16 bit timers to get a 32 one)
         // TIMER1 => lower part
         // TIMER2 => upper part
         // When TIMER1 overflows, TIMER2 counter is updated 
         // (automatic chaninig for neighborhood timers with CTRL_SYNC)
+
+        // power the timers
+        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER1 | CMU_HFPERCLKEN0_TIMER2 | CMU_HFPERCLKEN0_PRS;
+
+        // timers control config
         TIMER1->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
                 | TIMER_CTRL_PRESC_DIV1;
         
@@ -217,9 +222,59 @@ public:
         NVIC_ClearPendingIRQ(TIMER2_IRQn);
 
         NVIC_EnableIRQ(TIMER1_IRQn);
-        NVIC_EnableIRQ(TIMER2_IRQn);
-
+        NVIC_EnableIRQ(TIMER2_IRQn);   
     }
+
+    ///
+    // VHT extension
+    ///
+    #ifdef WITH_VHT
+
+    static void IRQinitVhtTimer()
+    {
+        // enabling TIMER3
+        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER3;
+
+        // TODO: (s) not needed that TIMER2 starts actually, just left here for future use like packet retransmission
+        TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
+                        | TIMER_CTRL_PRESC_DIV1; 
+
+        NVIC_SetPriority(TIMER3_IRQn, 8);
+        NVIC_ClearPendingIRQ(TIMER3_IRQn);
+        NVIC_EnableIRQ(TIMER3_IRQn);
+    }
+
+    static void IRQstartVhtTimer()
+    {
+        __NOP(); // TODO: (s) start TIMER3
+    }
+
+    static inline unsigned int IRQgetTimerCounter()
+    {
+        return 0; // read TIMER3 (lower, RTC COMP1 propagated thought PRS) + TIMER2<<16 (upper)
+    }
+
+    static inline bool IRQgetVhtMatchFlag()
+    {
+        __NOP();
+        return 0;
+    }
+
+    static inline void IRQclearVhtMatchFlag()
+    {
+         __NOP();
+    }
+
+    static inline void IRQsetVhtMatchReg(unsigned int v)
+    {
+        IRQclearVhtMatchFlag();
+
+        // undocumented quirk, CC 1 tick after
+        unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+        // TODO: (s) finish
+    }
+
+    #endif // #ifdef WITH_VHT
 
 private:
     /**
@@ -247,66 +302,73 @@ private:
 
 }//end miosix namespace
 
-// /**
-//  * TIMER2 interrupt routine
-//  * 
-//  */
-// void __attribute__((naked)) TIMER2_IRQHandler()
-// {
-//     saveContext();
-//     asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
-//     restoreContext();
-// }
+void __attribute__((naked)) TIMER1_IRQHandler(); // forward declaration
 
-// void __attribute__((used)) TIMER2_IRQHandlerImpl()
-// {
-//     static miosix::Hsc * hsc = &miosix::Hsc::instance(); // TODO: (s) 4ms delay? or undocumented quirk?
+/**
+ * TIMER2 interrupt routine
+ * 
+ */
+void __attribute__((naked)) TIMER2_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) TIMER2_IRQHandlerImpl()
+{
+    static Hsc * hsc = &Hsc::instance();
+
+    // save value of TIMER1 counter right away to check for compare later
+    unsigned int lowerTimerCounter = TIMER1->CNT;
+
+    // TIMER2 overflow, pending bit trick.
+    if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
+
+    // if just overflow, no TIMER2 counter register match, return
+    if(!(TIMER2->IF & TIMER_IF_CC0)) return;
     
-//     // TIMER2 overflow, pending bit trick
-//     if(hsc->IRQgetOverflowFlag())
-//     {
-//         hsc->IRQhandler();
-//     }
-//     // first part of output compare, disable output compare interrupt
-//     // for TIMER2 and turn of output comapre interrupt of TIMER1
-//     else
-//     {
-//         miosix::greenLed::high();
+    // first part of output compare, disable output compare interrupt
+    // for TIMER2 and turn of output comapre interrupt of TIMER1
+    miosix::ledOn();
 
-//         // disable output compare interrupt on channel 0 for most significant timer
-//         TIMER2->IEN &= ~TIMER_IEN_CC0;
-//         TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-//         TIMER2->IFC |= TIMER_IFC_CC0;
+    // disable output compare interrupt on channel 0 for most significant timer
+    TIMER2->IEN &= ~TIMER_IEN_CC0;
+    TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    TIMER2->IFC |= TIMER_IFC_CC0;
 
-//         // enable output compare interrupt on channel 0 for least significant timer
-//         TIMER1->IEN |= TIMER_IEN_CC0;
-//         TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-//     }
-//     NVIC_ClearPendingIRQ(TIMER2_IRQn);
-// }
+    // if by the time we get here, the lower part of the counter has already matched
+    // the counter register or got past it, call TIMER1 handler directly
+    if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
+    else
+    {
+        // enable output compare interrupt on channel 0 for least significant timer
+        TIMER1->IEN |= TIMER_IEN_CC0;
+        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    }
+}
 
-// /**
-//  * TIMER1 interrupt routine
-//  * 
-//  */
-// void __attribute__((naked)) TIMER1_IRQHandler()
-// {
-//     saveContext();
-//     asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
-//     restoreContext();
-// }
+/**
+ * TIMER1 interrupt routine
+ * 
+ */
+void __attribute__((naked)) TIMER1_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
+    restoreContext();
+}
 
-// void __attribute__((used)) TIMER1_IRQHandlerImpl()
-// {
-//     static miosix::Hsc * hsc = &miosix::Hsc::instance();
+void __attribute__((used)) TIMER1_IRQHandlerImpl()
+{
+    static Hsc * hsc = &Hsc::instance();
 
-//     // second part of output compare. If we reached this interrupt, it means
-//     // we already matched the upper part of the timer and we have now matched the lower part.
-//     hsc->IRQhandler();
-//     NVIC_ClearPendingIRQ(TIMER1_IRQn);
+    // second part of output compare. If we reached this interrupt, it means
+    // we already matched the upper part of the timer and we have now matched the lower part.
+    hsc->IRQhandler();
 
-//     miosix::greenLed::low();
-// }
+    miosix::ledOff();
+}
 
 #endif /* HIGH_SPEED_CLOCK */
 
