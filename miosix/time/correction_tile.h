@@ -32,7 +32,7 @@
 
 namespace miosix {
 
-class Synchronizer
+class CorrectionTile
 {
 public:
 
@@ -50,6 +50,8 @@ public:
 
     virtual long long IRQcorrect(long long ns)=0;
     virtual long long IRQuncorrect(long long ns)=0;
+
+    virtual void IRQinit()=0;
 };
 
 }

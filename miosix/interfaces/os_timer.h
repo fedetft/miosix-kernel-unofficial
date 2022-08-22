@@ -29,8 +29,8 @@
 
 #include "time/timeconversion.h"
 #include "kernel/scheduler/timer_interrupt.h"
-#include "time/synchronizer.h"
-#include <vector>
+#include "time/correction_tile.h"
+#include <tuple>
 
 #ifdef WITH_VIRTUAL_CLOCK
 #include "interfaces/virtual_clock.h"
@@ -415,18 +415,12 @@ public:
         //Normally we never stop the timer not to accumulate clock skew,
         //but here we're asked to introduce a clock jump anyway
         D::IRQstopTimer();
-        long long oldTick = IRQgetTimeTick();
         long long tick = tc.ns2tick(ns);
 
-        // if we're moving forward in time, we have to force IRQ in case
-        // we get past the next IRQ scheduled
-        if(tick>oldTick)
-        {
-            upperTimeTick = tick & upperMask;
-            D::IRQsetTimerCounter(static_cast<unsigned int>(tick & lowerMask));
-            D::IRQclearOverflowFlag();
-        }
-        
+        upperTimeTick = tick & upperMask;
+        D::IRQsetTimerCounter(static_cast<unsigned int>(tick & lowerMask));
+        D::IRQclearOverflowFlag();
+
         D::IRQstartTimer();
     }
     
@@ -470,6 +464,7 @@ public:
     {
         D::IRQinitTimer();
         tc=TimeConversion(D::IRQTimerFrequency());
+        D::IRQstartTimer();
     }
 };
 
@@ -477,8 +472,6 @@ public:
 /** 
  * ...
  */
-
-//static ... defaultCorrectionStack ...
 
 ///
 // Reverse typelist logic
@@ -502,6 +495,33 @@ auto reverse(typelist<Head, Tail...>)
 
 template<class... Ts>
 using reversed_typelist = decltype(reverse(std::declval<typelist<Ts...>>()));
+
+/*
+// Tentativo fallito di dichiarare una variabile defualt di stack di correzione in funzione di #ifdef
+template<class... Ts, class... Us> 
+constexpr auto concat(typelist<Ts...>, typelist<Us...>) -> typelist<Ts..., Us...> 
+{ 
+    return typelist<Ts..., Us...>(); 
+}
+
+// empty typelist
+#define DEFAULT_TYPE_LIST typelist<>()
+
+// typelist with virtual clock
+#ifdef WITH_VIRTUAL_CLOCK
+static constexpr auto macro1_prev_dtl = DEFAULT_TYPE_LIST;
+#undef DEFAULT_TYPE_LIST
+#define DEFAULT_TYPE_LIST concat(macro1_prev_dtl, typelist<VirtualClock>())
+#endif
+
+// typelist with VHT
+#ifdef WITH_VHT
+static constexpr auto macro2_prev_dtl = DEFAULT_TYPE_LIST;
+#undef DEFAULT_TYPE_LIST
+#define DEFAULT_TYPE_LIST concat(macro2_prev_dtl, typelist<Vht>())
+#endif
+*/
+
 
 ///
 // Actual time proxy implementation
@@ -527,7 +547,7 @@ public:
      */
     inline long long IRQgetTimeNs()
     {
-        return IRQcorrectTime<CorrectionStack...>::call(hsc->IRQgetTimeNs());
+        return IRQcorrectTimeNs(hsc->IRQgetTimeNs());
     }
 
     /**
@@ -537,7 +557,7 @@ public:
      */
     inline void IRQsetIrqNs(long long ns)
     {
-        hsc->IRQsetIrqNs(IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns));
+        hsc->IRQsetIrqNs(IRQuncorrectTimeNs(ns));
     }
 
     /**
@@ -546,9 +566,19 @@ public:
      */
     inline void IRQinit()
     {
+        // High speed clock init
         hsc = &Hsc_TA::instance();
         hsc->IRQinit();
+
+        // correciton stack init
+        IRQinitCorrection<CorrectionStack...>::call();
+
     } 
+
+    Hsc_TA * getHscReference()
+    {
+        return hsc;
+    }
 
     /**
      * @brief 
@@ -557,7 +587,17 @@ public:
      */
     inline void IRQsetTimeNs(long long ns)
     {
-        hsc->IRQsetTimeNs(IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns));
+        hsc->IRQsetTimeNs(IRQuncorrectTimeNs(ns));
+    }
+
+    inline long long IRQcorrectTimeNs(long long ns)
+    {
+        return IRQcorrectTime<CorrectionStack...>::call(ns);
+    }
+
+    inline long long IRQuncorrectTimeNs(long long ns)
+    {
+        return IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns);
     }
 
     /**
@@ -577,6 +617,31 @@ private:
     TimerProxy(){}
     TimerProxy(const TimerProxy&)=delete;
     TimerProxy& operator=(const TimerProxy&)=delete;
+
+    ///
+    // Clock correction init
+    ///
+
+    // no correction, empty Pack
+    template<typename... Ts>
+    struct IRQinitCorrection
+    {
+        static inline void call() {
+            return; // terminate recursion
+        }
+    };
+
+    // 1 or more elements
+    template <typename Head, typename ...Tail>
+    struct IRQinitCorrection<Head, Tail...>
+    {
+        static inline void call()
+        {
+            // TODO: (s) maybe use static?
+            (&Head::instance())->IRQinit(); 
+            IRQinitCorrection<Tail...>::call();
+        }
+    };
 
     ///
     // Clock correction recursion functions
