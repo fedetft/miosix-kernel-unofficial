@@ -26,7 +26,7 @@
  ***************************************************************************/
 
 #include "interfaces/deep_sleep.h"
-#include "interfaces/os_timer.h"
+#include "interfaces/os_timer.h" // TimerProxy
 #include "rtc.h"
 #include "hsc.h"
 #include "time/timeconversion.h"
@@ -39,15 +39,25 @@
 #include "interfaces/vht.h"
 #endif
 
+using namespace miosix;
+
+/// /def DEBUG_DEEP_SLEEP
+/// This debug symbol makes the deep sleep routine to make
+/// a led blink when the board enter the stop mode
+#define DEBUG_DEEP_SLEEP
+
 namespace miosix {
+
+using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
 
 static Rtc* rtc = nullptr; 
 static Hsc* hsc = nullptr;
-static TimeConversion* HSCtc = nullptr;
+static MyTimerProxy * timerProxy = nullptr;
+
 static TimeConversion* RTCtc = nullptr;
 
 // forward declaration
-void doIRQdeepSleep(long long);
+void IRQdeepSleep_impl(long long);
 void IRQrestartHFXO();
 void IRQprepareDeepSleep();
 void IRQclearDeepSleep();
@@ -55,34 +65,46 @@ void IRQclearDeepSleep();
 ///
 // Main interface impl
 ///
-
+// TODO: use timer proxy? no?
 void IRQdeepSleepInit()
 {
     // instances of RTC and HSC
-    rtc     = &Rtc::instance();
-    hsc     = &Hsc::instance();
+    rtc         = &Rtc::instance();
+    timerProxy  = &MyTimerProxy::instance();
+    hsc         = timerProxy->getHscReference();
 
-    HSCtc   = new TimeConversion(hsc->IRQTimerFrequency());
-    RTCtc   = new TimeConversion(rtc->IRQTimerFrequency());
+    RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());
+    
 }
 
+// TODO: (s) this time needs to be uncorrected?
 bool IRQdeepSleep(long long abstime)
 {
-    PauseKernelLock pkLock; //To run unexpected IRQs without context switch
-    miosix::greenLedOn();
-
+    #ifdef DEBUG_DEEP_SLEEP
+    static bool test = true;
+    test ? miosix::greenLedOn() : miosix::greenLedOff();
+    #endif
+    
     // 1. RTC set ticks from High Speed Clock and starts
     rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
-    hsc->IRQstopTimer(); // TODO: (s) remove?
+    //hsc->IRQstopTimer();
 
     // 2. Perform deep sleep
-    doIRQdeepSleep(abstime);
-    
+    IRQdeepSleep_impl(timerProxy->IRQuncorrectTimeNs(abstime));
+
     // 3. Set HSC ticks from Real Time Clock
-    hsc->IRQsetTimeNs(rtc->IRQgetTimeNs()); // FIXME: (s) stack overflow, i think it has to do with new irq set
-    rtc->IRQstopTimer(); // TODO: (s) should do power gating?
+    #ifdef WITH_VHT // Adjust hsc time using RTC and VHT
+    //vht->IRQresyncClock();
+    //timerProxy->recompute correction...
+    #else // No VHT, just pass time between each other
+    hsc->IRQsetTimeNs(rtc->IRQgetTimeNs());
+    //rtc->IRQstopTimer(); // TODO: (s) should do power gating?
+    #endif
     
-    miosix::greenLedOff();
+    #ifdef DEBUG_DEEP_SLEEP
+    test ? miosix::greenLedOff() : miosix::greenLedOn();
+    test = !test;
+    #endif
 
     return true;
 }
@@ -96,7 +118,7 @@ bool IRQdeepSleep()
 // Utility functions
 ///
 
-void doIRQdeepSleep(long long abstime)
+void IRQdeepSleep_impl(long long abstime)
 {
     // This conversion is very critical: we can't use the straightforward method
     // due to the approximation make during the conversion (necessary to be efficient).
@@ -116,16 +138,20 @@ void doIRQdeepSleep(long long abstime)
     
     ioctl(STDOUT_FILENO,IOCTL_SYNC,0);
     
-    // RTC deep sleep function that sets RTC compare register
-    rtc->IRQsetDeepSleepIrqTick(ticks);
-    
     // TODO: (s) bring everything inside os_timer RTCTimerAdapter (modify IRQhandler)
     // pre deep sleep
     IRQprepareDeepSleep();
 
+    PauseKernelLock pkLock; //To run unexpected IRQs without context switch
+
+    // RTC deep sleep function that sets RTC compare register
+    rtc->IRQsetDeepSleepIrqTick(ticks);
+
+    // TODO: (s) call mask interrupts on every component that can generate it?
+
     // deep sleep loop
     for(;;)
-    {
+    {        
         // if for whatever reason we're past the deep sleep time, wake up
         if(ticks <= rtc->IRQgetTimeTick())
         {
@@ -134,19 +160,48 @@ void doIRQdeepSleep(long long abstime)
             break;
         }
         
+        // digest all pending interrupts before going in deep sleep
+        // needed since efm32 lacks of standby flag that tells us if the micro was
+        // able to go in deep sleep mode or not.
+        bool pendingNVIC = NVIC->ISPR[0U] > 0;
+        bool lateWakeUp = false;
+        while(pendingNVIC)
+        {
+            // checks if wake up because of RTC overflow
+            if(rtc->IRQgetOverflowFlag())
+            {
+                rtc->IRQoverflowHandler(); // check if interrupt was because of an overflow
+            }
+
+            // if by any means we get past wakeup-time while serving interrupts, break
+            if(ticks <= rtc->IRQgetTimeTick())
+            {
+                rtc->IRQclearMatchFlag();
+                NVIC_ClearPendingIRQ(RTC_IRQn);
+                lateWakeUp = true;
+                break;
+            }
+            
+            fastEnableInterrupts();
+            __NOP(); // run pending interrupt
+            fastDisableInterrupts();
+
+            pendingNVIC = NVIC->ISPR[0U] > 0;
+        }
+        if(lateWakeUp) break;
+        
+        __ISB(); // avoids anticipating deep sleep before finishing serving interrupts
+
         // Goes into low power mode and waits for RTC pending interrupt
         __DSB(); // data synchronization barrier for memory operations
         __WFI(); // blocking statement. NOP if any interrupt is still pending
+        __ISB(); // this ensures that the __WFI primitive is executed before the following
 
         IRQrestartHFXO(); // restarts High frequency oscillator
 
         // checks if we went out of deep sleep because of the RTC interrupt
         if(NVIC_GetPendingIRQ(RTC_IRQn))
         {
-            //Clear the interrupt (both in the RTC peripheral and NVIC),
-            //this is important as pending IRQ prevent WFI from working
-            NVIC_ClearPendingIRQ(RTC_IRQn);
-
             // checks if wake up because of RTC overflow
             if(rtc->IRQgetOverflowFlag())
             {
@@ -157,10 +212,12 @@ void doIRQdeepSleep(long long abstime)
             if(ticks <= rtc->IRQgetTimeTick())
             {
                 rtc->IRQclearMatchFlag();
+                NVIC_ClearPendingIRQ(RTC_IRQn);
                 break;
             }
 
-            if(!rtc->IRQgetOverflowFlag() && !(ticks <= rtc->IRQgetTimeTick()))
+            // we could have another pending interrupt with the overflow one
+            if(!rtc->IRQgetOverflowFlag()/* && !(ticks <= rtc->IRQgetTimeTick())*/)
             {
                 // Se ho altri interrupt (> 1) vanno tutti con clock non corretto
                 // Reimplement RTC timer adapter
@@ -169,28 +226,26 @@ void doIRQdeepSleep(long long abstime)
                 // can be updated
                 // NOP operation to be sure that the interrupt can be executed
                 fastEnableInterrupts();
-                __NOP();
+                __NOP(); // run pending interrupt
                 fastDisableInterrupts();
             }
+
+            //Clear the interrupt (both in the RTC peripheral and NVIC),
+            //this is important as pending IRQ prevent WFI from working
+            NVIC_ClearPendingIRQ(RTC_IRQn);
         }
         else
         {
             // we have an interrupt set before going to deep sleep, we have to serve it 
             // or the micro will never go into sleep mode and __WFI() macro becomes a NOP instruction
             fastEnableInterrupts();
-            __NOP();
+            __NOP(); // run pending interrupt
             fastDisableInterrupts();
         }
     }
 
     // post deep sleep
     IRQclearDeepSleep();
-
-    #ifdef VHT_H
-    
-    // vht code...
-
-    #endif
 }
 
 inline void IRQrestartHFXO()
@@ -227,3 +282,20 @@ inline void IRQclearDeepSleep()
 }
 
 } // namespace miosix
+
+
+// TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
+/**
+ * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
+ */
+/*void __attribute__((naked)) RTC_IRQHandler()
+{
+    saveContext();
+    asm volatile("bl _Z14RTChandlerImplv");
+    restoreContext();
+}
+
+void __attribute__((used)) RTChandlerImpl()
+{    
+    rtc->IRQoverflowHandler();
+}*/
