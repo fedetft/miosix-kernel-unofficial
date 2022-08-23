@@ -117,7 +117,7 @@ public:
         // undocumented quirk, CC 1 tick after
         unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         RTC->COMP0 = v_quirk & 0xFFFFFF;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0) ;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP0);
         RTC->IEN |= RTC_IEN_COMP0;
     }
 
@@ -176,7 +176,7 @@ public:
     static inline void IRQstopTimer()
     {
         RTC->CTRL = 0;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL);
     }
     /**
      * @brief Starts RTC timer
@@ -185,7 +185,7 @@ public:
     static inline void IRQstartTimer()
     {
         RTC->CTRL = RTC_CTRL_EN;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL) ;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL);
     }
 
     /**
@@ -211,7 +211,7 @@ public:
         //The LFXO is already started by the BSP
         CMU->HFCORECLKEN0 |= CMU_HFCORECLKEN0_LE; //Enable clock to LE peripherals
         CMU->LFACLKEN0 |= CMU_LFACLKEN0_RTC;
-        while(CMU->SYNCBUSY & CMU_SYNCBUSY_LFACLKEN0) ;
+        while(CMU->SYNCBUSY & CMU_SYNCBUSY_LFACLKEN0);
         
         RTC->CNT=0;
         RTC->IEN |= RTC_IEN_OF;
@@ -233,12 +233,16 @@ public:
 
     static void IRQinitVhtTimer()
     {
-        // TODO: (s) configure COMP0 IF etc...
+        RTC->IEN |= RTC_IEN_COMP1;
     }
 
     static void IRQstartVhtTimer()
     {
-        __NOP();
+        // if-guard, start RTC only if not started already
+        if(RTC->CTRL & RTC_CTRL_EN != 0) return;
+
+        RTC->CTRL = RTC_CTRL_EN;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL);
     }
 
     static inline bool IRQgetVhtMatchFlag()
@@ -248,18 +252,28 @@ public:
 
     static inline void IRQclearVhtMatchFlag()
     {
-        RTC->IFC=RTC_IFC_COMP1;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
+        RTC->IFC |= RTC_IFC_COMP1;
+        //while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
+    }
+
+    /**
+     * @brief 
+     * 
+     * @return 
+     */
+    static inline unsigned int IRQgetVhtTimerMatchReg()
+    {
+        return RTC->COMP1;
     }
 
     static inline void IRQsetVhtMatchReg(unsigned int v)
     {
-        IRQclearVhtMatchFlag();
+        //IRQclearVhtMatchFlag();
 
         // undocumented quirk, CC 1 tick after
         unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         RTC->COMP1 = v_quirk & 0xFFFFFF;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1) ;
+        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
         //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s)?
     }
 
@@ -279,28 +293,5 @@ private:
 };
 
 } /* end of namespace miosix */
-
-/**
- * RTC interrupt routine
- */
-void __attribute__((naked)) RTC_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z14RTChandlerImplv");
-    restoreContext();
-}
-
-void __attribute__((used)) RTChandlerImpl()
-{
-    static miosix::Rtc * rtc = &miosix::Rtc::instance();
-    
-    // handle RTC overflow
-    if(rtc->IRQgetOverflowFlag()) { rtc->IRQoverflowHandler(); }
-
-    // VHT CC1 register clear (already handled by PRS, just clear)
-    #ifdef WITH_VHT
-    if(rtc->IRQgetVhtMatchFlag()) { rtc->IRQclearVhtMatchFlag(); }
-    #endif
-}
 
 #endif /* REAL_TIME_CLOCK */

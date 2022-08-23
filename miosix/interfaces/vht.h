@@ -73,6 +73,7 @@ public:
 
     /**
      * @brief sync between RTC and HSC every 20ms 
+     * Since we execute instructions at 48Mhz, we execute multiple instructions before each RTC tick
      * 
      */
     void IRQinit()
@@ -82,54 +83,59 @@ public:
 
         // setting up VHT timer
         Hsc_TA::IRQinitVhtTimer();
-        //Hsc_TA::IRQstartVhtTimer(); // TODO: (s) ??? start TIMER3 ma dopo mi chiede timestamp??
+        Hsc_TA::IRQstartVhtTimer();
 
         Rtc_TA::IRQinitVhtTimer();
-        //Rtc_TA::IRQstartVhtTimer(); // already started by deep sleep
+        Rtc_TA::IRQstartVhtTimer();
 
         // performing VHT initialization
         unsigned int nowRtc = Rtc_TA::IRQgetTimerCounter() + 2; // TODO: (s) this is for undocumented quirk, generalize! + CHECK OVERFLOW
         Rtc_TA::IRQsetVhtMatchReg(nowRtc);
 
-        // TODO: (s) set TIMER3 + PRS
-        //Virtual high resolution timer, init starting the input mode!
-        /*TIMER2->CC[2].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
-                    | TIMER_CC_CTRL_FILT_DISABLE
-                    | TIMER_CC_CTRL_INSEL_PRS
-                    | TIMER_CC_CTRL_PRSSEL_PRSCH4
-                    | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+        
+        // TODO: (s) put it after and not in init?
+        /*TIMER3->CC[0].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
+            | TIMER_CC_CTRL_FILT_DISABLE
+            | TIMER_CC_CTRL_INSEL_PRS
+            | TIMER_CC_CTRL_PRSSEL_PRSCH4
+            | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
         PRS->CH[4].CTRL= PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;*/
 
         Rtc_TA::IRQclearVhtMatchFlag();
-        while(!Rtc_TA::IRQgetVhtMatchFlag());
+        while(!Rtc_TA::IRQgetVhtMatchFlag()); // wait for first compare
 
-        /*long long timestamp=(TIMER3->CNT<<16) | TIMER2->CC[2].CCV;
-        if(timestamp > IRQread32Timer()){
-            timestamp=((TIMER3->CNT-1)<<16) | TIMER2->CC[2].CCV;
-        }*/
+        // Reading vht timestamp but replacing lower part of counter with RTC value
+        long long vhtTimestamp = Hsc_TA::IRQgetVhtTimerCounter();
+
+        if(vhtTimestamp > Hsc_TA::IRQgetTimerCounter()){
+            vhtTimestamp -= /*Hsc_TA::IRQgetVhtTimerCounter() -*/ 1<<16; // equivalent to ((TIMER2->CNT-1)<<16) | TIMER3->CC[0].CCV; use timestamp instead of get?
+        }
 
         Rtc_TA::IRQclearVhtMatchFlag();
-        Hsc_TA::IRQclearVhtMatchFlag(); // TODO: (s) TIMER2->IFC=TIMER_IFC_CC2;
+        Hsc_TA::IRQclearVhtMatchFlag();
 
         #if EFM32_HFXO_FREQ != 48000000 || EFM32_LFXO_FREQ != 32768 // TODO: (s) parametrize
         #error "Clock frequency assumption not satisfied"
         #endif
 
+        // first VHT correction
+        //conversion factor between RTC and HRT is 48e6/32768=1464+3623878656/2^32
         long long nowHsc = mul64x32d32(nowRtc, 1464, 3623878656);
-        this->clockCorrection = nowHsc; - timestamp; // TODO: (s) timestamp not calculated yet
+        this->clockCorrection = nowHsc - vhtTimestamp;
         this->baseExpectedHsc = nowHsc;
+
+        // resync done, set next resync
         this->nextSyncPointRtc = nowRtc + syncPeriodRtc;
-        Rtc_TA::IRQsetVhtMatchReg(nextSyncPointRtc); // TODO: (s) undocumented quirk, bring it to hsc and rtc class level, transparent
+        Rtc_TA::IRQsetVhtMatchReg(nextSyncPointRtc);
         this->baseTheoreticalHsc = nowHsc;
 
         // first VHT correction
-        IRQupdate(baseTheoreticalHsc, baseExpectedHsc, 0);
+        IRQupdateImpl(baseTheoreticalHsc, baseExpectedHsc, 0);
 
-        // start periodi VHT thead
-        Hsc_TA::IRQstartVhtTimer();
-        std::thread vhtThread = std::thread([this]{ this->vhtLoop(); }); //std::thread(&miosix::Vht<Hsc_TA, Rtc_TA>::vhtLoop, this);
+        // start periodic VHT thead ()
+        //std::thread vhtThread = std::thread([this]{ this->vhtLoop(); }); //std::thread(&miosix::Vht<Hsc_TA, Rtc_TA>::vhtLoop, this);
         //Thread* vhtThread = Thread::create(&vhtLoop, 2048, 1, this);  // old definition with stack size
-        static_cast<void>(vhtThread); // avoid unused variable warning
+        //static_cast<void>(vhtThread); // avoid unused variable warning
     }
 
     /**
@@ -143,6 +149,29 @@ public:
         this->baseExpectedHsc = baseComputedHsc;
     }
 
+    void IRQupdate(long long baseActualHsc){
+        pendingVhtSync = 0;
+        this->baseActualHsc = baseActualHsc + clockCorrection;
+
+        // set next RTC trigger
+        this->nextSyncPointRtc += this->syncPeriodRtc; // increments next RTC sync point as currentSyncPoint + syncPeriod
+        this->baseTheoreticalHsc += this->syncPeriodHsc; // increments next HSC sync point as theoreticalSyncPoint + syncPeriod
+        this->baseExpectedHsc += this->syncPeriodHsc + this->clockCorrectionFlopsync;
+
+        // clear RTC output channel
+        Rtc_TA::IRQclearVhtMatchFlag();
+        Rtc_TA::IRQsetVhtMatchReg(Rtc_TA::IRQgetVhtTimerMatchReg() + syncPeriodRtc);
+
+        ++pendingVhtSync;
+
+        // calculate required parameters
+        error = baseActualHsc - baseExpectedHsc;
+        clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);
+        assert(error < maxTheoreticalError && error > -maxTheoreticalError);
+
+        IRQupdateImpl(baseTheoreticalHsc, baseExpectedHsc, clockCorrectionFlopsync);
+    }
+
     /**
      * @brief 
      * 
@@ -150,14 +179,14 @@ public:
      * @param baseComputed 
      * @param clockCorrection 
      */
-    void IRQupdate(long long baseTheoreticalHsc, long long baseComputedHsc, long long clockCorrection){
+    void IRQupdateImpl(long long baseTheoretical, long long baseComputed, long long clockCorrection){
         //efficient way to calculate the factor T/(T+u(k))
-        long long temp = (syncPeriodHsc<<32) / (syncPeriodHsc + clockCorrection);
+        long long temp = (syncPeriodHsc<<32) / (syncPeriodHsc + clockCorrectionFlopsync);
         //calculate inverse of previous factor (T+u(k))/T
-        long long inverseTemp = ((syncPeriodHsc + clockCorrection)<<32) / syncPeriodHsc;
+        long long inverseTemp = ((syncPeriodHsc + clockCorrectionFlopsync)<<32) / syncPeriodHsc;
         
         //Save modification to make effective the update
-        IRQoffsetUpdate(baseTheoreticalHsc, baseComputedHsc);
+        IRQoffsetUpdate(baseTheoreticalHsc, baseExpectedHsc);
             
         factorI = static_cast<unsigned int>((temp & 0xFFFFFFFF00000000LLU)>>32);
         factorD = static_cast<unsigned int>(temp);
@@ -167,37 +196,40 @@ public:
     }
 
     /**
-     * @brief HSC setters
+     * @brief HSC getters and setters
      * 
      */
-    inline void IRQsetBaseTheoretical(long long basetheoreticalHsc) { this->baseTheoreticalHsc = baseTheoreticalHsc; }
-    inline void IRQsetBaseExpected(long long baseExpectedHsc)       { this->baseExpectedHsc = baseExpectedHsc; }
-    inline void IRQsetBaseActual(long long baseActualHsc)           { this->baseActualHsc = baseActualHsc; }
-    inline void IRQsetSyncPeriodHsc(long long syncPeriodHsc)        { this->syncPeriodHsc = syncPeriodHsc; }
+    inline void IRQsetBaseTheoreticalHsc(long long basetheoreticalHsc)  { this->baseTheoreticalHsc = baseTheoreticalHsc; }
+    inline void IRQsetBaseExpectedHsc(long long baseExpectedHsc)        { this->baseExpectedHsc = baseExpectedHsc; }
+    inline void IRQsetBaseActualHsc(long long baseActualHsc)            { this->baseActualHsc = baseActualHsc; }
+    inline void IRQsetSyncPeriodHsc(long long syncPeriodHsc)            { this->syncPeriodHsc = syncPeriodHsc; }
 
     /**
-     * @brief RTC setters
+     * @brief RTC getters and setters
      * 
      */
     inline void IRQsetSyncPointRtc(long long syncPointRtc)          { this->syncPointRtc = syncPointRtc; }
     inline void IRQsetNextSyncPointRtc(long long nextSyncPointRtc)  { this->nextSyncPointRtc = nextSyncPointRtc; }
     inline void IRQsetSyncPeriodRtc(long long syncPeriodRtc)        { this->syncPeriodRtc = syncPeriodRtc; }
+    inline long long IRQgetSyncPeriodRtc()                          { return this->syncPeriodRtc; }
 
     /**
      * @brief  Other setter and getters
      * 
      */
-    inline bool IRQisCorrectionEnabled() { return enabledCorrection; }
-    inline void IRQincrementPendingVhtSync() { ++pendingVhtSync; }
+    inline bool IRQisCorrectionEnabled()                                            { return enabledCorrection; }
+    inline long long IRQgetMaxTheoreticalError()                                    { return this->maxTheoreticalError; }
+    inline void IRQincrementPendingVhtSync()                                        { ++pendingVhtSync; }
+    
 private:
     ///
     // Constructors
     ///
     Vht() : tc(EFM32_HFXO_FREQ), 
-            baseTheoreticalHsc(0), baseExpectedHsc(0), baseActualHsc(0), syncPeriodHsc(9609375),
-            syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
-            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0),
-            error(0), pendingVhtSync(0), enabledCorrection(true),
+            baseTheoreticalHsc(0), baseExpectedHsc(0), baseActualHsc(0), 
+            syncPeriodHsc(9609375), syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
+            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), pendingVhtSync(0), 
+            enabledCorrection(true), maxTheoreticalError(static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f),
             clockCorrection(0), flopsyncVHT(nullptr) {}
     Vht(const Vht&)=delete;
     Vht& operator=(const Vht&)=delete;
@@ -210,14 +242,14 @@ private:
     }
 
     /**
-     * @brief 
+     * @brief Thread that sleeps and performs correction when woken up (variables set from outside!)
      * 
      */
     void vhtLoop() {        
         this->pendingVhtSync = 0; // reset pending sync
 
         // check max error less than 300ppm
-        const long long maxTheoreticalError = static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f;
+       // const long long maxTheoreticalError = static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f;
         
         // VHT core correction
         // FIXME: (s) no loop ma chiamato più volte dal padre (update...) invece che IRQwakeup.
@@ -305,8 +337,10 @@ private:
     //It is incremented in the TMR2->CC2 routine and reset in the Thread 
     unsigned int pendingVhtSync;
     bool enabledCorrection;
+    const long long maxTheoreticalError; // max error less than 300ppm
 
     long long clockCorrection;
+    long long clockCorrectionFlopsync;
     FlopsyncVHT* flopsyncVHT;
 };
 

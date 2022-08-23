@@ -32,6 +32,10 @@
 #include "interfaces/os_timer.h"
 #include "interfaces-impl/bsp_impl.h"
 
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+#include "interfaces-impl/rtc.h"
+#endif
+
 namespace miosix {
 /**
  * Manages the high frequency hardware timer
@@ -238,31 +242,39 @@ public:
         // TODO: (s) not needed that TIMER2 starts actually, just left here for future use like packet retransmission
         TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
                         | TIMER_CTRL_PRESC_DIV1; 
+        TIMER3->IEN |= TIMER_IEN_CC0; // enable interrupt on CC0
 
         NVIC_SetPriority(TIMER3_IRQn, 8);
         NVIC_ClearPendingIRQ(TIMER3_IRQn);
         NVIC_EnableIRQ(TIMER3_IRQn);
+
+        // setting PRS on channel 4 to capture RTC timer at COMP1 in CC[0]
+        TIMER3->CC[0].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
+            | TIMER_CC_CTRL_FILT_DISABLE
+            | TIMER_CC_CTRL_INSEL_PRS
+            | TIMER_CC_CTRL_PRSSEL_PRSCH4
+            | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+        PRS->CH[4].CTRL= PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
     }
 
     static void IRQstartVhtTimer()
     {
-        __NOP(); // TODO: (s) start TIMER3
+        TIMER3->CMD = TIMER_CMD_START;
     }
 
-    static inline unsigned int IRQgetTimerCounter()
+    static inline unsigned int IRQgetVhtTimerCounter()
     {
-        return 0; // read TIMER3 (lower, RTC COMP1 propagated thought PRS) + TIMER2<<16 (upper)
+        return (TIMER2->CNT<<16) | TIMER3->CC[0].CCV;
     }
 
     static inline bool IRQgetVhtMatchFlag()
     {
-        __NOP();
-        return 0;
+        return TIMER3->IF & TIMER_IF_CC0;
     }
 
     static inline void IRQclearVhtMatchFlag()
     {
-         __NOP();
+        TIMER3->IFC |= TIMER_IFC_CC0;
     }
 
     static inline void IRQsetVhtMatchReg(unsigned int v)
@@ -270,7 +282,7 @@ public:
         IRQclearVhtMatchFlag();
 
         // undocumented quirk, CC 1 tick after
-        unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+        //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         // TODO: (s) finish
     }
 
@@ -302,73 +314,6 @@ private:
 
 }//end miosix namespace
 
-void __attribute__((naked)) TIMER1_IRQHandler(); // forward declaration
-
-/**
- * TIMER2 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER2_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER2_IRQHandlerImplv");
-    restoreContext();
-}
-
-void __attribute__((used)) TIMER2_IRQHandlerImpl()
-{
-    static Hsc * hsc = &Hsc::instance();
-
-    // save value of TIMER1 counter right away to check for compare later
-    unsigned int lowerTimerCounter = TIMER1->CNT;
-
-    // TIMER2 overflow, pending bit trick.
-    if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
-
-    // if just overflow, no TIMER2 counter register match, return
-    if(!(TIMER2->IF & TIMER_IF_CC0)) return;
-    
-    // first part of output compare, disable output compare interrupt
-    // for TIMER2 and turn of output comapre interrupt of TIMER1
-    miosix::ledOn();
-
-    // disable output compare interrupt on channel 0 for most significant timer
-    TIMER2->IEN &= ~TIMER_IEN_CC0;
-    TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    TIMER2->IFC |= TIMER_IFC_CC0;
-
-    // if by the time we get here, the lower part of the counter has already matched
-    // the counter register or got past it, call TIMER1 handler directly
-    if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
-    else
-    {
-        // enable output compare interrupt on channel 0 for least significant timer
-        TIMER1->IEN |= TIMER_IEN_CC0;
-        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    }
-}
-
-/**
- * TIMER1 interrupt routine
- * 
- */
-void __attribute__((naked)) TIMER1_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z21TIMER1_IRQHandlerImplv");
-    restoreContext();
-}
-
-void __attribute__((used)) TIMER1_IRQHandlerImpl()
-{
-    static Hsc * hsc = &Hsc::instance();
-
-    // second part of output compare. If we reached this interrupt, it means
-    // we already matched the upper part of the timer and we have now matched the lower part.
-    hsc->IRQhandler();
-
-    miosix::ledOff();
-}
 
 #endif /* HIGH_SPEED_CLOCK */
 

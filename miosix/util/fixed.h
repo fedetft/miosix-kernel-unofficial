@@ -45,7 +45,7 @@ public:
     constexpr fixed() = default;
     constexpr fixed(const double d)
     { 
-        value = T(d * static_cast<double>(1 << dp) + (d >= 0 ? 0.5 : -0.5));
+        value = static_cast<T>(d * static_cast<double>(1 << dp) + (d >= 0 ? 0.5 : -0.5));
     }
 
     constexpr operator double() const
