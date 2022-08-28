@@ -238,11 +238,7 @@ public:
 
     static void IRQstartVhtTimer()
     {
-        // if-guard, start RTC only if not started already
-        if(RTC->CTRL & RTC_CTRL_EN != 0) return;
-
-        RTC->CTRL = RTC_CTRL_EN;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_CTRL);
+        // RTC is already started calling IRQinit() 
     }
 
     static inline bool IRQgetVhtMatchFlag()

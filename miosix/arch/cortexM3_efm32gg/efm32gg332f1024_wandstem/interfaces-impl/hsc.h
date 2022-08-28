@@ -254,17 +254,23 @@ public:
             | TIMER_CC_CTRL_INSEL_PRS
             | TIMER_CC_CTRL_PRSSEL_PRSCH4
             | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-        PRS->CH[4].CTRL= PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
+        PRS->CH[4].CTRL = PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
     }
 
     static void IRQstartVhtTimer()
     {
+        // start timer
         TIMER3->CMD = TIMER_CMD_START;
     }
 
     static inline unsigned int IRQgetVhtTimerCounter()
     {
         return (TIMER2->CNT<<16) | TIMER3->CC[0].CCV;
+    }
+
+    static inline void IRQsetVhtTimerCounter(unsigned int v)
+    {
+        TIMER3->CNT = static_cast<uint16_t>(v & 0xFFFFUL);
     }
 
     static inline bool IRQgetVhtMatchFlag()

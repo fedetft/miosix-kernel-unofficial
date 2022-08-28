@@ -41,28 +41,17 @@
 #include "interfaces/vht.h"
 #endif
 
-#include "e20/e20.h" // DELETEME: (s)
-#include "thread" // DELETEME: (s)
 
 using namespace miosix;
 
-static FixedEventQueue<100,12> queue; // DELETEME: (s)
-
-// DELETEME: (s)
-void startThread()
-{
-	std::thread t([]() { queue.run(); });
-	t.detach();
-}
-
 namespace miosix {
 
-#ifdef WITH_DEEP_SLEEP
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
 static Rtc *rtc = nullptr;
 #endif
 
 //static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();
-using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
+using MyTimerProxy = TimerProxy<Hsc>;//, Vht<Hsc, Rtc>>;
 static MyTimerProxy * timerProxy = &MyTimerProxy::instance();
 
 long long getTime() noexcept
@@ -80,15 +69,13 @@ namespace internal {
 
 void IRQosTimerInit()
 {
-    //startThread(); // DELETEME: (s)
-
-    timerProxy->IRQinit(); // inits HSC and correction stack
-    
-    #ifdef WITH_DEEP_SLEEP
+    // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
+    #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
     rtc = &Rtc::instance();
     rtc->IRQinit();
     #endif
 
+    timerProxy->IRQinit(); // inits HSC and correction stack
 }
 
 void IRQosTimerSetTime(long long ns) noexcept
@@ -100,7 +87,6 @@ void IRQosTimerSetTime(long long ns) noexcept
 // FIXME: (s) quando faccio sleep, questa viene chiamata anche se devo andare in deep sleep! why?
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
-    //queue.IRQpost([=]() { iprintf("Next int: %lld (uncorr ns) vs %lld (ns)\n", vc->IRQgetUncorrectedTimeNs(ns), ns); }); // DELETEME: (s)
     timerProxy->IRQsetIrqNs(ns);
 }
 
@@ -195,22 +181,28 @@ void __attribute__((naked)) TIMER3_IRQHandler()
 void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
     static miosix::Hsc * hsc = &miosix::Hsc::instance();
-    static miosix::Vht<miosix::Hsc, miosix::Rtc> * vht = &miosix::Vht<miosix::Hsc, miosix::Rtc>::instance();
 
+    #ifdef WITH_VHT
+    
+    static miosix::Vht<miosix::Hsc, miosix::Rtc> * vht = &miosix::Vht<miosix::Hsc, miosix::Rtc>::instance();
     // if-guard
     if(!hsc->IRQgetVhtMatchFlag()) return;
 
     // PRS captured RTC current value inside the CC_0 of the TIMER3 (lower part of timer)
     hsc->IRQclearVhtMatchFlag();
     
-    // to get full 64-bit timestamp with pending bit trick, we get time in tick and replace lower 32-bit part
-    long long vhtTimestamp = hsc->IRQgetTimeTick()<<32 | hsc->IRQgetVhtTimerCounter();
-    if(vhtTimestamp > hsc->IRQgetTimeTick()) { vhtTimestamp -= 1<<16; }
+    // replace lower 32-bit part of timer with the VHT registered one
+    long long baseActualHsc = hsc->upperTimeTick<<32 | hsc->IRQgetVhtTimerCounter(); //hsc->IRQgetTimeTick() - hsc->IRQgetTimerCounter() + hsc->IRQgetVhtTimerCounter();
+    // handle lower part timer overflowed before vht lower part timer
+    if(baseActualHsc > hsc->IRQgetTimeTick()) { baseActualHsc -= 1<<16; }
 
+    // update vht correction controller
     if(vht->IRQisCorrectionEnabled())
     {
-        vht->IRQupdate(vhtTimestamp);
+        vht->IRQupdate(baseActualHsc);
     }
+    
+    #endif
 
 }
 
@@ -226,6 +218,8 @@ void __attribute__((naked)) RTC_IRQHandler()
 
 void __attribute__((used)) RTChandlerImpl()
 {
+    #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+
     static miosix::Rtc * rtc = &miosix::Rtc::instance();
     
     // handle RTC overflow
@@ -234,5 +228,7 @@ void __attribute__((used)) RTChandlerImpl()
     // VHT COMP1 register clear (already handled by PRS, just clear)
     #ifdef WITH_VHT
     if(rtc->IRQgetVhtMatchFlag()) { rtc->IRQclearVhtMatchFlag(); }
+    #endif
+
     #endif
 }
