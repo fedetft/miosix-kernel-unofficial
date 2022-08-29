@@ -100,6 +100,7 @@ unsigned int osTimerGetFrequency()
 
 } //namespace miosix 
 
+#define TIMER_INTERRUPT_DEBUG
 
 /**
  * TIMER1 interrupt routine
@@ -120,7 +121,9 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     // we already matched the upper part of the timer and we have now matched the lower part.
     hsc->IRQhandler();
 
+    #ifdef TIMER_INTERRUPT_DEBUG
     miosix::ledOff();
+    #endif
 }
 
 /**
@@ -134,6 +137,15 @@ void __attribute__((naked)) TIMER2_IRQHandler()
     restoreContext();
 }
 
+// Each thread is scheduled according to the scheduler every 10ms.
+// It can happen that we've recieved a TIMER2 interrupt and we set TIMER1 for lower part of timer match
+// and, while still waiting, we get a request to sleep. IRQsetosInterrupt is called that
+// re-sets the next interrupt as now + sleepTime and enters in sleepCpu with interrupt disabled
+// after clearing the match flag and resetting TIMER1.
+// TIMER1 is not called, TIMER2 is then re-called when sleep finishes, as expected.
+// TIMER2 sets TIMER1 and waits, as expected.
+// This is why i cannot set both timers when setting the next osinterrupt but i have to set them progressively
+// everytime i get upper tick match.
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
     static miosix::Hsc * hsc = &miosix::Hsc::instance();
@@ -149,7 +161,10 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     
     // first part of output compare, disable output compare interrupt
     // for TIMER2 and turn of output comapre interrupt of TIMER1
+
+    #ifdef TIMER_INTERRUPT_DEBUG
     miosix::ledOn();
+    #endif
 
     // disable output compare interrupt on channel 0 for most significant timer
     TIMER2->IEN &= ~TIMER_IEN_CC0;
@@ -158,7 +173,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
 
     // if by the time we get here, the lower part of the counter has already matched
     // the counter register or got past it, call TIMER1 handler directly
-    if(lowerTimerCounter >= TIMER1->CC[0].CCV) TIMER1_IRQHandler();
+    if(lowerTimerCounter >= TIMER1->CC[0].CCV) NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
     else
     {
         // enable output compare interrupt on channel 0 for least significant timer
@@ -183,7 +198,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     static miosix::Hsc * hsc = &miosix::Hsc::instance();
 
     #ifdef WITH_VHT
-    
+
     static miosix::Vht<miosix::Hsc, miosix::Rtc> * vht = &miosix::Vht<miosix::Hsc, miosix::Rtc>::instance();
     // if-guard
     if(!hsc->IRQgetVhtMatchFlag()) return;
@@ -201,7 +216,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     {
         vht->IRQupdate(baseActualHsc);
     }
-    
+
     #endif
 
 }

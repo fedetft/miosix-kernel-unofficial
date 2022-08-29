@@ -193,4 +193,6 @@ VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), baseTheo
                             baseComputed(0), vcdot_k(1), vcdot_km1(1), a(0.05), beta(a/2),
                             k(0), T0(0), init(false), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
+
+void VirtualClock::IRQinit(){}
 } // namespace miosix

@@ -82,6 +82,11 @@ public:
      */
     void IRQinit()
     {
+        // using VHT without macro, vht part of code not enabled compile time
+        #ifndef WITH_VHT
+        #error Using VHT instance without using "WITH_VHT" macro in miosix_settings.h
+        #endif
+
         // TODO: (s) develop
         this->flopsyncVHT = &(FlopsyncVHT::instance());
 

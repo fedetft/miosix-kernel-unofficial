@@ -147,7 +147,7 @@ public:
      * @brief 
      * 
      */
-    void IRQinit(){}; // TODO: (s) fix empty body, just to avoid compilation error for synchronizer imposed methods
+    void IRQinit();
     
     
 private:
