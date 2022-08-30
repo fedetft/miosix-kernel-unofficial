@@ -94,24 +94,24 @@ public:
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
-        IRQclearMatchFlag();
+        // clear previous TIMER2 setting
+        TIMER2->IFC |= TIMER_IFC_CC0;
+        NVIC_ClearPendingIRQ(TIMER2_IRQn);
 
-        // set output compare timer register
-        // because of an undocumented quirk, the compare register is checked 
-        // 1 tick late. By subtracting one tick, we have to make sure we do not underflow!
+        // extracting lower and upper 16-bit parts from match value
         uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
         uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
-        TIMER1->CC[0].CCV = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        TIMER2->CC[0].CCV = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
 
-        // enable output compare interrupt on channel 0 for most significant timer
+        // set output compare timer register
+        // because of an undocumented quirk, the compare register is checked 1 tick late. 
+        // By subtracting one tick, we have to make sure we do not underflow!
+        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        Hsc::nextCCticksUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
+        
+        // set and enable output compare interrupt on channel 0 for most significant timer
+        TIMER2->CC[0].CCV = Hsc::nextCCticksUpper;
         TIMER2->IEN |= TIMER_IEN_CC0;
         TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        // disable output compare interrupt on channel 0 for least significant timer
-        TIMER1->IEN &= ~TIMER_IEN_CC0;
-        TIMER1->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        
     }
 
     static inline bool IRQgetOverflowFlag()
@@ -134,16 +134,12 @@ public:
         // disable output compare interrupt
         TIMER1->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
         TIMER1->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
-        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
         // clear output compare flag
         TIMER1->IFC |= TIMER_IFC_CC0;
-        TIMER2->IFC |= TIMER_IFC_CC0;
 
         // clear pending interrupt
         NVIC_ClearPendingIRQ(TIMER1_IRQn);
-        NVIC_ClearPendingIRQ(TIMER2_IRQn);
     }
 
     static inline void IRQforcePendingIrq()
@@ -294,6 +290,16 @@ public:
 
     #endif // #ifdef WITH_VHT
 
+    static unsigned int IRQgetNextCCticksUpper()
+    {
+        return Hsc::nextCCticksUpper;
+    }
+
+    static unsigned int IRQgetNextCCticksLower()
+    {
+        return Hsc::nextCCticksLower;
+    }
+
 private:
     /**
      * Constructor
@@ -314,6 +320,9 @@ private:
 
         return high2<<16 | TIMER1->CNT;
     }
+
+    inline static unsigned int nextCCticksUpper;
+    inline static unsigned int nextCCticksLower;
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };

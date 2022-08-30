@@ -33,15 +33,6 @@
 #include "rtc.h"
 #endif
 
-#ifdef WITH_VIRTUAL_CLOCK
-#include "interfaces/virtual_clock.h"
-#endif
-
-#ifdef WITH_VHT
-#include "interfaces/vht.h"
-#endif
-
-
 using namespace miosix;
 
 namespace miosix {
@@ -50,8 +41,15 @@ namespace miosix {
 static Rtc *rtc = nullptr;
 #endif
 
-//static TimerProxy<Hsc, VirtualClock> * timerProxy = &TimerProxy<Hsc, VirtualClock>::instance();
-using MyTimerProxy = TimerProxy<Hsc>;//, Vht<Hsc, Rtc>>;
+#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
+using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
+#elif !defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
+using MyTimerProxy = TimerProxy<Hsc, VirtualClock>;
+#elif defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
+using MyTimerProxy = TimerProxy<Hsc, VirtualClock, Vht<Hsc, Rtc>>; // TODO: check if on the reverse order!
+#else
+using MyTimerProxy = TimerProxy<Hsc>;
+#endif
 static MyTimerProxy * timerProxy = &MyTimerProxy::instance();
 
 long long getTime() noexcept
@@ -145,7 +143,11 @@ void __attribute__((naked)) TIMER2_IRQHandler()
 // TIMER1 is not called, TIMER2 is then re-called when sleep finishes, as expected.
 // TIMER2 sets TIMER1 and waits, as expected.
 // This is why i cannot set both timers when setting the next osinterrupt but i have to set them progressively
-// everytime i get upper tick match.
+// everytime i get upper tick match. So the algorithm is now as follows:
+// set TIMER2 CC --ISR--> set TIMER1CC
+// Only problem is if we have sleep less than then time that intercurs between the two interrups
+// but since it's maximum (2^16)-1 we have maximum 1.36ms. Also, if we have lowerTimerCounter >= hsc->IRQgetNextCCticksLower()
+// it may cause problems if we're calling TIMER2 twice for the sleep while waiting for TIMER1?
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
     static miosix::Hsc * hsc = &miosix::Hsc::instance();
@@ -171,14 +173,18 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     TIMER2->IFC |= TIMER_IFC_CC0;
 
+    // set and enable output compare interrupt on channel 0 for least significant timer
+    TIMER1->CC[0].CCV = hsc->IRQgetNextCCticksLower(); // underflow handling
+    TIMER1->IEN |= TIMER_IEN_CC0;
+    TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
     // if by the time we get here, the lower part of the counter has already matched
-    // the counter register or got past it, call TIMER1 handler directly
-    if(lowerTimerCounter >= TIMER1->CC[0].CCV) NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
-    else
+    // the counter register or got past it, call TIMER1 handler directly instead of waiting
+    // for the other round of compare
+    if(lowerTimerCounter >= hsc->IRQgetNextCCticksLower()) 
     {
-        // enable output compare interrupt on channel 0 for least significant timer
-        TIMER1->IEN |= TIMER_IEN_CC0;
-        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER1->IFS |= TIMER_IFS_CC0;
+        NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
     }
 }
 

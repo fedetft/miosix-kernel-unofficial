@@ -35,8 +35,8 @@
 #include "miosix.h" // DELETEME: (s)
 #include "bsp_impl.h"
 
-#ifdef WITH_VHT
-#include "interfaces/vht.h"
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+#include "rtc.h"
 #endif
 
 using namespace miosix;
@@ -48,7 +48,15 @@ using namespace miosix;
 
 namespace miosix {
 
+/*#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
 using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
+#elif !defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
+using MyTimerProxy = TimerProxy<Hsc, VirtualClock>;
+#elif defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
+using MyTimerProxy = TimerProxy<Hsc, VirtualClock, Vht<Hsc, Rtc>>; // TODO: check if on the reverse order!
+#else
+using MyTimerProxy = TimerProxy<Hsc>;
+#endif*/
 
 static Rtc* rtc = nullptr; 
 static Hsc* hsc = nullptr;
@@ -65,7 +73,6 @@ void IRQclearDeepSleep();
 ///
 // Main interface impl
 ///
-// TODO: use timer proxy? no?
 void IRQdeepSleepInit()
 {
     // instances of RTC and HSC
@@ -77,7 +84,6 @@ void IRQdeepSleepInit()
     
 }
 
-// TODO: (s) this time needs to be uncorrected?
 bool IRQdeepSleep(long long abstime)
 {
     #ifdef DEBUG_DEEP_SLEEP
@@ -87,7 +93,6 @@ bool IRQdeepSleep(long long abstime)
     
     // 1. RTC set ticks from High Speed Clock and starts
     rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
-    //hsc->IRQstopTimer();
 
     // 2. Perform deep sleep
     IRQdeepSleep_impl(timerProxy->IRQuncorrectTimeNs(abstime));
@@ -98,7 +103,7 @@ bool IRQdeepSleep(long long abstime)
     //timerProxy->recompute correction...
     #else // No VHT, just pass time between each other
     hsc->IRQsetTimeNs(rtc->IRQgetTimeNs());
-    //rtc->IRQstopTimer(); // TODO: (s) should do power gating?
+    rtc->IRQstopTimer(); // TODO: (s) should do also power gating?
     #endif
     
     #ifdef DEBUG_DEEP_SLEEP
@@ -133,8 +138,8 @@ void IRQdeepSleep_impl(long long abstime)
     // ns->tick(HR)[approximated]->tick(LF)[equivalent to the approx tick(HR)]
     // This operation is of course slower than usual, but affordable given 
     // the fact that the deep sleep should be called quite with large time span.
-    unsigned long long ticks = RTCtc->ns2tick(abstime);
-    //ticks = ticks * 32 / 46875;
+    unsigned long long ticks = RTCtc->ns2tick(abstime);  // TODO: (s) actually precise because of round trip??
+    //unsigned long long ticks2 = abstime / 32768; //< it's slightly lower then ticks! 143ms lower
     
     ioctl(STDOUT_FILENO,IOCTL_SYNC,0);
     
@@ -147,8 +152,6 @@ void IRQdeepSleep_impl(long long abstime)
     // RTC deep sleep function that sets RTC compare register
     rtc->IRQsetDeepSleepIrqTick(ticks);
 
-    // TODO: (s) call mask interrupts on every component that can generate it?
-
     // deep sleep loop
     for(;;)
     {        
@@ -159,12 +162,13 @@ void IRQdeepSleep_impl(long long abstime)
             NVIC_ClearPendingIRQ(RTC_IRQn);
             break;
         }
-        
+
+        bool lateWakeUp = false;
+
         // digest all pending interrupts before going in deep sleep
         // needed since efm32 lacks of standby flag that tells us if the micro was
         // able to go in deep sleep mode or not.
-        bool pendingNVIC = NVIC->ISPR[0U] > 0;
-        bool lateWakeUp = false;
+        bool pendingNVIC = NVIC->ISPR[0U] > 0; 
         while(pendingNVIC)
         {
             // checks if wake up because of RTC overflow
@@ -189,6 +193,38 @@ void IRQdeepSleep_impl(long long abstime)
             pendingNVIC = NVIC->ISPR[0U] > 0;
         }
         if(lateWakeUp) break;
+        __ISB(); // avoids anticipating deep sleep before finishing serving interrupts
+
+        // if this condition is true, we're still waiting for TIMER1 to be triggered
+        // while about to enter deep sleep.
+        // we need to handle TIMER1 interrupt before sleeping because HSC timer will be
+        // power-gated during sleep and TIMER1IRQHandler_Impl will never be called if not
+        // by next iteration TIMER2 -> TIMER1
+        if(TIMER1->CC[0].CTRL & TIMER_CC_CTRL_MODE_OUTPUTCOMPARE)
+        {
+            while(!hsc->IRQgetMatchFlag())
+            {
+                // checks if wake up because of RTC overflow
+                if(rtc->IRQgetOverflowFlag())
+                {
+                    rtc->IRQoverflowHandler(); // check if interrupt was because of an overflow
+                }
+
+                // if by any means we get past wakeup-time while serving interrupts, break
+                if(ticks <= rtc->IRQgetTimeTick())
+                {
+                    rtc->IRQclearMatchFlag();
+                    NVIC_ClearPendingIRQ(RTC_IRQn);
+                    lateWakeUp = true;
+                    break;
+                }
+            }
+            if(lateWakeUp) break;
+
+            fastEnableInterrupts();
+            __NOP(); // NOP operation to be sure that the interrupt can be executed
+            fastDisableInterrupts();
+        }
         
         __ISB(); // avoids anticipating deep sleep before finishing serving interrupts
 
@@ -219,14 +255,10 @@ void IRQdeepSleep_impl(long long abstime)
             // we could have another pending interrupt with the overflow one
             if(!rtc->IRQgetOverflowFlag()/* && !(ticks <= rtc->IRQgetTimeTick())*/)
             {
-                // Se ho altri interrupt (> 1) vanno tutti con clock non corretto
-                // Reimplement RTC timer adapter
-                //FastInterruptEnableLock eLock(dLock);
-                // Here interrupts are enabled, so the software part of RTC 
-                // can be updated
-                // NOP operation to be sure that the interrupt can be executed
+                // Other pending interrupts that are not RTC overflow
+                // FIXME: (s) need to resync clock before running pending interrupts  (vht->IRQresyncClock())
                 fastEnableInterrupts();
-                __NOP(); // run pending interrupt
+                __NOP(); // NOP operation to be sure that the interrupt can be executed
                 fastDisableInterrupts();
             }
 
@@ -238,8 +270,9 @@ void IRQdeepSleep_impl(long long abstime)
         {
             // we have an interrupt set before going to deep sleep, we have to serve it 
             // or the micro will never go into sleep mode and __WFI() macro becomes a NOP instruction
+            // FIXME: (s) need to resync clock before running pending interrupts (vht->IRQresyncClock())
             fastEnableInterrupts();
-            __NOP(); // run pending interrupt
+            __NOP(); // NOP operation to be sure that the interrupt can be executed
             fastDisableInterrupts();
         }
     }
