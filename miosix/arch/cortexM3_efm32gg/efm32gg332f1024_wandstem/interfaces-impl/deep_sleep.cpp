@@ -34,10 +34,7 @@
 #include "stdio.h"
 #include "miosix.h" // DELETEME: (s)
 #include "bsp_impl.h"
-
-#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-#include "rtc.h"
-#endif
+#include "correction_types.h"
 
 using namespace miosix;
 
@@ -48,19 +45,9 @@ using namespace miosix;
 
 namespace miosix {
 
-/*#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
-#elif !defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, VirtualClock>;
-#elif defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, VirtualClock, Vht<Hsc, Rtc>>; // TODO: check if on the reverse order!
-#else
-using MyTimerProxy = TimerProxy<Hsc>;
-#endif*/
-
 static Rtc* rtc = nullptr; 
 static Hsc* hsc = nullptr;
-static MyTimerProxy * timerProxy = nullptr;
+static TimerProxySpec * timerProxy = nullptr;
 
 static TimeConversion* RTCtc = nullptr;
 
@@ -77,11 +64,10 @@ void IRQdeepSleepInit()
 {
     // instances of RTC and HSC
     rtc         = &Rtc::instance();
-    timerProxy  = &MyTimerProxy::instance();
+    timerProxy  = &TimerProxySpec::instance();
     hsc         = timerProxy->getHscReference();
 
-    RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());
-    
+    RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());   
 }
 
 bool IRQdeepSleep(long long abstime)

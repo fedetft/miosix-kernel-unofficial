@@ -28,29 +28,13 @@
 #include "interfaces/os_timer.h"
 #include "time/timeconversion.h"
 #include "hsc.h"
-
-#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-#include "rtc.h"
-#endif
+#include "interfaces-impl/correction_types.h"
 
 using namespace miosix;
 
 namespace miosix {
 
-#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-static Rtc *rtc = nullptr;
-#endif
-
-#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, Vht<Hsc, Rtc>>;
-#elif !defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, VirtualClock>;
-#elif defined(WITH_VHT) && defined(WITH_VIRTUAL_CLOCK)
-using MyTimerProxy = TimerProxy<Hsc, VirtualClock, Vht<Hsc, Rtc>>; // TODO: check if on the reverse order!
-#else
-using MyTimerProxy = TimerProxy<Hsc>;
-#endif
-static MyTimerProxy * timerProxy = &MyTimerProxy::instance();
+static TimerProxySpec * timerProxy = &TimerProxySpec::instance();
 
 long long getTime() noexcept
 {
@@ -69,8 +53,8 @@ void IRQosTimerInit()
 {
     // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-    rtc = &Rtc::instance();
-    rtc->IRQinit();
+    Rtc::instance().IRQinit();
+    //rtc->IRQinit();
     #endif
 
     timerProxy->IRQinit(); // inits HSC and correction stack
@@ -81,8 +65,7 @@ void IRQosTimerSetTime(long long ns) noexcept
     timerProxy->IRQsetTimeNs(ns);
 }
 
-// TODO: (s) check if in the past?
-// FIXME: (s) quando faccio sleep, questa viene chiamata anche se devo andare in deep sleep! why?
+// time assumed not to be on the past, checked by caller
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
     timerProxy->IRQsetIrqNs(ns);
@@ -204,8 +187,8 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     static miosix::Hsc * hsc = &miosix::Hsc::instance();
 
     #ifdef WITH_VHT
-
     static miosix::Vht<miosix::Hsc, miosix::Rtc> * vht = &miosix::Vht<miosix::Hsc, miosix::Rtc>::instance();
+    
     // if-guard
     if(!hsc->IRQgetVhtMatchFlag()) return;
 

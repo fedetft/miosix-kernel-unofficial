@@ -34,6 +34,7 @@
 #include "time/correction_tile.h"
 #include "time/timeconversion.h"
 #include "time/flopsync_vht.h"
+#include "kernel/logging.h"
 
 namespace miosix
 {
@@ -71,7 +72,7 @@ public:
     {
         if(!init) { return ns; }
 
-        long long tick = tc.ns2tick(ns); // FIXME: (s) arriva a 78.573s poi esplode, assert fail?
+        long long tick = tc.ns2tick(ns);
         return tc.tick2ns(syncPointExpectedHsc + fastNegMul(tick - syncPointTheoreticalHsc, inverseFactorI, inverseFactorD) /*- vhtClockOffset*/);
     }
 
@@ -82,11 +83,6 @@ public:
      */
     void IRQinit()
     {
-        // using VHT without macro, vht part of code not enabled compile time
-        #ifndef WITH_VHT
-        #error Using VHT instance without using "WITH_VHT" macro in miosix_settings.h
-        #endif
-
         // TODO: (s) develop
         this->flopsyncVHT = &(FlopsyncVHT::instance());
 
@@ -164,16 +160,17 @@ public:
         this->syncPointTheoreticalHsc += this->syncPeriodHsc; // increments next HSC sync point as theoreticalSyncPoint + syncPeriod
         this->syncPointExpectedHsc += this->syncPeriodHsc + this->clockCorrectionFlopsync;
 
-        // clear RTC output channel
-        Rtc_TA::IRQclearVhtMatchFlag();
+        Rtc_TA::IRQclearVhtMatchFlag(); // clear RTC output channel
         Rtc_TA::IRQsetVhtMatchReg(Rtc_TA::IRQgetVhtTimerMatchReg() + syncPeriodRtc);
-
-        ++pendingVhtSync;
 
         // calculate required parameters
         this->error = this->syncPointActualHsc - syncPointExpectedHsc;
         this->clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);
-        assert(error < maxTheoreticalError && error > -maxTheoreticalError);
+
+        // TODO: (s) extend error.h types and print everything inside error.cpp + recover
+        // handle case in which error exceeds maximum theoretical error
+        if(error < -maxTheoreticalError || error > maxTheoreticalError) 
+            IRQhandleErrorException();
 
         IRQupdateImpl(syncPointTheoreticalHsc, syncPointExpectedHsc, clockCorrectionFlopsync);
     }
@@ -186,7 +183,6 @@ public:
      * @param vhtClockOffset 
      */
     void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync){
-        pendingVhtSync = 0;
         
         //efficient way to calculate the factor T/(T+u(k))
         long long temp = (syncPeriodHsc<<32) / (syncPeriodHsc + clockCorrectionFlopsync);
@@ -216,8 +212,8 @@ private:
     Vht() : tc(EFM32_HFXO_FREQ), 
             syncPointTheoreticalHsc(0), syncPointExpectedHsc(0), syncPointActualHsc(0), 
             syncPeriodHsc(9609375), syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
-            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), pendingVhtSync(0), 
-            enabledCorrection(true), maxTheoreticalError(static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f),
+            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), enabledCorrection(true), 
+            maxTheoreticalError(static_cast<long long>(static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f)),
             vhtClockOffset(0), flopsyncVHT(nullptr), init(false) {}
     Vht(const Vht&)=delete;
     Vht& operator=(const Vht&)=delete;
@@ -225,10 +221,37 @@ private:
     ///
     // Helper functions
     ///
+    
+    /**
+     * @brief 
+     * 
+     * @param a 
+     * @param bi 
+     * @param bf 
+     * @return long long 
+     */
     static inline long long fastNegMul(long long a, unsigned int bi, unsigned int bf){
         return a < 0 ? -mul64x32d32(-a,bi,bf) : mul64x32d32(a,bi,bf);
     }
 
+    /**
+     * @brief 
+     * 
+     */
+    void IRQhandleErrorException()
+    {
+        IRQerrorLog("\r\n***Exception: VHT");
+        IRQerrorLog("\r\nVHT exceeded maximum theoretical correction");
+        IRQerrorLog("\r\nerror: "); IRQerrorLog(std::to_string(static_cast<int>(error)).c_str());
+        IRQerrorLog("\r\nmaxTheoreticalError: "); IRQerrorLog(std::to_string(static_cast<int>(maxTheoreticalError)).c_str());
+        IRQerrorLog("\r\n\n");
+        miosix_private::IRQsystemReboot();
+    }
+
+    /**
+     * @brief 
+     * 
+     */
     /*
     void IRQresyncClockVht(){
         long long nowRtc=rtc.IRQgetValue();
@@ -289,8 +312,6 @@ private:
     unsigned int inverseFactorD;
     long long error;
 
-    //It is incremented in the TMR2->CC2 routine and reset in the Thread 
-    unsigned int pendingVhtSync;
     bool enabledCorrection;
     const long long maxTheoreticalError; // max error less than 300ppm
 
