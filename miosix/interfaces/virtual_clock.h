@@ -184,7 +184,6 @@ private:
 
     /* class variables */
 
-    // TODO: (s) move all those values init inside cpp initialization list so user can instanciate them differently
     //Max period, necessary to guarantee the proper behaviour of runUpdate
     //They are 2^40=1099s
     const unsigned long long maxPeriod;

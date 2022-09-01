@@ -42,7 +42,6 @@ static VirtualClock *vt=nullptr;
 
 long long getTime() noexcept
 {
-    // TODO: (s) A * tick + B... no more cascade call
     return vt->getVirtualTime(tc.tick2ns(vht->uncorrected2corrected(b->addBasicCorrection(b->getCurrentTick()))));
     //return b->addBasicCorrection(b->getCurrentTick());
 }

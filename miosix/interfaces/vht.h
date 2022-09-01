@@ -83,7 +83,6 @@ public:
      */
     void IRQinit()
     {
-        // TODO: (s) develop
         this->flopsyncVHT = &(FlopsyncVHT::instance());
 
         // setting up VHT timer
@@ -91,7 +90,7 @@ public:
         Hsc_TA::IRQstartVhtTimer();
 
         Rtc_TA::IRQinitVhtTimer();
-        Rtc_TA::IRQstartVhtTimer(); // TODO: (s) read inside rtc.h
+        Rtc_TA::IRQstartVhtTimer(); // read inside rtc.h
 
         // performing VHT initialization
         unsigned int nowRtc = Rtc_TA::IRQgetTimerCounter() + 2; // TODO: (s) this is for undocumented quirk, generalize! + CHECK OVERFLOW
@@ -110,7 +109,7 @@ public:
         Rtc_TA::IRQclearVhtMatchFlag();
         Hsc_TA::IRQclearVhtMatchFlag();
 
-        #if EFM32_HFXO_FREQ != 48000000 || EFM32_LFXO_FREQ != 32768 // TODO: (s) parametrize
+        #if EFM32_HFXO_FREQ != 48000000 || EFM32_LFXO_FREQ != 32768
         #error "Clock frequency assumption not satisfied"
         #endif
 
@@ -189,9 +188,6 @@ public:
         //calculate inverse of previous factor (T+u(k))/T
         long long inverseTemp = ((syncPeriodHsc + clockCorrectionFlopsync)<<32) / syncPeriodHsc;
         
-        //Save modification to make effective the update
-        //IRQoffsetUpdate(syncPointTheoreticalHsc, syncPointExpectedHsc); // TODO: (s) correct?
-            
         factorI = static_cast<unsigned int>((temp & 0xFFFFFFFF00000000LLU)>>32);
         factorD = static_cast<unsigned int>(temp);
         

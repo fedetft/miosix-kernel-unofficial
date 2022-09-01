@@ -35,6 +35,7 @@ VirtualClock& VirtualClock::instance(){
     return vt;
 }
 
+// TODO: (s) replace assert with various error handlers
 long long VirtualClock::IRQgetVirtualTimeNs(long long tsnc) noexcept
 {
     //assertInit();

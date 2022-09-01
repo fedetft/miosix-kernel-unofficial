@@ -45,8 +45,6 @@
 #include "filesystem/console/console_device.h"
 #include "drivers/serial.h"
 #include "board_settings.h"
-//#include "hrtb.h"
-#include "vht.h"
 namespace miosix {
 
 //
@@ -175,9 +173,9 @@ void IRQbspInit()
 
 void bspInit2()
 {
-    #ifndef DISABLE_FLOPSYNCVHT
-    VHT::instance().start();
-    #endif //DISABLE_FLOPSYNCVHT
+    // #ifndef DISABLE_FLOPSYNCVHT
+    // VHT::instance().start();
+    // #endif //DISABLE_FLOPSYNCVHT
 //     #ifdef WITH_FILESYSTEM
 //     basicFilesystemSetup();
 //     #endif //WITH_FILESYSTEM

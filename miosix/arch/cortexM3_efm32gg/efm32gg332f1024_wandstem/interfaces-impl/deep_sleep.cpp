@@ -70,6 +70,8 @@ void IRQdeepSleepInit()
     RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());   
 }
 
+// TODO: (s) modify this code to get not only VHT but also account for transceiver
+// REMEMBER that peripherals are turned off and on automatically by kernel!
 bool IRQdeepSleep(long long abstime)
 {
     #ifdef DEBUG_DEEP_SLEEP
@@ -290,7 +292,6 @@ inline void IRQprepareDeepSleep()
     // otherwise _WFI is translated as a simple sleep status, this means that the core is not running 
     // but all the peripheral (HF and LF), are still working and they can trigger exception
     SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; 
-    //SCB->SCR |= SCB_SCR_SLEEPONEXIT_Msk; // TODO: (s) doens't enter deep sleep until least interrupt in ISR is served. Ma noi tanto siamo ad interrupt disabilitati!
     EMU->CTRL = 0;
 }
 
@@ -301,20 +302,3 @@ inline void IRQclearDeepSleep()
 }
 
 } // namespace miosix
-
-
-// TODO: (s) is that really necessary? we use RTC only when going into deep sleep so...
-/**
- * RTC interrupt routine (not used, scheduling uses hsc IRQ handler!)
- */
-/*void __attribute__((naked)) RTC_IRQHandler()
-{
-    saveContext();
-    asm volatile("bl _Z14RTChandlerImplv");
-    restoreContext();
-}
-
-void __attribute__((used)) RTChandlerImpl()
-{    
-    rtc->IRQoverflowHandler();
-}*/

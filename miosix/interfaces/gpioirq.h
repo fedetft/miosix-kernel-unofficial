@@ -25,8 +25,10 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+#pragma once
+
 #include <functional>
-#include <interfaces/gpio.h>
+#include "gpio.h"
 
 namespace miosix {
 

@@ -50,7 +50,7 @@ class PowerManageablePeripheral
 public:
     virtual void IRQturnOn() = 0;
     virtual void IRQturnOff() = 0;
-    virtual bool IRQisTurnedOn() = 0;
+    virtual bool IRQisTurnedOn() const = 0;
     
     void turnOn()
     {
@@ -64,7 +64,7 @@ public:
         IRQturnOff();
     }
 
-    bool isTurnedOn()
+    bool isTurnedOn() const
     {
         FastInterruptDisableLock lck;
         return IRQisTurnedOn();

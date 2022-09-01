@@ -186,7 +186,6 @@ void PowerManager::deepSleepUntil(long long int when/*, Unit unit*/)
     RTC->COMP1=HRTB::nextSyncPointRtc-1;
 }
 
-// TODO: (s) move all this logic inside specific peripheral implementation
 void PowerManager::enableTransceiverPowerDomain()
 {   
     Lock<FastMutex> l(powerMutex);

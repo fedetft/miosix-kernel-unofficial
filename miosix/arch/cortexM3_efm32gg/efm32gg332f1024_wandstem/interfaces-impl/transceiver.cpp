@@ -1,6 +1,6 @@
 /***************************************************************************
- *   Copyright (C) 2012, 2013, 2014, 2015, 2016 by Terraneo Federico and   *
- *      Luigi Rinaldi                                                      *
+ *   Copyright (C) 2012, 2013, 2014, 2015, 2016, 2022                      *
+ *      by Terraneo Federico, Luigi Rinaldi and Alessandro Sorrentino      *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -26,14 +26,15 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/ 
 
-#include "transceiver.h"
+#include "interfaces/transceiver.h"
 #include "cc2520_constants.h"
-#include "gpioirq.h"
+#include "interfaces/gpioirq.h"
 #include "config/miosix_settings.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
+//#include "timer_interface.h" TODO: (s) remove dependency from timer.
 
 using namespace std;
 
@@ -128,18 +129,21 @@ void TransceiverConfiguration::setChannel(int channel)
 // class Transceiver
 //
 
+const int Transceiver::minFrequency = 2405;
+const int Transceiver::maxFrequency = 2480;
+
 Transceiver& Transceiver::instance()
 {
     static Transceiver singleton;
     return singleton;
 }
 
-void Transceiver::turnOn()
+void Transceiver::IRQturnOn()
 {
     if(state!=CC2520State::DEEPSLEEP) return;
 
     //Enable the transceiver power domain
-    pm.enableTransceiverPowerDomain();
+    enableTransceiverPowerDomain();
     transceiver::reset::high();
     
     {
@@ -162,7 +166,7 @@ void Transceiver::configure()
     writeReg(CC2520Register::TXPOWER,txPower(config.txPower));
     
     //
-    // GPIO andexception configuration
+    // GPIO and exception configuration
     //
 
     //Setting SFD, TX_FRM_DONE, RX_FRM_DONE, RX_OVERFLOW on exception channel B
@@ -212,16 +216,14 @@ void Transceiver::configure()
     idle();
 }
 
-void Transceiver::turnOff()
+void Transceiver::IRQturnOff()
 {
     if(state==CC2520State::DEEPSLEEP) return;
     state=CC2520State::DEEPSLEEP;
     
     transceiver::reset::low();
-    pm.disableTransceiverPowerDomain();
+    disableTransceiverPowerDomain();
 }
-
-bool Transceiver::isTurnedOn() const { return state!=CC2520State::DEEPSLEEP; }
 
 bool Transceiver::IRQisTurnedOn() const { return state!=CC2520State::DEEPSLEEP; }
 
@@ -409,12 +411,11 @@ CC2520StatusBitmask Transceiver::commandStrobe(CC2520Command cmd)
     return spi.sendRecv(toByte(cmd));
 }
 
-Transceiver::Transceiver()
-    : pm(PowerManager::instance()), spi(Spi::instance()),
-      timer(getTransceiverTimer()), state(CC2520State::DEEPSLEEP),
-      waiting(nullptr)
+// TODO: (s) ask!
+Transceiver::Transceiver() : spi(Spi::instance()), state(CC2520State::DEEPSLEEP), 
+                                waiting(nullptr), transceiverPowerDomainRefCount(0)
 {
-    registerGpioIrq(internalSpi::miso::getPin(),GpioIrqEdge::RISING,
+    registerGpioIrq(internalSpi::miso::getPin(), GpioIrqEdge::RISING,
     [this]{
         if(!waiting) return;
         waiting->IRQwakeup();
@@ -759,6 +760,57 @@ short int Transceiver::decodeRssi(unsigned char reg)
     int rawRssi=static_cast<int>(reg);
     if(rawRssi & 0x80) rawRssi-=256; //8 bit 2's complement to int
     return rawRssi-76; //See datasheet
+}
+
+void Transceiver::enableTransceiverPowerDomain()
+{
+    Lock<FastMutex> plock(powerMutex);
+
+    if(transceiverPowerDomainRefCount == 0)
+    {
+        //Enable power domain
+        transceiver::vregEn::high();
+        transceiver::reset::low();
+        
+        //The voltage at the the flash rises in about 70us,
+        //observed using an oscilloscope. The voltage at the
+        //transceiver is even faster, but the spec says 100us
+        //TODO: power hungry, but we can't use the rtc as only one thread
+        //can use it at a time, and we may be called by another thread
+        delayUs(100);
+        
+        transceiver::cs::high();
+
+        flash::cs::high();
+        flash::hold::high();
+        
+        spi.enable();
+    }
+
+    ++transceiverPowerDomainRefCount;
+}
+
+void Transceiver::disableTransceiverPowerDomain()
+{
+    Lock<FastMutex> plock(powerMutex);
+
+    --transceiverPowerDomainRefCount;
+
+    if(transceiverPowerDomainRefCount==0)
+    {
+        //Disable power domain
+        spi.disable();
+        
+        flash::hold::low();
+        flash::cs::low();
+        
+        transceiver::reset::low();
+        transceiver::cs::low();
+        
+        transceiver::vregEn::low();
+    } else if(transceiverPowerDomainRefCount<0) {
+        throw runtime_error("transceiver power domain refcount is negative");
+    }
 }
 
 } //namespace miosix

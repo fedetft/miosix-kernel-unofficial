@@ -25,7 +25,7 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "gpioirq.h"
+#include "interfaces/gpioirq.h"
 #include <stdexcept>
 #include <kernel/scheduler/scheduler.h>
 
@@ -130,7 +130,7 @@ void registerGpioIrq(GpioPin pin, GpioIrqEdge edge, function<void ()> callback)
 
 void enableGpioIrq(GpioPin pin)
 {
-    bool ok;
+    bool ok=false;
     {
         FastInterruptDisableLock dLock;
         ok=IRQenableGpioIrq(pin);

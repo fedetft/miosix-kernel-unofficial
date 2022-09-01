@@ -235,7 +235,6 @@ public:
         // enabling TIMER3
         CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER3;
 
-        // TODO: (s) not needed that TIMER2 starts actually, just left here for future use like packet retransmission
         TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
                         | TIMER_CTRL_PRESC_DIV1; 
         TIMER3->IEN |= TIMER_IEN_CC0; // enable interrupt on CC0

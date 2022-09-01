@@ -1,6 +1,6 @@
 /***************************************************************************
- *   Copyright (C) 2012, 2013, 2014, 2015, 2016 by Terraneo Federico and   *
- *      Luigi Rinaldi                                                      *
+ *   Copyright (C) 2012, 2013, 2014, 2015, 2016, 2022                      *
+ *     by Terraneo Federico, Luigi Rinaldi and Alessandro Sorrentino       *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -31,9 +31,8 @@
 
 #include <miosix.h>
 #include <limits>
-#include "power_manager.h"
 #include "spi.h"
-#include "timer_interface.h"
+#include "interfaces/peripheral.h"
 
 namespace miosix {
 
@@ -107,11 +106,11 @@ public:
  * This singleton class allows to interact with the radio transceiver
  * This class is not safe to be accessed by multiple threads simultaneously.
  */
-class Transceiver
+class Transceiver : public PowerManageablePeripheral
 {
 public:    
-    static const int minFrequency=2405; ///< Minimum supported frequency (MHz)
-    static const int maxFrequency=2480; ///< Maximum supported frequency (MHz)
+    static const int minFrequency; ///< Minimum supported frequency (MHz)
+    static const int maxFrequency; ///< Maximum supported frequency (MHz)
     
     /**
      * \return an instance to the transceiver
@@ -121,7 +120,7 @@ public:
     /**
      * Turn the transceiver ON (i.e: bring it out of deep sleep)
      */
-    void turnOn();
+    void IRQturnOn();
     
     /**
      * \internal this member function is used for restoring the transceiver
@@ -132,12 +131,8 @@ public:
     /**
      * Turn the transceiver OFF (i.e: bring it to deep sleep)
      */
-    void turnOff();
+    void IRQturnOff();
     
-    /**
-     * \return true if the transceiver is turned on
-     */
-    bool isTurnedOn() const;
     
     /**
      * \return true if the transceiver is turned on
@@ -224,6 +219,27 @@ public:
      */
     short readRssi();
     
+    /**
+     * RAII nested class to enable the transceiver power domain in a scope
+     */
+    class TransceiverPowerDomainLock
+    {
+    // Can be instantiated by call Transciever::TransceiverPowerDomainLock tpdl;
+    // Nested classes allows for private member access and avoid namespace pollution
+    public:
+        TransceiverPowerDomainLock(Transceiver& transceiver) : transceiver(transceiver)
+        {
+            transceiver.enableTransceiverPowerDomain();
+        }
+        
+        ~TransceiverPowerDomainLock()
+        {
+            transceiver.disableTransceiverPowerDomain();
+        }
+    private: 
+        Transceiver& transceiver;
+    };
+
 protected:
     /**
      * Write a register in the transceiver
@@ -343,13 +359,38 @@ private:
      */
     static short decodeRssi(unsigned char reg);
 
-    PowerManager& pm;
+    /**
+     * The transceiver power domain is handled using a reference count.
+     * Drivers may enable it, incrementing the reference count. When drivers
+     * disable it, it is really disabled only if this is the last driver that
+     * has requested it.
+     * 
+     * This member function enables the power domain if it was disabled, and
+     * increments the reference count.
+     */
+    void enableTransceiverPowerDomain();
+
+    /**
+     * The transceiver power domain is handled using a reference count.
+     * Drivers may enable it, incrementing the reference count. When drivers
+     * disable it, it is really disabled only if this is the last driver that
+     * has requested it.
+     * 
+     * This member function decrements the reference count, and disables the
+     * power domain if the reference count is zero.
+     */
+    void disableTransceiverPowerDomain();
+
+    
     Spi& spi;
-    HardwareTimer& timer;
     CC2520State state;
     TransceiverConfiguration config;
-    miosix::Thread *waiting;
+    FastMutex powerMutex; //< power reference counter to avoid turining on/off transceiver
+    miosix::Thread *waiting; //< used to wait for Xosc to turn on without busy waiting
+
+    int transceiverPowerDomainRefCount;
 };
+
 
 } //namespace miosix
 

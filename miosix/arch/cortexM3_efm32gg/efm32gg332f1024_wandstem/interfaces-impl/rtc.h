@@ -249,7 +249,6 @@ public:
     static inline void IRQclearVhtMatchFlag()
     {
         RTC->IFC |= RTC_IFC_COMP1;
-        //while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
     }
 
     /**
@@ -264,8 +263,6 @@ public:
 
     static inline void IRQsetVhtMatchReg(unsigned int v)
     {
-        //IRQclearVhtMatchFlag();
-
         // undocumented quirk, CC 1 tick after
         unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         RTC->COMP1 = v_quirk & 0xFFFFFF;

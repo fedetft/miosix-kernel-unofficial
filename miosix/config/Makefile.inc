@@ -2138,6 +2138,7 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
         $(BOARD_INC)/interfaces-impl/os_timer.cpp                   \
         $(BOARD_INC)/interfaces-impl/deep_sleep.cpp                 \
         $(BOARD_INC)/interfaces-impl/virtual_clock.cpp              \
+        $(BOARD_INC)/interfaces-impl/transceiver.cpp                \
         $(BOARD_INC)/interfaces-impl/gpioirq.cpp                    \
 
         ## Add a #define to allow querying board name

@@ -237,7 +237,7 @@ public:
     /**
      * \return the current time in nanoseconds
      */
-    // FIXME: (s) getTime is a noexcept function!
+    // FIXME: (s) getTime is a noexcept function! use irqerror
     inline long long IRQgetTimeNs()
     {
         return tc.tick2ns(IRQgetTimeTick());
@@ -428,7 +428,6 @@ public:
      * Schedule the next RTC interrupt
      * \param ns absolute time in ticks, must be > 0
      */
-    // TODO: (s) implement
     inline void IRQsetDeepSleepIrqTick(long long tick)
     {
         // setting RTC compare register
@@ -637,7 +636,6 @@ private:
     {
         static inline void call()
         {
-            // TODO: (s) maybe use static?
             (&Head::instance())->IRQinit(); 
             IRQinitCorrection<Tail...>::call();
         }
@@ -662,7 +660,6 @@ private:
     {
         static inline long long call(long long ns)
         {
-            // TODO: (s) maybe use static?
             return (&Head::instance())->IRQcorrect(IRQcorrectTime<Tail...>::call(ns));
         }
     };
