@@ -25,7 +25,7 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "interfaces/spi.h"
+#include "spi.h"
 #include <miosix.h>
 
 using namespace std;
