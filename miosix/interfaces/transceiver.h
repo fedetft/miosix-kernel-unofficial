@@ -31,8 +31,9 @@
 
 #include <miosix.h>
 #include <limits>
-#include "spi.h"
+#include "interfaces-impl/spi.h" // TODO: (s) correct basing on implementations from interface??
 #include "interfaces/peripheral.h"
+#include "interfaces-impl/correction_types.h" // TODO: (s) correct basing on implementations from interface??
 
 namespace miosix {
 
@@ -381,7 +382,8 @@ private:
      */
     void disableTransceiverPowerDomain();
 
-    
+    TimerProxySpec * timerProxy;
+    TimeConversion tc;
     Spi& spi;
     CC2520State state;
     TransceiverConfiguration config;

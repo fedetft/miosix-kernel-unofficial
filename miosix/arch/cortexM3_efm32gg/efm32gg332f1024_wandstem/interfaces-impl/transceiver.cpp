@@ -34,7 +34,7 @@
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
-//#include "timer_interface.h" TODO: (s) remove dependency from timer.
+#include "correction_types.h" //< TimerProxySpec
 
 using namespace std;
 
@@ -304,10 +304,11 @@ void Transceiver::sendAt(const void* pkt, int size, long long when)
     
     writePacketToTxBuffer(pkt,size);
     
-    long long w = timer.ns2tick(when-turnaround); // TODO: (s) fix, no more ticks but propagate ns to absolute trigger
+    long long w = tc.ns2tick(when-turnaround); // TODO: (s) fix, no more ticks but propagate ns to absolute trigger
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
-    if(timer.absoluteWaitTrigger(w)==true)
+    // FIXME: (s)
+    if(timer->absoluteWaitTrigger(w)==true)
     {
 	//See diagram on page 69 of datasheet
         commandStrobe(CC2520Command::SFLUSHTX);
@@ -349,7 +350,8 @@ RecvResult Transceiver::recv(void *pkt, int size, long long timeout)
             {
                 //Timestamp is wrong and we know it, so we don't set valid
                 // TODO: (s) remove ::Correct param + remove dependency from ticks inside timer!!
-                result.timestamp = timer.getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+                // FIXME: (s)
+                result.timestamp = timer->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
                 
                 //We may still be in the middle of another packet reception, so
                 //this may cause FRM_DONE to occur without a previous SFD,
@@ -413,7 +415,8 @@ CC2520StatusBitmask Transceiver::commandStrobe(CC2520Command cmd)
 
 // TODO: (s) ask!
 Transceiver::Transceiver() : spi(Spi::instance()), state(CC2520State::DEEPSLEEP), 
-                                waiting(nullptr), transceiverPowerDomainRefCount(0)
+                                waiting(nullptr), transceiverPowerDomainRefCount(0),
+                                timerProxy(&TimerProxySpec::instance()), tc(timerProxy->IRQTimerFrequency())
 {
     registerGpioIrq(internalSpi::miso::getPin(), GpioIrqEdge::RISING,
     [this]{
@@ -449,8 +452,9 @@ void Transceiver::startRxAndWaitForRssi()
         if(status & CC2520Status::RSSI_VALID) break;
         if(i==retryTimes-1)
             throw runtime_error("Transceiver::startRxAndWaitForRssi timeout");
-        
-        timer.wait(timer.ns2tick(rssiWait));
+        // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration! also not sure it's the correct method
+        //timer->wait(tc.ns2tick(rssiWait));
+        timerProxy->waitEvent(rssiWait);
     }
 }
 
@@ -485,13 +489,15 @@ void Transceiver::writePacketToTxBuffer(const void* pkt, int size)
     }
 }
 
+// FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
 void Transceiver::handlePacketTransmissionEvents(int size)
 {   
     bool oneRestart=false;
     bool silentError=false;
     restart:
     //Wait for the first event to occur (SFD)
-    if(timer.waitTimeoutOrEvent(timer.ns2tick(sfdTimeout))==true)
+    //if(timer->waitTimeoutOrEvent(tc.ns2tick(sfdTimeout))==true)
+    if(timerProxy->waitEvent(sfdTimeout) != EventResult::EVENT)
     {
         //In case of timeout, abort current transmission
         idle();
@@ -544,7 +550,9 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     }
     
     //Wait for the second event to occur (TX_FRM_DONE)
-    bool timeout=timer.waitTimeoutOrEvent(timer.ns2tick(maxPacketTimeout));
+    // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
+    // bool timeout=timer->waitTimeoutOrEvent(tc.ns2tick(maxPacketTimeout));
+    bool timeout=timerProxy->waitEvent(maxPacketTimeout)!=EventResult::EVENT;
     exc=getExceptions(0b001);
     if(timeout==true || (exc & CC2520Exception::TX_FRM_DONE)==0)
     {
@@ -567,9 +575,11 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     DeepSleepLock dslck;
 
     // TODO: (s) remove tick dependency
-    timeout = timer.ns2tick(timeout);
+    timeout = tc.ns2tick(timeout);
     //Wait for the first event to occur (SFD), or timeout
-    if(timer.absoluteWaitTimeoutOrEvent(timeout)==true)
+    // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
+    //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
+    if(timerProxy->absoluteWaitEvent(timeout) != EventResult::EVENT)
     {
         result.error=RecvResult::TIMEOUT;
         return true;
@@ -577,8 +587,8 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     //NOTE: the returned timestamp is the time where the first byte of the
     //packet is received, while the cc2520 allows timestamping at the SFD
     
-    // TODO: (s) only NS
-    result.timestamp = timer.getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+    // FIXME: (s)
+    result.timestamp = timer->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
     unsigned int exc=getExceptions(0b011);
     if(exc & CC2520Exception::RX_OVERFLOW)
     {
@@ -611,11 +621,15 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     
     //Wait for the second event to occur (RX_FRM_DONE)
     // TODO: (s) why getValue and not getTime? if same interface obv. also, sum ns with ns. No more ns2tick needed
-    long long tt=timer.getValue()+timer.ns2tick(slack+timePerByte*size);
+    // FIXME: (s)
+    long long tt=timer->getValue()+tc.ns2tick(slack+timePerByte*size);
     auto secondTimeout=config.strictTimeout ? min(timeout,tt) : max(timeout,tt);
-    if(timer.absoluteWaitTimeoutOrEvent(secondTimeout))
+    // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
+    //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
+    if(timerProxy->absoluteWaitEvent(secondTimeout) != EventResult::EVENT)
     {
-        if(timer.getValue()<timeout)
+        // FIXME: (s)
+        if(timer->getValue()<timeout)
         {
             //We didn't hit the caller set timeout, something is wrong
             idle();

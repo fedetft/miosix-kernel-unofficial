@@ -31,6 +31,10 @@
 #include "kernel/scheduler/timer_interrupt.h"
 #include "time/correction_tile.h"
 #include <tuple>
+#include <condition_variable>
+#include <mutex>
+#include <thread>
+#include <atomic>
 
 #ifdef WITH_VIRTUAL_CLOCK
 #include "interfaces/virtual_clock.h"
@@ -184,8 +188,10 @@ public:
     
     long long upperTimeTick = 0; //Extended timer counter (upper bits)
     long long upperIrqTick = 0;  //Extended interrupt time point (upper bits)
+    long long upperEventTick = 0;  //Extended interrupt time point (upper bits)
     miosix::TimeConversion tc;
     bool lateIrq=false;
+    bool lateEvent=false;
     
     /**
      * \return the current time in ticks
@@ -225,15 +231,7 @@ public:
             return (upperTimeTick | static_cast<long long>(counter)) + upperIncr;
         return upperTimeTick | static_cast<long long>(counter);
     }
-    
-    /**
-     * \return the time when the next os interrupt is scheduled in ticks
-     */
-    inline long long IRQgetIrqTick()
-    {
-        return upperIrqTick | D::IRQgetTimerMatchReg();
-    }
-    
+        
     /**
      * \return the current time in nanoseconds
      */
@@ -316,6 +314,47 @@ public:
     {
         IRQsetIrqTick(tc.ns2tick(ns));
     }
+
+    /**
+     * \return the time when the next os interrupt is scheduled in ticks
+     */
+    inline long long IRQgetIrqTick()
+    {
+        return upperIrqTick | D::IRQgetTimerMatchReg();
+    }
+
+    /**
+     * Schedule the next os interrupt
+     * \param ns absolute time in ticks, must be > 0
+     */
+    inline void IRQsetEventTick(long long tick)
+    {
+        auto tick2 = tick + quirkAdvance;
+        upperEventTick = tick2 & upperMask;
+        D::IRQsetEventMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+        if(IRQgetEventTick() >= tick)
+        {
+            D::IRQforcePendingEvent();
+            lateEvent=true;
+        }
+    }
+    
+    /**
+     * Schedule the next os interrupt
+     * \param ns absolute time in nanoseconds, must be > 0
+     */
+    inline void IRQsetEventNs(long long ns)
+    {
+        IRQsetEventTick(tc.ns2tick(ns));
+    }
+
+    /**
+     * \return the time when the next os interrupt is scheduled in ticks
+     */
+    inline long long IRQgetEventTick()
+    {
+        return upperEventTick | D::IRQgetEventMatchReg();
+    }
     
     /**
      * Must be called by the timer interrupt routine when writing the driver
@@ -334,6 +373,16 @@ public:
                 IRQtimerInterrupt(tc.tick2ns(tick));
             }
         }
+
+        /*if(D::IRQgetEventFlag() || lateEvent)
+        {
+            D::IRQclearEventFlag();
+            long long tick=IRQgetTimeTick();
+            if(tick >= IRQgetEventTick())
+            {
+                TimerProxySpec::instance();
+            }
+        }*/
         
         if(D::IRQgetOverflowFlag())
         {
@@ -473,6 +522,44 @@ public:
  */
 
 ///
+// Event and wait support structs
+///
+
+/**
+ * @brief 
+ * 
+ */
+enum class WaitResult
+{
+    WAKEUP_IN_THE_PAST,
+    WAIT_COMPLETED,
+    WAITING
+};
+enum class EventResult
+{
+    EVENT,
+    EVENT_IN_THE_PAST,
+    EVENT_TIMEOUT,
+    BUSY,
+};
+
+/**
+ * @brief 
+ * 
+ */
+struct TimerEvent
+{
+    TimerEvent(std::mutex& mx, std::condition_variable& cv) : mx(mx), cv(cv), timeout(std::numeric_limits<long long>::max()) {}
+    TimerEvent(std::mutex& mx, std::condition_variable& cv, long long timeout) : mx(mx), cv(cv), timeout(timeout) {}
+    TimerEvent()=delete;
+
+    std::mutex& mx;
+    std::condition_variable& cv;
+    //std::function<bool()> conditionPredicate;
+    long long timeout;
+};
+
+///
 // Reverse typelist logic
 ///
 template<class... Ts>
@@ -494,33 +581,6 @@ auto reverse(typelist<Head, Tail...>)
 
 template<class... Ts>
 using reversed_typelist = decltype(reverse(std::declval<typelist<Ts...>>()));
-
-/*
-// Tentativo fallito di dichiarare una variabile defualt di stack di correzione in funzione di #ifdef
-template<class... Ts, class... Us> 
-constexpr auto concat(typelist<Ts...>, typelist<Us...>) -> typelist<Ts..., Us...> 
-{ 
-    return typelist<Ts..., Us...>(); 
-}
-
-// empty typelist
-#define DEFAULT_TYPE_LIST typelist<>()
-
-// typelist with virtual clock
-#ifdef WITH_VIRTUAL_CLOCK
-static constexpr auto macro1_prev_dtl = DEFAULT_TYPE_LIST;
-#undef DEFAULT_TYPE_LIST
-#define DEFAULT_TYPE_LIST concat(macro1_prev_dtl, typelist<VirtualClock>())
-#endif
-
-// typelist with VHT
-#ifdef WITH_VHT
-static constexpr auto macro2_prev_dtl = DEFAULT_TYPE_LIST;
-#undef DEFAULT_TYPE_LIST
-#define DEFAULT_TYPE_LIST concat(macro2_prev_dtl, typelist<Vht>())
-#endif
-*/
-
 
 ///
 // Actual time proxy implementation
@@ -574,7 +634,7 @@ public:
 
     } 
 
-    Hsc_TA * getHscReference()
+    Hsc_TA* getHscReference()
     {
         return hsc;
     }
@@ -607,6 +667,98 @@ public:
     inline unsigned int IRQTimerFrequency()
     {
         return hsc->IRQTimerFrequency();
+    }
+
+    /**
+     * @brief 
+     * 
+     */
+    // TODO: (s) make everyting static
+    inline void signalEvent()         
+    { 
+        // avoid spurious wakeups
+        if(eventThread)
+        {
+            event=true; 
+            eventThread->wakeup();  
+        }
+    }
+    inline void signalEventTimeout()  
+    { 
+        // avoid spurious wakeups
+        if(eventThread)
+        {
+            eventTimeout=true; 
+            eventThread->wakeup(); 
+        } 
+    }
+
+    /**
+     * @brief 
+     * 
+     */
+    inline EventResult waitEvent(long long timeoutNs /*TimerEvent& timerEvent*/)
+    {
+        // lock guard, this allows only one thread to access waitEvent per time
+        std::unique_lock<std::mutex> lck(this->event_mutex, std::try_to_lock);
+        bool gotLock = lck.owns_lock();
+        if (!gotLock) return EventResult::BUSY;
+
+        // convert relative timeout to absolute timeout
+        long long absoluteTimeoutNs;
+        {
+            FastInterruptDisableLock dLock;
+            absoluteTimeoutNs = timeoutNs + getTime();
+            //absoluteTimeoutNs = IRQuncorrectTimeNs(mul32x32to64(timerEvent.timeout, 1000000) + getTime());
+        }
+        return absoluteWaitEvent(absoluteTimeoutNs);
+    }
+    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs /*TimerEvent& timerEvent*/)
+    {
+        // FIXME: (s) find a way to check if we have the lock or not already
+        // lock guard, this allows only one thread to access waitEvent per time
+        // std::unique_lock<std::mutex> lck(this->event_mutex, std::try_to_lock);
+        // bool gotLock = lck.owns_lock();
+        // if (!gotLock) return EventResult::BUSY;
+        
+        FastInterruptDisableLock dLock;
+
+        long long absoluteTimeoutNsTsnc = IRQuncorrectTimeNs(absoluteTimeoutNs);
+
+        // if-guard, event in the past
+        if(hsc->IRQgetTimeNs() > absoluteTimeoutNsTsnc) return EventResult::EVENT_IN_THE_PAST;
+
+        // set up timeout timer
+        hsc->IRQsetEventNs(absoluteTimeoutNsTsnc);
+
+        // register current thread for wakeup
+        eventThread = Thread::IRQgetCurrentThread();
+
+        event = false;
+        eventTimeout = false;
+        // wait for condition or timeout interrupt
+        while(hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc && !event && !eventTimeout)
+        {
+            // putting thread to sleep, woken up by either timeout or desired interrupt
+            Thread::IRQwait();
+            {
+                FastInterruptEnableLock eLock(dLock);
+                Thread::yield();
+            }
+        }
+
+        // reset timeout timer
+        Hsc_TA::IRQclearEventFlag();
+        
+        // reset event status
+        eventThread = nullptr;
+
+        // event received before timeout
+        if(event) return EventResult::EVENT;
+
+        // timeout
+        return EventResult::EVENT_TIMEOUT;
+        
     }
 
 private:
@@ -699,132 +851,14 @@ private:
     // class variables
     ///
     Hsc_TA * hsc = nullptr;
+
+    // event
+    std::condition_variable event_cv;
+    std::mutex event_mutex;
+    Thread* eventThread = nullptr;
+    bool event = false;
+    bool eventTimeout = false;
 };
-
-
-
-// static const std::initializer_list<Synchronizer *> defaultCorrectionStack = {
-//     #ifdef WITH_VIRTUAL_CLOCK
-//     &(VirtualClock::instance()),
-//     #endif
-//     #ifdef WITH_VHT
-//     //&(Vht::instance()),
-//     #endif
-// };
-
-// template <typename Hsc_TA>
-// class TimerProxy
-// {
-// public:
-//     /**
-//      * @brief 
-//      * 
-//      * @return TimerProxy& 
-//      */
-//     static TimerProxy& instance(std::initializer_list<Synchronizer*> correctionStack = {}){
-//         static TimerProxy tp(correctionStack);
-//         return tp;
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @return long long 
-//      */
-//     inline long long IRQgetTimeNs()
-//     {
-//         return applyCorrectionStack(hsc->IRQgetTimeNs());
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetIrqNs(long long ns)
-//     {
-//         hsc->IRQsetIrqNs(applyUncorrectionStack(ns));
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      */
-//     inline void IRQinit()
-//     {
-//         hsc = &Hsc_TA::instance();
-//         hsc->IRQinit();
-//     } 
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetTimeNs(long long ns)
-//     {
-//         hsc->IRQsetTimeNs(applyUncorrectionStack(ns));
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @return unsigned int 
-//      */
-//     inline unsigned int IRQTimerFrequency()
-//     {
-//         return hsc->IRQTimerFrequency();
-//     }
-
-// private:
-//     ///
-//     // Constructors
-//     ///
-//     TimerProxy(std::initializer_list<Synchronizer*> correctionStack = {}):correctionStack(correctionStack) {}
-//     TimerProxy(const TimerProxy&)=delete;
-//     TimerProxy& operator=(const TimerProxy&)=delete;
-
-//     ///
-//     // Clock correction
-//     ///
-//     inline long long applyCorrectionStack(long long tsnc)
-//     {
-//         long long time = tsnc;
-
-//         // apply correction using reversed iterator to avoid wasting time
-//         // reversing correction stack vector each time
-//         std::vector<Synchronizer*>::reverse_iterator riter = correctionStack.rbegin();
-//         for (; riter!= correctionStack.rend(); ++riter)
-//             time = (*riter)->IRQcorrect(time);
-
-//         return time;
-//     }
-
-//     ///
-//     // Clock uncorrection (derive tsnc)
-//     ///
-//     inline long long applyUncorrectionStack(long long tsnc)
-//     {
-//         long long time = tsnc;
-
-//         // apply uncorrection
-//         for(auto synch : correctionStack)
-//             time = synch->IRQuncorrect(time);
-
-//         return time;
-//     }
-    
-//     ///
-//     // Other helper functions
-//     ///
-
-//     ///
-//     // Class variables
-//     ///
-//     Hsc_TA * hsc = nullptr;
-//     std::vector<Synchronizer*> correctionStack;
-
-// };
 
 } //namespace miosix
 

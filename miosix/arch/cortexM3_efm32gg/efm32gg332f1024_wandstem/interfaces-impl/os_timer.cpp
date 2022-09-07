@@ -96,15 +96,33 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
+    static miosix::TimerProxySpec * timerProxy = &miosix::TimerProxySpec::instance();
+    static miosix::Hsc * hsc = timerProxy->getHscReference();
 
-    // second part of output compare. If we reached this interrupt, it means
+    // second part of output compare for timer or event match. If we reached this interrupt, it means
     // we already matched the upper part of the timer and we have now matched the lower part.
-    hsc->IRQhandler();
+    
+    //hsc->IRQhandler();
 
-    #ifdef TIMER_INTERRUPT_DEBUG
-    miosix::ledOff();
-    #endif
+    if(hsc->IRQgetMatchFlag() || hsc->lateIrq)
+    {
+        hsc->IRQhandler();
+
+        #ifdef TIMER_INTERRUPT_DEBUG
+        miosix::ledOff();
+        #endif
+    }
+
+    if(hsc->IRQgetEventFlag() || hsc->lateEvent)
+    {
+        Hsc::IRQclearEventFlag();
+        long long tick = hsc->IRQgetTimeTick();
+        if(tick >= hsc->IRQgetEventTick())
+        {
+            timerProxy->signalEventTimeout();
+            hsc->lateEvent = false;
+        }
+    }
 }
 
 /**
@@ -142,32 +160,60 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
 
     // if just overflow, no TIMER2 counter register match, return
-    if(!(TIMER2->IF & TIMER_IF_CC0)) return;
+    //if(!(TIMER2->IF & TIMER_IF_CC0)) return;
     
-    // first part of output compare, disable output compare interrupt
+    // first part of output compare for timer match, disable output compare interrupt
     // for TIMER2 and turn of output comapre interrupt of TIMER1
-
-    #ifdef TIMER_INTERRUPT_DEBUG
-    miosix::ledOn();
-    #endif
-
-    // disable output compare interrupt on channel 0 for most significant timer
-    TIMER2->IEN &= ~TIMER_IEN_CC0;
-    TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    TIMER2->IFC |= TIMER_IFC_CC0;
-
-    // set and enable output compare interrupt on channel 0 for least significant timer
-    TIMER1->CC[0].CCV = hsc->IRQgetNextCCticksLower(); // underflow handling
-    TIMER1->IEN |= TIMER_IEN_CC0;
-    TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-    // if by the time we get here, the lower part of the counter has already matched
-    // the counter register or got past it, call TIMER1 handler directly instead of waiting
-    // for the other round of compare
-    if(lowerTimerCounter >= hsc->IRQgetNextCCticksLower()) 
+    if(TIMER2->IF & TIMER_IF_CC0)
     {
-        TIMER1->IFS |= TIMER_IFS_CC0;
-        NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
+        #ifdef TIMER_INTERRUPT_DEBUG
+        miosix::ledOn();
+        #endif
+
+        // disable output compare interrupt on channel 0 for most significant timer
+        TIMER2->CC[0].CCV = 0;
+        TIMER2->IEN &= ~TIMER_IEN_CC0;
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->IFC |= TIMER_IFC_CC0;
+        
+
+        // set and enable output compare interrupt on channel 0 for least significant timer
+        TIMER1->CC[0].CCV = hsc->IRQgetNextCCticksLower(); // underflow handling
+        TIMER1->IEN |= TIMER_IEN_CC0;
+        TIMER1->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        // if by the time we get here, the lower part of the counter has already matched
+        // the counter register or got past it, call TIMER1 handler directly instead of waiting
+        // for the other round of compare
+        if(lowerTimerCounter >= hsc->IRQgetNextCCticksLower()) 
+        {
+            TIMER1->IFS |= TIMER_IFS_CC0;
+            NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
+        }
+    }
+
+    // first part of output compare for event match, disable output compare interrupt
+    // for TIMER2 and turn of output comapre interrupt of TIMER1
+    if(TIMER2->IF & TIMER_IF_CC1)
+    {
+        // disable output compare interrupt on channel 1 for most significant timer
+        TIMER2->IEN &= ~TIMER_IEN_CC1;
+        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->IFC |= TIMER_IFC_CC1;
+
+        // set and enable output compare interrupt on channel 1 for least significant timer
+        TIMER1->CC[1].CCV = hsc->IRQgetNextCCeventLower(); // underflow handling
+        TIMER1->IEN |= TIMER_IEN_CC1;
+        TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        // if by the time we get here, the lower part of the counter has already matched
+        // the counter register or got past it, call TIMER1 handler directly instead of waiting
+        // for the other round of compare
+        if(lowerTimerCounter >= hsc->IRQgetNextCCeventLower()) 
+        {
+            TIMER1->IFS |= TIMER_IFS_CC1;
+            NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
+        }
     }
 }
 
@@ -196,7 +242,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     hsc->IRQclearVhtMatchFlag();
     
     // replace lower 32-bit part of timer with the VHT registered one
-    long long baseActualHsc = hsc->upperTimeTick<<32 | hsc->IRQgetVhtTimerCounter(); //hsc->IRQgetTimeTick() - hsc->IRQgetTimerCounter() + hsc->IRQgetVhtTimerCounter();
+    long long baseActualHsc = hsc->upperTimeTick<<32 | hsc->IRQgetVhtTimerCounter();
     // handle lower part timer overflowed before vht lower part timer
     if(baseActualHsc > hsc->IRQgetTimeTick()) { baseActualHsc -= 1<<16; }
 
