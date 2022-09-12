@@ -29,6 +29,8 @@
 
 using namespace std;
 
+namespace miosix {
+
 Flopsync3& Flopsync3::instance(){
     static Flopsync3 fsync;
     return fsync;
@@ -37,6 +39,7 @@ Flopsync3& Flopsync3::instance(){
 double Flopsync3::computeCorrection(long long e_k)
 {
     // computing controller output
+    //this->u_k = 0.15 * e_k; // * 1e-9;
     this->u_k = 0.15 * e_k; // * 1e-9;
 
     // updating internal status for next iteration
@@ -76,4 +79,6 @@ long long Flopsync3::getSyncError()
 Flopsync3::Flopsync3()
 {
     Flopsync3::reset();
+}
+
 }

@@ -38,11 +38,12 @@ VirtualClock& VirtualClock::instance(){
 // TODO: (s) replace assert with various error handlers
 long long VirtualClock::IRQgetVirtualTimeNs(long long tsnc) noexcept
 {
-    //assertInit();
     assertNonNegativeTime(tsnc);
     
     if(!init) return tsnc; // needed when system is booting up and until no sync period is set
+    //else return /*T0 +*/ vc_km1 + mul64x32d32(tsnc - tsnc_km1, vcdot_km1.getIntegerPart(), vcdot_km1.getDecimalPart()); //vcdot_km1  * (tsnc - tsnc_km1);
     else return /*T0 +*/ vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
+
 }
 
 long long VirtualClock::getVirtualTimeNs(long long tsnc) noexcept
@@ -108,20 +109,21 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
 
 void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
 {
+    // TODO: (s) use error handler with IRQ + reboot
     assertInit();
     assertNonNegativeTime(vc_k);
 
-    //FIXME: (s) use fixed point 32x32
-
     // controller correction
     // TODO: (s) need saturation for correction!
-    double u_k = fsync->computeCorrection(e_k);
+    //double u_k = fsync->computeCorrection(e_k);
+    fp32_32 u_k = fsync->computeCorrection(e_k);
+    
 
     // estimating clock skew
     double D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
 
     // performing virtual clock slope correction
-    this->vcdot_k = (u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
+    this->vcdot_k = 0; //(u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
 
     // next iteration values update
     this->tsnc_km1 = deriveTsnc(vc_k);
@@ -190,10 +192,11 @@ void VirtualClock::assertInit()
     }
 }
 
-VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), baseTheoretical(0),
-                            baseComputed(0), vcdot_k(1), vcdot_km1(1), a(0.05), beta(a/2),
+void VirtualClock::IRQinit(){}
+
+VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(0.0), vcdot_km1(0.0), a(0.05), beta(0.025),
                             k(0), T0(0), init(false), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
 
-void VirtualClock::IRQinit(){}
+
 } // namespace miosix

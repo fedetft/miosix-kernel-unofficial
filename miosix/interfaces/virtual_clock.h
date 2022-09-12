@@ -37,6 +37,7 @@
 #include "miosix.h"
 #include <stdexcept>
 #include "time/correction_tile.h"
+#include "util/fixed.h"
 
 namespace miosix {
 // TODO: (s) fix description in the future
@@ -190,16 +191,12 @@ private:
     
     unsigned long long syncPeriod;
     
-    long long baseTheoretical;
-    long long baseComputed;
-
-    // FIXME: (s) should or not be double? NO! should be fast 32x32 dear
-    /*long long*/ double vcdot_k;    // slope of virtual clock at step k 
-    /*long long*/ double vcdot_km1;    // slope of virtual clock at step k-1
+    fp32_32 vcdot_k;    // slope of virtual clock at step k 
+    fp32_32 vcdot_km1;  // slope of virtual clock at step k-1
 
     // TODO: (s) move this to flopsync controller
-    const float a;
-    const float beta;    // denormalized pole for feedback linearization dynamics
+    const fp32_32 a;
+    const fp32_32 beta;    // denormalized pole for feedback linearization dynamics
 
     unsigned long long k;   // synchronizer step
     long long T0;           // initial offset

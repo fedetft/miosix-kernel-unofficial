@@ -30,6 +30,9 @@
 
 //#include "synchronizer.h"
 #include <cstdio>
+#include "util/fixed.h"
+
+namespace miosix {
 
 /**
  * A new flopsync controller that can reach zero steady-state error both
@@ -80,10 +83,12 @@ private:
     long long e_km2;
 
     // corrections
-    double u_k;
-    double u_km1;
-    double u_km2;
+    fp32_32 u_k;
+    fp32_32 u_km1;
+    fp32_32 u_km2;
 };
+
+}
 
 #endif //FLOPSYNC_3_H
 
