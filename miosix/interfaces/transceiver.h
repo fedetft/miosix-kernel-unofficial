@@ -361,6 +361,15 @@ private:
     static short decodeRssi(unsigned char reg);
 
     /**
+     * @brief wait event wrappers for preliminary transceiver configuration
+     * 
+     * @param timeoutNs 
+     * @return EventResult 
+     */
+    inline EventResult Transceiver::waitEvent(long long timeoutNs);
+    inline EventResult Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs);
+    
+    /**
      * The transceiver power domain is handled using a reference count.
      * Drivers may enable it, incrementing the reference count. When drivers
      * disable it, it is really disabled only if this is the last driver that
@@ -390,7 +399,7 @@ private:
     FastMutex powerMutex; //< power reference counter to avoid turining on/off transceiver
     miosix::Thread *waiting; //< used to wait for Xosc to turn on without busy waiting
 
-    int transceiverPowerDomainRefCount;
+    int transceiverPowerDomainRefCount; // TODO: (s) when kernel turns off peripheral, shoudln't we check for counter?
 };
 
 
