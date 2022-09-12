@@ -52,7 +52,7 @@
 
 namespace miosix {
 
-#if defined(WITH_DEEP_SLEEP) && defined(WITH_VHT)
+#if defined(WITH_VHT)
 using VhtSpec = Vht<Hsc, Rtc>;
 #endif
 

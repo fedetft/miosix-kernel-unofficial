@@ -63,12 +63,20 @@ void IRQosTimerInit()
 void IRQosTimerSetTime(long long ns) noexcept
 {
     timerProxy->IRQsetTimeNs(ns);
+    // TODO: (s) also RTC for VHT alignment
 }
 
 // time assumed not to be on the past, checked by caller
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
     timerProxy->IRQsetIrqNs(ns);
+}
+
+// TODO: (s) make it IRQ
+// time assumed not to be on the past, checked by caller
+void osTimerSetEvent(long long ns) noexcept
+{
+    timerProxy->waitEvent(ns);
 }
 
 unsigned int osTimerGetFrequency()
@@ -104,14 +112,12 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     
     //hsc->IRQhandler();
 
-    if(hsc->IRQgetMatchFlag() || hsc->lateIrq)
-    {
-        hsc->IRQhandler();
+    #ifdef TIMER_INTERRUPT_DEBUG
+    if(hsc->IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
+    #endif
 
-        #ifdef TIMER_INTERRUPT_DEBUG
-        miosix::ledOff();
-        #endif
-    }
+    if(hsc->IRQgetMatchFlag() || hsc->lateIrq || hsc->IRQgetOverflowFlag())
+        hsc->IRQhandler();
 
     if(hsc->IRQgetEventFlag() || hsc->lateEvent)
     {
@@ -242,14 +248,14 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     hsc->IRQclearVhtMatchFlag();
     
     // replace lower 32-bit part of timer with the VHT registered one
-    long long baseActualHsc = hsc->upperTimeTick<<32 | hsc->IRQgetVhtTimerCounter();
+    long long syncPointActualHsc = hsc->upperTimeTick | hsc->IRQgetVhtTimerCounter();
     // handle lower part timer overflowed before vht lower part timer
-    if(baseActualHsc > hsc->IRQgetTimeTick()) { baseActualHsc -= 1<<16; }
+    if(syncPointActualHsc > hsc->IRQgetTimeTick()) { syncPointActualHsc -= 1<<16; }
 
     // update vht correction controller
     if(vht->IRQisCorrectionEnabled())
     {
-        vht->IRQupdate(baseActualHsc);
+        vht->IRQupdate(syncPointActualHsc);
     }
 
     #endif

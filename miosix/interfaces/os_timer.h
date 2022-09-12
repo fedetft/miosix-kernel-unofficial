@@ -104,6 +104,13 @@ void IRQosTimerInit();
 void IRQosTimerSetInterrupt(long long ns) noexcept;
 
 /**
+ * @brief 
+ * 
+ * @param ns 
+ */
+void osTimerSetEvent(long long ns) noexcept;
+
+/**
  * \internal
  * Set the current system time.
  * It is used by the kernel, and should not be used by end users.
@@ -176,7 +183,8 @@ unsigned int osTimerGetFrequency();
  * actual interrupt time. If this is the case set this parameter to the minimum
  * number of ticks in the future the timer must be set, otherwise keep at 0 
  */
-template<typename D, unsigned bits, unsigned quirkAdvance=0>
+// TODO: (s) use template for number of events (e.g. event 0 transc, event 1 gpio, ...)
+template<typename D, unsigned bits, unsigned quirkAdvance=0, unsigned eventChannels=0>
 class TimerAdapter
 {
 public:
@@ -327,6 +335,7 @@ public:
      * Schedule the next os interrupt
      * \param ns absolute time in ticks, must be > 0
      */
+    // TODO: (s) check for different boards
     inline void IRQsetEventTick(long long tick)
     {
         auto tick2 = tick + quirkAdvance;
@@ -374,13 +383,15 @@ public:
             }
         }
 
+
         /*if(D::IRQgetEventFlag() || lateEvent)
         {
             D::IRQclearEventFlag();
             long long tick=IRQgetTimeTick();
-            if(tick >= IRQgetEventTick())
+            if(tick >= IRQgetEventTick() || lateEvent)
             {
-                TimerProxySpec::instance();
+                lateEvent = false;
+                // signal timeout
             }
         }*/
         
@@ -543,22 +554,6 @@ enum class EventResult
     BUSY,
 };
 
-/**
- * @brief 
- * 
- */
-struct TimerEvent
-{
-    TimerEvent(std::mutex& mx, std::condition_variable& cv) : mx(mx), cv(cv), timeout(std::numeric_limits<long long>::max()) {}
-    TimerEvent(std::mutex& mx, std::condition_variable& cv, long long timeout) : mx(mx), cv(cv), timeout(timeout) {}
-    TimerEvent()=delete;
-
-    std::mutex& mx;
-    std::condition_variable& cv;
-    //std::function<bool()> conditionPredicate;
-    long long timeout;
-};
-
 ///
 // Reverse typelist logic
 ///
@@ -697,29 +692,13 @@ public:
      * @brief 
      * 
      */
-    inline EventResult waitEvent(long long timeoutNs /*TimerEvent& timerEvent*/)
+    inline EventResult waitEvent(long long timeoutNs) { return absoluteWaitEvent(getTime() + timeoutNs); }
+    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs)
     {
         // lock guard, this allows only one thread to access waitEvent per time
         std::unique_lock<std::mutex> lck(this->event_mutex, std::try_to_lock);
         bool gotLock = lck.owns_lock();
         if (!gotLock) return EventResult::BUSY;
-
-        // convert relative timeout to absolute timeout
-        long long absoluteTimeoutNs;
-        {
-            FastInterruptDisableLock dLock;
-            absoluteTimeoutNs = timeoutNs + getTime();
-            //absoluteTimeoutNs = IRQuncorrectTimeNs(mul32x32to64(timerEvent.timeout, 1000000) + getTime());
-        }
-        return absoluteWaitEvent(absoluteTimeoutNs);
-    }
-    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs /*TimerEvent& timerEvent*/)
-    {
-        // FIXME: (s) find a way to check if we have the lock or not already
-        // lock guard, this allows only one thread to access waitEvent per time
-        // std::unique_lock<std::mutex> lck(this->event_mutex, std::try_to_lock);
-        // bool gotLock = lck.owns_lock();
-        // if (!gotLock) return EventResult::BUSY;
         
         FastInterruptDisableLock dLock;
 
@@ -757,8 +736,7 @@ public:
         if(event) return EventResult::EVENT;
 
         // timeout
-        return EventResult::EVENT_TIMEOUT;
-        
+        return EventResult::EVENT_TIMEOUT;  
     }
 
 private:

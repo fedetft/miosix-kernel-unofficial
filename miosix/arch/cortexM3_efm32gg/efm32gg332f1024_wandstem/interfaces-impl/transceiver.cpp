@@ -454,7 +454,7 @@ void Transceiver::startRxAndWaitForRssi()
             throw runtime_error("Transceiver::startRxAndWaitForRssi timeout");
         // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration! also not sure it's the correct method
         //timer->wait(tc.ns2tick(rssiWait));
-        timerProxy->waitEvent(rssiWait);
+        waitEvent(rssiWait);
     }
 }
 
@@ -492,12 +492,14 @@ void Transceiver::writePacketToTxBuffer(const void* pkt, int size)
 // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
 void Transceiver::handlePacketTransmissionEvents(int size)
 {   
+    DeepSleepLock dslck;
+
     bool oneRestart=false;
     bool silentError=false;
     restart:
     //Wait for the first event to occur (SFD)
     //if(timer->waitTimeoutOrEvent(tc.ns2tick(sfdTimeout))==true)
-    if(timerProxy->waitEvent(sfdTimeout) != EventResult::EVENT)
+    if(waitEvent(sfdTimeout) != EventResult::EVENT)
     {
         //In case of timeout, abort current transmission
         idle();
@@ -552,7 +554,7 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     //Wait for the second event to occur (TX_FRM_DONE)
     // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
     // bool timeout=timer->waitTimeoutOrEvent(tc.ns2tick(maxPacketTimeout));
-    bool timeout=timerProxy->waitEvent(maxPacketTimeout)!=EventResult::EVENT;
+    bool timeout=waitEvent(maxPacketTimeout)!=EventResult::EVENT;
     exc=getExceptions(0b001);
     if(timeout==true || (exc & CC2520Exception::TX_FRM_DONE)==0)
     {
@@ -575,11 +577,11 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     DeepSleepLock dslck;
 
     // TODO: (s) remove tick dependency
-    timeout = tc.ns2tick(timeout);
+    //timeout = tc.ns2tick(timeout);
     //Wait for the first event to occur (SFD), or timeout
     // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
     //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
-    if(timerProxy->absoluteWaitEvent(timeout) != EventResult::EVENT)
+    if(absoluteWaitEvent(timeout) != EventResult::EVENT)
     {
         result.error=RecvResult::TIMEOUT;
         return true;
@@ -620,16 +622,17 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     }
     
     //Wait for the second event to occur (RX_FRM_DONE)
-    // TODO: (s) why getValue and not getTime? if same interface obv. also, sum ns with ns. No more ns2tick needed
-    // FIXME: (s)
-    long long tt=timer->getValue()+tc.ns2tick(slack+timePerByte*size);
+    // TODO: (s) check
+    //long long tt=timer->getValue()+tc.ns2tick(slack+timePerByte*size);
+    long long tt=getTime()+slack+timePerByte*size;
     auto secondTimeout=config.strictTimeout ? min(timeout,tt) : max(timeout,tt);
     // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
     //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
-    if(timerProxy->absoluteWaitEvent(secondTimeout) != EventResult::EVENT)
+    if(absoluteWaitEvent(secondTimeout) != EventResult::EVENT)
     {
-        // FIXME: (s)
-        if(timer->getValue()<timeout)
+        // TODO: (s) check
+        //if(timer->getValue()<timeout)
+        if(getTime()<timeout)
         {
             //We didn't hit the caller set timeout, something is wrong
             idle();
@@ -774,6 +777,55 @@ short int Transceiver::decodeRssi(unsigned char reg)
     int rawRssi=static_cast<int>(reg);
     if(rawRssi & 0x80) rawRssi-=256; //8 bit 2's complement to int
     return rawRssi-76; //See datasheet
+}
+
+inline EventResult Transceiver::waitEvent(long long timeoutNs)
+{
+    return absoluteWaitEvent(getTime() + timeoutNs);
+}
+
+inline EventResult Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs)
+{
+    static constexpr long long oneTick2Ns = 1 / EFM32_HFXO_FREQ; // 20 (.8) ns
+    static constexpr unsigned int minTimeDiff = 200 / EFM32_HFXO_FREQ;
+
+    // TODO: (s) spostare in timer! + ricalcolare 
+    // resolve event result without wait (if possible) and configure transceiver for event
+    long long curentTimeNs = getTime(); // This require almost 1us about 50ticks
+    long long timeDiff = absoluteTimeoutNs-curentTimeNs;
+    absoluteTimeoutNs -= oneTick2Ns;
+    
+    bool wakeUpInThePast = false;
+    if(timeDiff > minTimeDiff)
+    {
+        unsigned short t1=static_cast<unsigned short>(tick & 0xFFFF);
+        //ms32chkp[0] is going to store even the middle part, because we don't need to use TIMER3
+        // ms32chkp[0] = tick & (upperMask | 0xFFFF0000);
+        // TIMER2->CC[1].CCV = t1;
+
+        // enableCC1InterruptTim2(true);
+        wakeUpInThePast = true;
+    }
+
+    // setModeTransceiverTimer(true);
+    // cleanBufferTrasceiver();
+    // enableCC0InterruptTim3(false); //enableCC0Interrupt
+    // enableCC0InterruptTim2(true);
+    
+    if(transceiver::excChB::value()){
+        // TODO: (s) various configurations + the one by default
+        return EventResult::EVENT;
+    }
+
+    if(wakeUpInThePast){
+        // enableCC0InterruptTim2(false);
+        // enableCC1InterruptTim2(false);
+
+        return EventResult::EVENT_IN_THE_PAST;
+    }
+
+    // wait for event
+    return timerProxy->absoluteWaitEvent(absoluteTimeoutNs);
 }
 
 void Transceiver::enableTransceiverPowerDomain()

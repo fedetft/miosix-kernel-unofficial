@@ -97,6 +97,7 @@ public:
         Rtc_TA::IRQsetVhtMatchReg(nowRtc);
 
         Rtc_TA::IRQclearVhtMatchFlag();
+        // WARNING: this while may break if connected to GDB while doing step-by-step execution from above
         while(!Rtc_TA::IRQgetVhtMatchFlag()); // wait for first compare
 
         // Reading vht timestamp but replacing lower part of counter with RTC value
