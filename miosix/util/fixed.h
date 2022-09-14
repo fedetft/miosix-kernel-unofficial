@@ -12,7 +12,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   As a special exception, if other files instantiate templates or use   *
- *   macros or inline functions from this file, or you compile this file   *
+ *   macros or functions from this file, or you compile this file   *
  *   and link it with other works to produce a work based on this file,    *
  *   this file does not by itself cause the resulting work to be covered   *
  *   by the GNU General Public License. However the source code for this   *
@@ -25,6 +25,8 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
+#pragma once
+
 #ifndef FIXED_H
 #define FIXED_H
 
@@ -33,30 +35,22 @@
 #include "time/timeconversion.h" // mul64x32d32
 #include <cmath> // abs
 #include "miosix.h"
+#include <type_traits> // std::is_same
 
 namespace miosix
 {
 
-// TODO: (s) move into cpp for multiple imports + generalize
-// TODO: (s) replace multiplication by 2^32 with shift
+/* This class needs A LOT of re-work. Most of operations are just unefficients */
 class fp32_32
 {
 public:
     // Default constructor
-    constexpr fp32_32() = default;
+    fp32_32();
     /**
      * @brief 
      * 
      */
-    constexpr fp32_32(const double d)
-    { 
-        // extracting integer part (e.g. 456.45235 => 456 + (0.45235 / 2^32) )
-        this->sign = signum<double>(d);
-        
-        double absD = std::abs(d); // just flipping sign bit in double, fast
-        this->integerPart = static_cast<unsigned int>(absD);
-        this->decimalPart = static_cast<unsigned int>(4294967296 * (absD - integerPart));
-    }
+    explicit fp32_32(const double d);
 
     // Copy constructor
     /**
@@ -64,12 +58,7 @@ public:
      * 
      * @param other 
      */
-    inline fp32_32(const fp32_32& other)
-    {
-        this->integerPart = other.integerPart;
-        this->decimalPart = other.decimalPart;
-        this->sign = other.sign;
-    }
+    fp32_32(const fp32_32& other);
 
     // functor
     /**
@@ -78,12 +67,15 @@ public:
      * @param other 
      * @return fp32_32 
      */
-    inline fp32_32 operator () (const fp32_32& other) {
-        this->integerPart = other.integerPart;
-        this->decimalPart = other.decimalPart;
-        this->sign = other.sign;
-        return *this;
-    }
+    fp32_32 operator () (const fp32_32& other);
+
+    /**
+     * @brief 
+     * 
+     * @param d 
+     * @return fp32_32 
+     */
+    fp32_32 operator () (double d);
 
     // Assign
     /**
@@ -92,7 +84,7 @@ public:
      * @param f 
      * @return fp32_32& 
      */
-    inline fp32_32& operator = (const fp32_32& f) = default;
+    fp32_32& operator = (const fp32_32& f);
 
     // Negation
     /**
@@ -100,12 +92,7 @@ public:
      * 
      * @return fp32_32 
      */
-    inline fp32_32 operator - () const & // lvalue ref-qualifier, -a
-    {
-        fp32_32 fp(*this);
-        fp.sign = -this->sign;
-        return fp;
-    }
+    fp32_32 operator - () const &;
 
     // Addition
     /**
@@ -114,33 +101,9 @@ public:
      * @param other 
      * @return fp32_32 
      */
-    // TODO: (s) check with -O3 or -O2 sometimes it is wrong...
-    inline fp32_32 operator + (const fp32_32& other) const
-    {
-        // if you're reading this, god help you.
-        fp32_32 fp;
-        
-        // integer and decimal signed operations
-        long long decimalPart = ( this->sign * static_cast<long long>(this->decimalPart) ) + ( other.sign * static_cast<long long>(other.decimalPart) );
-        long long integerPart = ( this->sign * static_cast<long long>(this->integerPart) ) + ( other.sign * static_cast<long long>(other.integerPart) );
-
-        // global operation sign
-        fp.sign = 1;
-        if(integerPart < 0) { fp.sign = -1; };
-        if(integerPart == 0 && decimalPart < 0) { fp.sign = -1; };
-
-        // calculate remain to report
-        long long decimalSum = static_cast<long long>(this->decimalPart) + static_cast<long long>(other.decimalPart);
-        long long decimalRemain = std::abs(decimalSum)>>32;
-        short decimalReportSign = signum(decimalPart) * fp.sign; // decimal remain sign
-        integerPart = std::abs(integerPart) + decimalReportSign * decimalRemain; // decimal overflow
-        decimalPart = (decimalRemain * (1LL<<32)) + decimalReportSign * (std::abs(decimalPart) % (1LL<<32));  // decimal remain
-
-        fp.integerPart = static_cast<unsigned int>(integerPart);
-        fp.decimalPart = static_cast<unsigned int>(decimalPart);
-                
-        return fp;
-    }
+    // TODO: (s) check with -O3, sometimes it is wrong for aggressive compilation optimization...
+    fp32_32 operator + (const fp32_32& other) const;
+    fp32_32 operator + (long long a) const;
 
     // Subtraction
     /**
@@ -149,26 +112,23 @@ public:
      * @param other 
      * @return fp32_32 
      */
-    inline fp32_32 operator - (const fp32_32& other) const
-    {
-        fp32_32 fp ( (*this) + (-other) );
-        return fp;
-    }
+    fp32_32 operator - (const fp32_32& other) const;
+    fp32_32 operator - (long long a) const;
+    friend fp32_32 operator - (long long a, const fp32_32& other); 
 
     // Multiplication
+    // TODO: (s) can avoid using long long and shift but losing precision!
     /**
-     * @brief 
+     * @brief fp32_32 * long long
      * 
      * @param a 
      * @return long long 
      */
-    inline long long operator * (long long a) const
-    {
-        // calculating sing and saving clock cycles if a is positive (no absolute value)
-        // TODO: (s) which one is worse? multiplication or wrong branch prediction (both around 0.2us)
-        return ( this->sign * signum<long long>(a) ) * mul64x32d32(std::abs(a), integerPart, decimalPart);
-        //return this->sign * signum<long long>(a) * mul64x32d32(signum<long long>(a) * a, integerPart, decimalPart);
-    }
+    long long operator * (long long a) const;
+    // should be a free function, little abuse of the friend keyword but those
+    // are common and recommended for operator overloading
+    // long long * fp32_32
+    friend long long operator * (long long a, const fp32_32& other);
     
     /**
      * @brief 
@@ -176,50 +136,68 @@ public:
      * @param other 
      * @return fp32_32 
      */
-    inline fp32_32 operator * (const fp32_32& other) const
-    {
-        fp32_32 fp;
-        
-        // e.g. 55.3 * 55.7 = 3080.21
-        // integer part: 55 * 55 + 55 * 0.3 + 55 * 0.7 = 3080
-        // decimal part: 0.3 * 0.7 = 0.21
+    fp32_32 operator * (const fp32_32& other) const;
 
-        // TODO: (s) solve rounding problem in first 32 bits
-        long long integerPart = mul32x32to64(this->integerPart, other.integerPart);
-        integerPart += mul32x32to64(this->integerPart, other.decimalPart)>>32; // div 2^32
-        integerPart += mul32x32to64(other.integerPart, this->decimalPart)>>32; // div 2^32
+    // Division
+    /**
+     * @brief 
+     * 
+     * @param other 
+     * @return fp32_32 
+     */
+    fp32_32 operator / (const fp32_32& other) const;
 
-        long long decimalPart = mul32x32to64(this->decimalPart, other.decimalPart)>>32;  // div 2^32
+    /**
+     * @brief 
+     * 
+     * @param a 
+     * @return fp32_32 
+     */
+    fp32_32 operator / (long long a) const;
+    // should be a free function, little abuse of the friend keyword but those
+    // are common and recommended for operator overloading
+    // long long / fp32_32 => long long * (fp32_32)^-1
+    friend long long operator / (long long a, const fp32_32& other);
 
-        fp.integerPart = static_cast<unsigned int>(integerPart);
-        fp.decimalPart = static_cast<unsigned int>(decimalPart);
-        fp.sign = this->sign * other.sign;
+    // reciprocal operator
+    void reciprocal();
 
-        return fp;
-    }
+    // fixed2double cast
+    /**
+     * @brief 
+     * 
+     * @return double 
+     */
+    /*operator double() const;*/
+
+    /**
+     * @brief Get the Double object
+     * 
+     * @return double 
+     */
+    double getDouble() const;
 
     /**
      * @brief 
      * 
      * @return double 
      */
-    inline operator double() const
-    {
-        return this->sign * ( this->integerPart + (static_cast<double>(this->decimalPart) / 4294967296L) );
-    }
+    double getRDouble() const;
 
     ///
     // getters and setters (getters for future extendibility)
     ///
-    inline unsigned int getSign()                        { return this->sign; }
-    inline void setSign(short sign)                      { this->sign = signum(sign); }
+    unsigned int getSign() const;
+    void setSign(short sign);
 
-    inline unsigned int getIntegerPart()                 { return integerPart; }
-    inline void setIntegerPart(unsigned int integerPart) { this->integerPart = integerPart; }
+    unsigned int getIntegerPart() const;
+    unsigned int getRIntegerPart() const;
+    void setIntegerPart(unsigned int integerPart);
 
-    inline unsigned int getDecimalPart()                 { return integerPart; }
-    inline void setDecimalPart(double decimalPart)       { this->decimalPart = static_cast<unsigned int>(decimalPart * 4294967296); }
-    inline void setDecimalPart(unsigned int decimalPart) { this->decimalPart = decimalPart; }
+    unsigned int getDecimalPart() const;
+    unsigned int getRDecimalPart() const;
+    void setDecimalPart(double decimalPart);
+    void setDecimalPart(unsigned int decimalPart);
 
 private:
     ///
@@ -234,7 +212,7 @@ private:
      * @return T 
      */
     template <typename T>
-    constexpr short signum(T x) const {
+    static constexpr short signum(T x) {
         return (x > 0) - (x < 0);
     }
 
@@ -245,11 +223,11 @@ private:
     short sign = 1;
     unsigned int integerPart = 0;
     unsigned int decimalPart = 0; // 2^32
-    //TODO: (s) save also inverted values for division
+    unsigned int rIntegerPart = 0; // reciprocal integer part
+    unsigned int rDecimalPart = 0; // reciprocal decimal part
 };
 
-// TODO: (s) develop idea...
-/*
+// TODO: (s) use mul + sum and mul per long long...
 // e.g. T = int32_t, T2 = int64_t
 template<typename T, typename T2, size_t dp>
 class fixed
@@ -259,6 +237,8 @@ public:
     T value = T(0);
 
     constexpr fixed() = default;
+    constexpr fixed(const fixed& f) = default;
+
     constexpr fixed(const double d)
     { 
         value = static_cast<T>(d * static_cast<double>(1 << dp) + (d >= 0 ? 0.5 : -0.5));
@@ -267,6 +247,13 @@ public:
     constexpr operator double() const
     {
         return static_cast<double>(value) / static_cast<double>(1 << dp);
+    }
+
+    // parenthesis
+    constexpr fixed operator () (const double& d)
+    {
+        this->value = fixed(d).value;
+        return *this;
     }
 
     // Assign
@@ -284,7 +271,7 @@ public:
         return form(this->value + f.value);
     }
 
-    constexpr fixed& operator += (const fixed& f) const
+    constexpr fixed& operator += (const fixed& f)
     {
         this->value += f.value;
         return *this;
@@ -296,22 +283,30 @@ public:
         return form(this->value - f.value);
     }
 
-    constexpr fixed& operator -= (const fixed& f) const
+    constexpr fixed& operator -= (const fixed& f)
     {
         this->value -= f.value;
         return *this;
     }
 
     // Multiplication
-    // TODO: (s) banchmark with logic analyzer
-    constexpr fixed operator * (const fixed& f) const
+    /*constexpr*/ fixed operator * (const fixed& f) const
     {
+        // if constexpr form c++17, TODO: (s) change to SFINAE
+        if (std::is_same<T, int32_t>::value && std::is_same<T2, int64_t>::value)
+            return  form(signum<int32_t>(this->value) * signum<int32_t>(f.value) * mul32x32to64(std::abs(this->value), std::abs(f.value)) >> dp);
+
         return form((static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp);
     }
     
-    constexpr fixed& operator *= (const fixed& f) const
+    /*constexpr*/ fixed& operator *= (const fixed& f)
     {
-        this->value = (static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp;
+        // if constexpr form c++17, TODO: (s) change to SFINAE
+        if (std::is_same<T, int32_t>::value && std::is_same<T2, int64_t>::value)
+            this->value = (signum<int32_t>(this->value) * signum<int32_t>(f.value) * mul32x32to64(std::abs(this->value), std::abs(f.value))) >> dp;
+        else
+            this->value = (static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp;
+        
         return *this;
     }
 
@@ -329,15 +324,16 @@ public:
 private:
     static constexpr fixed form(T v) { fixed k; k.value = v; return k; }
 
-};*/
+    template <typename T3>
+    static constexpr short signum(T x) {
+        return (x > 0) - (x < 0);
+    }
 
-// example
+};
 
-/*using fp16_16 = fixed<int32_t, int64_t, 16>;
-constexpr fp16_16 a(5.6);
-constexpr fp16_16 a(2.7);
-constexpr double z = static_cast<double>(a + b);
-*/
+// using compl2 for sign. Max integer part = 2^(16-1) = 32768
+using fixed_16_16 = fixed<int32_t, int64_t, 16>;
+
 
 }
 

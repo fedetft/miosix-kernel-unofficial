@@ -116,14 +116,14 @@ void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
     // controller correction
     // TODO: (s) need saturation for correction!
     //double u_k = fsync->computeCorrection(e_k);
-    fp32_32 u_k = fsync->computeCorrection(e_k);
+    long long u_k = fsync->computeCorrection(e_k);
     
-
     // estimating clock skew
-    double D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
+    //fp32_32 D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
+    fp32_32 D_k = fp32_32(( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod);
 
     // performing virtual clock slope correction
-    this->vcdot_k = 0; //(u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
+    this->vcdot_k = fp32_32(u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod); // FIXME: (s) 1.something rounded to 1
 
     // next iteration values update
     this->tsnc_km1 = deriveTsnc(vc_k);
@@ -139,6 +139,7 @@ void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 
 void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
 {
+    // TODO: (s) do not throw but use IRQlogerror instead
     if(syncPeriod > VirtualClock::maxPeriod) { throw std::logic_error("Sync period cannot be more than maximum!"); };  
     if(syncPeriod == 0) { throw std::logic_error("Sync period cannot be zero!"); };  
 
@@ -194,7 +195,7 @@ void VirtualClock::assertInit()
 
 void VirtualClock::IRQinit(){}
 
-VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(0.0), vcdot_km1(0.0), a(0.05), beta(0.025),
+VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(1.0), vcdot_km1(1.0), a(0.05), beta(0.025),
                             k(0), T0(0), init(false), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
 

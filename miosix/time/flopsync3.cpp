@@ -36,11 +36,11 @@ Flopsync3& Flopsync3::instance(){
     return fsync;
 }
 
-double Flopsync3::computeCorrection(long long e_k)
+long long Flopsync3::computeCorrection(long long e_k)
 {
     // computing controller output
     //this->u_k = 0.15 * e_k; // * 1e-9;
-    this->u_k = 0.15 * e_k; // * 1e-9;
+    this->u_k = factorP * e_k;
 
     // updating internal status for next iteration
     this->e_km2 = this->e_km1;
@@ -64,9 +64,12 @@ void Flopsync3::reset()
     this->u_k   = 0;
     this->u_km1 = 0;
     this->u_km2 = 0;
+
+    // controller
+    this->factorP(0.15);
 }
 
-double Flopsync3::getClockCorrection()
+long long Flopsync3::getClockCorrection()
 {
     return this->u_k;
 }
