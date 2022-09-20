@@ -366,8 +366,8 @@ private:
      * @param timeoutNs 
      * @return EventResult 
      */
-    inline EventResult Transceiver::waitEvent(long long timeoutNs);
-    inline EventResult Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs);
+    inline EventResult waitEvent(long long timeoutNs);
+    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs);
     
     /**
      * The transceiver power domain is handled using a reference count.

@@ -139,3 +139,84 @@
  */
 
 #include "interfaces-impl/gpio_impl.h"
+
+
+///
+// GPIO interrupts interface
+///
+// TODO: (s) explain a little better
+
+#include <functional>
+#include "gpio.h"
+
+namespace miosix {
+
+/**
+ * Constants used to select which edges should cause an interrupt
+ */
+enum class GpioIrqEdge
+{
+    RISING,
+    FALLING,
+    BOTH
+};
+
+/**
+ * Register an interrupt to be called when an edge occurs on a specific GPIO
+ * Due to hardware limitations, it is possible to register up to 16 interrupts,
+ * and no two with the same pin number. So, if an interrupt is set on
+ * PA0, it is not possible to register an interrupt on PB0, PC0, ...
+ * 
+ * Note that this function just configures the interrupt, but it does not enable
+ * it. To enable it, you have to call enableGpioIrq().
+ * 
+ * \param pin GPIO pin on which the interrupt is requested
+ * \param edge allows to set whether the interrupt should be fired on the
+ * rising, falling or both edges
+ * \param callback a callback function that that will be called. Note that the
+ * callback is called in interrupt context, so it is subject to the usual
+ * restrictions that apply to interrupt context, such that only IRQ prefixed
+ * functions can be called, etc. It is recomended to just wake a task and keep
+ * the function short. Note that it is also possible to call the scheduler to
+ * cause a context switch.
+ * \throws exception if the resources for this interrupt are occupied
+ */
+void registerGpioIrq(GpioPin pin, GpioIrqEdge edge, std::function<void ()> callback);
+
+/**
+ * Enable the interrupt on the specified pin
+ * \param pin GPIO pin on which the interrupt is requested
+ * \throws runtime_error if the pin has not been registered
+ */
+void enableGpioIrq(GpioPin pin);
+
+/**
+ * Disable the interrupt on the specified pin
+ * \param pin GPIO pin on which the interrupt is requested
+ * \throws runtime_error if the pin has not been registered
+ */
+void disableGpioIrq(GpioPin pin);
+
+/**
+ * Enable the interrupt on the specified pin. Callable with interrupts disabled
+ * \param pin GPIO pin on which the interrupt is requested
+ * \return false if the pin has not been registered
+ */
+bool IRQenableGpioIrq(GpioPin pin);
+
+/**
+ * Disable the interrupt on the specified pin. Callable with interrupts disabled
+ * \param pin GPIO pin on which the interrupt is requested
+ * \return false if the pin has not been registered
+ */
+bool IRQdisableGpioIrq(GpioPin pin);
+
+/**
+ * Unregister an interrupt, also freeing the resources for other to register a
+ * new one.
+ * \param pin pint to unregister
+ */
+void unregisterGpioIrq(GpioPin pin);
+
+} //namespace miosix
+

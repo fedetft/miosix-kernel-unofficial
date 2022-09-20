@@ -26,15 +26,15 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/ 
 
-#include "interfaces/transceiver.h"
+#include "transceiver_CC2520.h"
 #include "cc2520_constants.h"
-#include "interfaces/gpioirq.h"
+#include "interfaces/gpio.h"
 #include "config/miosix_settings.h"
 #include <stdexcept>
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
-#include "correction_types.h" //< TimerProxySpec
+#include "interfaces-impl/correction_types.h" //< TimerProxySpec
 
 using namespace std;
 
@@ -308,7 +308,7 @@ void Transceiver::sendAt(const void* pkt, int size, long long when)
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
     // FIXME: (s)
-    if(timer->absoluteWaitTrigger(w)==true)
+    if(timerProxy->absoluteWaitTrigger(w)==true)
     {
 	//See diagram on page 69 of datasheet
         commandStrobe(CC2520Command::SFLUSHTX);
@@ -351,7 +351,7 @@ RecvResult Transceiver::recv(void *pkt, int size, long long timeout)
                 //Timestamp is wrong and we know it, so we don't set valid
                 // TODO: (s) remove ::Correct param + remove dependency from ticks inside timer!!
                 // FIXME: (s)
-                result.timestamp = timer->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+                result.timestamp = timerProxy->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
                 
                 //We may still be in the middle of another packet reception, so
                 //this may cause FRM_DONE to occur without a previous SFD,
@@ -590,7 +590,7 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     //packet is received, while the cc2520 allows timestamping at the SFD
     
     // FIXME: (s)
-    result.timestamp = timer->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+    result.timestamp = timerProxy->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
     unsigned int exc=getExceptions(0b011);
     if(exc & CC2520Exception::RX_OVERFLOW)
     {

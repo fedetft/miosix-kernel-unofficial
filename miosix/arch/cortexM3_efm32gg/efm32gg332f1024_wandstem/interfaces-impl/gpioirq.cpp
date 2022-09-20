@@ -25,7 +25,7 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "interfaces/gpioirq.h"
+#include "interfaces/gpio.h"
 #include <stdexcept>
 #include <kernel/scheduler/scheduler.h>
 
