@@ -89,6 +89,8 @@ bool IRQdeepSleep(long long abstime)
     #ifdef WITH_VHT // Adjust hsc time using RTC and VHT
     //vht->IRQresyncClock();
     //timerProxy->recompute correction...
+    hsc->IRQsetTimeNs(rtc->IRQgetTimeNs()); // DELETEME: (s) temporary
+    rtc->IRQstopTimer();                    // DELETEME: (s) temporary
     #else // No VHT, just pass time between each other
     hsc->IRQsetTimeNs(rtc->IRQgetTimeNs());
     rtc->IRQstopTimer(); // TODO: (s) should do also power gating?

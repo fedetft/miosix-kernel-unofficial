@@ -35,7 +35,6 @@
 #include "time/timeconversion.h" // mul64x32d32
 #include <cmath> // abs
 #include "miosix.h"
-#include <type_traits> // std::is_same
 
 namespace miosix
 {
@@ -44,195 +43,9 @@ class notImplementedException : public std::logic_error
 {
 public:
     notImplementedException() : std::logic_error("Function not yet implemented") { };
-};
+}; // class notImplementedException
 
-/* This class needs A LOT of re-work. Most of operations are just unefficients */
-// class fp32_32
-// {
-// public:
-//     // Default constructor
-//     fp32_32();
-//     /**
-//      * @brief 
-//      * 
-//      */
-//     explicit fp32_32(const double d);
-
-//     // Copy constructor
-//     /**
-//      * @brief Construct a new fp32 32 object
-//      * 
-//      * @param other 
-//      */
-//     fp32_32(const fp32_32& other);
-
-//     // functor
-//     /**
-//      * @brief 
-//      * 
-//      * @param other 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator () (const fp32_32& other);
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param d 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator () (double d);
-
-//     // Assign
-//     /**
-//      * @brief 
-//      * 
-//      * @param f 
-//      * @return fp32_32& 
-//      */
-//     fp32_32& operator = (const fp32_32& f);
-
-//     // Negation
-//     /**
-//      * @brief 
-//      * 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator - () const &;
-
-//     // Addition
-//     /**
-//      * @brief 
-//      * 
-//      * @param other 
-//      * @return fp32_32 
-//      */
-//     // TODO: (s) check with -O3, sometimes it is wrong for aggressive compilation optimization...
-//     fp32_32 operator + (const fp32_32& other) const;
-//     fp32_32 operator + (long long a) const;
-
-//     // Subtraction
-//     /**
-//      * @brief 
-//      * 
-//      * @param other 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator - (const fp32_32& other) const;
-//     fp32_32 operator - (long long a) const;
-//     friend fp32_32 operator - (long long a, const fp32_32& other); 
-
-//     // Multiplication
-//     // TODO: (s) can avoid using long long and shift but losing precision!
-//     /**
-//      * @brief fp32_32 * long long
-//      * 
-//      * @param a 
-//      * @return long long 
-//      */
-//     long long operator * (long long a) const;
-//     // should be a free function, little abuse of the friend keyword but those
-//     // are common and recommended for operator overloading
-//     // long long * fp32_32
-//     friend long long operator * (long long a, const fp32_32& other);
-    
-//     /**
-//      * @brief 
-//      * 
-//      * @param other 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator * (const fp32_32& other) const;
-
-//     // Division
-//     /**
-//      * @brief 
-//      * 
-//      * @param other 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator / (const fp32_32& other) const;
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param a 
-//      * @return fp32_32 
-//      */
-//     fp32_32 operator / (long long a) const;
-//     // should be a free function, little abuse of the friend keyword but those
-//     // are common and recommended for operator overloading
-//     // long long / fp32_32 => long long * (fp32_32)^-1
-//     friend long long operator / (long long a, const fp32_32& other);
-
-//     // reciprocal operator
-//     void reciprocal();
-
-//     // fixed2double cast
-//     /**
-//      * @brief 
-//      * 
-//      * @return double 
-//      */
-//     /*operator double() const;*/
-
-//     /**
-//      * @brief Get the Double object
-//      * 
-//      * @return double 
-//      */
-//     double getDouble() const;
-
-//     /**
-//      * @brief 
-//      * 
-//      * @return double 
-//      */
-//     double getRDouble() const;
-
-//     ///
-//     // getters and setters (getters for future extendibility)
-//     ///
-//     unsigned int getSign() const;
-//     void setSign(short sign);
-
-//     unsigned int getIntegerPart() const;
-//     unsigned int getRIntegerPart() const;
-//     void setIntegerPart(unsigned int integerPart);
-
-//     unsigned int getDecimalPart() const;
-//     unsigned int getRDecimalPart() const;
-//     void setDecimalPart(double decimalPart);
-//     void setDecimalPart(unsigned int decimalPart);
-
-// private:
-//     ///
-//     // Helper functions
-//     ///
-    
-//     /**
-//      * @brief 
-//      * 
-//      * @tparam T 
-//      * @param x 
-//      * @return T 
-//      */
-//     template <typename T>
-//     static constexpr short signum(T x) {
-//         return (x > 0) - (x < 0);
-//     }
-
-//     ///
-//     // Class variables
-//     ///
-
-//     short sign = 1;
-//     unsigned int integerPart = 0;
-//     unsigned int decimalPart = 0; // 2^32
-//     unsigned int rIntegerPart = 0; // reciprocal integer part
-//     unsigned int rDecimalPart = 0; // reciprocal decimal part
-// };
-
+// TODO: (s) move everything in CPP to avoid linker error in multiple imports
 // software handled unsigned 128-bit integer
 struct uint128_t {  
     unsigned long long UPPER;
@@ -259,13 +72,24 @@ struct uint128_t {
     }
 
     // Addition
-    constexpr uint128_t operator + (const uint128_t& other) const
+    /*constexpr*/ uint128_t operator + (const uint128_t& other) const
     {
         uint128_t INTERNAL;
+               
+        #if defined(__ARM_EABI__)
+        /* ARM 32-bit solution */
+        unsigned long long out_upper;
+        unsigned long long out_lower;
+        _add_and_carry_uint128_t(this->UPPER, this->LOWER, other.UPPER, other.LOWER, &out_upper, &out_lower);
 
-        // assume no overflow on upper part
-        INTERNAL.UPPER = this->UPPER + other.UPPER;
+        INTERNAL.LOWER = out_lower;
+        INTERNAL.UPPER = out_upper;
 
+        #else
+        
+        #warning "uint128_t operator + (const uint128_t& other) const is not optimized for this architecture"
+        /* portable c++ solution */
+        INTERNAL.UPPER = this->UPPER + other.UPPER; // assume no overflow on upper part
         // sum lower part by predicting overflow a + b > max => b > max - a
         // TODO: (s) > o >=?
         if(this->LOWER > MAX_ULL - other.LOWER)
@@ -277,15 +101,28 @@ struct uint128_t {
             INTERNAL.LOWER = (MAX_ULL - ((MAX_ULL - this->LOWER) + (MAX_ULL - other.LOWER))) - 1;
         }
         else INTERNAL.LOWER = this->LOWER + other.LOWER;
+        #endif
 
         return INTERNAL;
     }
 
-    constexpr uint128_t& operator += (const uint128_t& other)
+    inline /*constexpr*/ uint128_t& operator += (const uint128_t& other)
     {
-        // assume no overflow on upper part
-        this->UPPER += other.UPPER;
+        #if defined(__ARM_EABI__)
+        /* ARM 32-bit solution */
+        unsigned long long out_upper;
+        unsigned long long out_lower;
+        _add_and_carry_uint128_t(this->UPPER, this->LOWER, other.UPPER, other.LOWER, &out_upper, &out_lower);
 
+        this->LOWER = out_lower;
+        this->UPPER = out_upper;
+
+        #else
+
+        #warning "uint128_t& operator += (const uint128_t& other) is not optimized for this architecture"
+        /* portable c++ solution */
+        this->UPPER += other.UPPER; // assume no overflow on upper part 
+        
         // sum lower part by predicting overflow a + b > max => b > max - a
         if(this->LOWER > MAX_ULL - other.LOWER)
         {
@@ -296,14 +133,28 @@ struct uint128_t {
             this->LOWER = (MAX_ULL - ((MAX_ULL - this->LOWER) + (MAX_ULL - other.LOWER))) - 1;
         }
         else this->LOWER += other.LOWER;
+        #endif
 
         return *this;
     }
 
-    constexpr uint128_t operator + (unsigned long long a) const
+    /*constexpr*/ uint128_t operator + (unsigned long long a) const
     {
         uint128_t INTERNAL;
 
+        #if defined(__ARM_EABI__)
+        /* ARM 32-bit solution */
+        unsigned long long out_upper;
+        unsigned long long out_lower;
+        _add_and_carry_uint128_t(this->UPPER, this->LOWER, 0, a, &out_upper, &out_lower);
+
+        INTERNAL.LOWER = out_lower;
+        INTERNAL.UPPER = out_upper;
+
+        #else
+
+        #warning "uint128_t operator + (unsigned long long a) const is not optimized for this architecture"
+        /* portable c++ solution */
         // sum lower part by predicting overflow a + b > max => b > max - a
         // TODO: (s) > o >=?
         if(this->LOWER > MAX_ULL - a)
@@ -315,12 +166,26 @@ struct uint128_t {
             INTERNAL.LOWER = (MAX_ULL - ((MAX_ULL - this->LOWER) + (MAX_ULL - a))) - 1;
         }
         else INTERNAL.LOWER = this->LOWER + a;
+        #endif
 
         return INTERNAL;
     }
 
-    constexpr uint128_t& operator += (unsigned long long a)
-    {
+    /*constexpr*/ uint128_t& operator += (unsigned long long a)
+    {  
+        #if defined(__ARM_EABI__)
+        /* ARM 32-bit solution */
+        unsigned long long out_upper;
+        unsigned long long out_lower;
+        _add_and_carry_uint128_t(this->UPPER, this->LOWER, 0, a, &out_upper, &out_lower);
+
+        this->LOWER = out_lower;
+        this->UPPER = out_upper;
+
+        #else
+        
+        #warning "uint128_t& operator += (unsigned long long a) is not optimized for this architecture"
+        /* portable c++ solution */
         // sum lower part by predicting overflow a + b > max => b > max - a
         if(this->LOWER > MAX_ULL - a)
         {
@@ -331,6 +196,7 @@ struct uint128_t {
             this->LOWER = (MAX_ULL - ((MAX_ULL - this->LOWER) + (MAX_ULL - a))) - 1;
         }
         else this->LOWER += a;
+        #endif
 
         return *this;
     }
@@ -352,7 +218,6 @@ struct uint128_t {
         return INTERNAL;
     }
 
-    // FIXME: (s) when s = 32, not reporting integer part!
     constexpr uint128_t operator << (const size_t s) const
     {
         uint128_t INTERNAL;
@@ -369,7 +234,10 @@ struct uint128_t {
         return INTERNAL;
     }
 
-    // Multiplication (not used, avoid compilation error)
+    // TODO: (s) provide general implementation, specify should never be called
+    // from Fixed since * and / oeprators are custom in cpp spec (never call uint128_t * uint128_t, too slow!)
+
+    // Multiplication (not used, avoid compilation error, overwritten in cpp)
     uint128_t operator * (const uint128_t& other) const
     {
         uint128_t INTERNAL;
@@ -377,84 +245,199 @@ struct uint128_t {
         return INTERNAL;
     }
 
+    // Division (not used, avoid compilation error, overwritten in cpp)
+    uint128_t operator / (const uint128_t& other) const
+    {
+        uint128_t INTERNAL;
+        throw notImplementedException();
+        return INTERNAL;
+    }
+
     // conversions
-    constexpr operator int64_t() const
+    explicit constexpr operator int64_t() const
     {
         return this->LOWER;
     }
 
 private:
     static constexpr unsigned long long MAX_ULL = std::numeric_limits<unsigned long long>::max();
-};
+
+    /**
+     * @brief maybe better in c++ way with return std::pair?
+     * 
+     * @param first_in_upper 
+     * @param first_in_lower 
+     * @param second_in_upper 
+     * @param second_in_lower 
+     * @param out_upper 
+     * @param out_lower 
+     */
+    inline void _add_and_carry_uint128_t(const uint64_t first_in_upper, const uint64_t first_in_lower,
+                                    const uint64_t second_in_upper, const uint64_t second_in_lower,
+                                    uint64_t * out_upper, uint64_t * out_lower) const
+    {
+        // decompose 64 bit variables into two 32-bit pair for first operand
+        const uint32_t first_in_upper_hi = static_cast<uint32_t>(first_in_upper>>32);
+        const uint32_t first_in_upper_low = static_cast<uint32_t>(first_in_upper);
+        const uint32_t first_in_lower_hi = static_cast<uint32_t>(first_in_lower>>32); 
+        const uint32_t first_in_lower_low = static_cast<uint32_t>(first_in_lower);
+
+        // decompose 64 bit variables into two 32-bit pair for second operand
+        const uint32_t second_in_upper_hi = static_cast<uint32_t>(second_in_upper>>32);
+        const uint32_t second_in_upper_low = static_cast<uint32_t>(second_in_upper);
+        const uint32_t second_in_lower_hi = static_cast<uint32_t>(second_in_lower>>32); 
+        const uint32_t second_in_lower_low = static_cast<uint32_t>(second_in_lower);
+
+        // decompose 64 bit variablee into two 32-bit pair for result
+        uint32_t out_upper_hi = 0;
+        uint32_t out_upper_low = 0;
+        uint32_t out_lower_hi = 0;
+        uint32_t out_lower_low = 0;
+
+        /*iprintf("[(%lu, %lu) + (%lu, %lu)] + [(%lu, %lu) + (%lu, %lu)]\n", first_in_upper_hi, first_in_upper_low,
+                                                                            second_in_upper_hi, second_in_upper_low,
+                                                                            first_in_lower_hi, first_in_lower_low, 
+                                                                            second_in_lower_hi, second_in_lower_low);*/
+
+        // sum with carry // FIXME: (s) out_lower_hi = out_lower_low for some reason
+        /*asm volatile("adds %[out_lower_low], %[first_in_lower_low], %[second_in_lower_low]\n\t"
+                     "adcs %[out_lower_hi], %[first_in_lower_hi], %[second_in_lower_hi]\n\t"
+                     "adcs %[out_upper_low], %[first_in_upper_low], %[second_in_upper_low]\n\t"
+                     "adc  %[out_upper_hi], %[first_in_upper_hi], %[second_in_upper_hi]\n\t"
+                        : [out_lower_low] "=r" (out_lower_low), [out_lower_hi] "=r" (out_lower_hi),
+                            [out_upper_low] "=r" (out_upper_low), [out_upper_hi] "=r" (out_upper_hi)
+                        : [first_in_lower_low] "r" (first_in_lower_low), [second_in_lower_low] "r" (second_in_lower_low),
+                            [first_in_lower_hi] "r" (first_in_lower_hi), [second_in_lower_hi] "r" (second_in_lower_hi),
+                            [first_in_upper_low] "r" (first_in_upper_low), [second_in_upper_low] "r" (second_in_upper_low),
+                            [first_in_upper_hi] "r" (first_in_upper_hi), [second_in_upper_hi] "r" (second_in_upper_hi)
+                        : "cc" //"r0"  // condition code flags are modified (NZCV)
+                    );*/
+
+        asm volatile("adds r0, %[first_in_lower_low], %[second_in_lower_low]\n\t"
+                     "adcs r1, %[first_in_lower_hi],  %[second_in_lower_hi]\n\t"
+                     "adcs r2, %[first_in_upper_low], %[second_in_upper_low]\n\t"
+                     "adc  r3, %[first_in_upper_hi],  %[second_in_upper_hi]\n\t"
+                     "mov  %[out_lower_low], r0\n\t"
+                     "mov  %[out_lower_hi],  r1\n\t"
+                     "mov  %[out_upper_low], r2\n\t"
+                     "mov  %[out_upper_hi],  r3\n\t"
+                        : [out_lower_low] "=r" (out_lower_low), [out_lower_hi] "=r" (out_lower_hi),
+                            [out_upper_low] "=r" (out_upper_low), [out_upper_hi] "=r" (out_upper_hi)
+                        : [first_in_lower_low] "r" (first_in_lower_low), [second_in_lower_low] "r" (second_in_lower_low),
+                            [first_in_lower_hi] "r" (first_in_lower_hi), [second_in_lower_hi] "r" (second_in_lower_hi),
+                            [first_in_upper_low] "r" (first_in_upper_low), [second_in_upper_low] "r" (second_in_upper_low),
+                            [first_in_upper_hi] "r" (first_in_upper_hi), [second_in_upper_hi] "r" (second_in_upper_hi)
+                        : "cc", "r0", "r1", "r2", "r3"  // condition code flags (NZCV)  and r[0-3] are modified 
+                    );
+
+        
+        //iprintf("[(%lu, %lu)] + [(%lu, %lu)]\n", out_upper_hi, out_upper_low, out_lower_hi, out_lower_low);
+
+
+        // composing result
+        (*out_lower) = (static_cast<uint64_t>(out_lower_hi)<<32) | static_cast<uint64_t>(out_lower_low);
+        (*out_upper) = (static_cast<uint64_t>(out_upper_hi)<<32) | static_cast<uint64_t>(out_upper_low);
+    }
+}; // struct uint128_t
 
 //e.g. T = int32_t, T2 = int64_t
 template<typename T, typename T2, size_t dp=sizeof(T)*4>
-class fixed
+class Fixed
 {
-
 public:
     T value = T(0);
 
-    constexpr fixed() = default;
-    constexpr fixed(const fixed& f) = default;
+    constexpr Fixed() = default;
+    constexpr Fixed(const Fixed& f) = default;
 
-    constexpr fixed(const double d)
+    explicit constexpr Fixed(const double d)
     { 
         value = static_cast<T>(d * static_cast<double>((dp >= 32 ? 1LL : 1) << dp) + (d >= 0 ? 0.5 : -0.5));
     }
 
-    constexpr operator double() const
+    explicit constexpr operator double() const
     {
         return static_cast<double>(value) / static_cast<double>((dp >= 32 ? 1LL : 1) << dp);
     }
 
-    // parenthesis
-    constexpr fixed operator () (const double& d)
+    explicit constexpr operator long long() const
     {
-        this->value = fixed(d).value;
+        return static_cast<long long>(value>>dp);
+    }
+
+    // parenthesis
+    constexpr Fixed operator () (const double& d)
+    {
+        this->value = Fixed(d).value;
         return *this;
     }
 
     // Assign
-    constexpr fixed& operator = (const fixed& f) = default;
+    constexpr Fixed& operator = (const Fixed& f) = default;
+
+    constexpr Fixed& operator = (double d)
+    {
+        this->value = Fixed(d).value;
+        return *this;
+    }
 
     // Negation
-    constexpr fixed operator - () const
+    constexpr Fixed operator - () const
     {
         return form(-this->value);
     }
 
     // Addition
-    constexpr fixed operator + (const fixed& f) const
+    constexpr Fixed operator + (const Fixed& f) const
     {
         return form(this->value + f.value);
     }
 
-    constexpr fixed& operator += (const fixed& f)
+    constexpr Fixed operator + (long long a) const
+    {
+        return form(this->value + (a<<dp));
+    }
+
+    friend Fixed operator + (long long a, const Fixed& other)
+    {
+        return other + a;
+    }
+
+    constexpr Fixed& operator += (const Fixed& f)
     {
         this->value += f.value;
         return *this;
     }
 
     // Subtraction
-    constexpr fixed operator - (const fixed& f) const
+    constexpr Fixed operator - (const Fixed& f) const
     {
         return form(this->value - f.value);
     }
 
-    constexpr fixed& operator -= (const fixed& f)
+    constexpr Fixed operator - (long long a) const
+    {
+        return form(this->value - (a<<dp));
+    }
+
+    friend Fixed operator - (long long a, const Fixed& other)
+    {
+        return a + (-other);
+    }
+
+    constexpr Fixed& operator -= (const Fixed& f)
     {
         this->value -= f.value;
         return *this;
     }
 
     // Multiplication
-    constexpr fixed operator * (const fixed& f) const
+    constexpr Fixed operator * (const Fixed& f) const
     {
         // if constexpr form c++17, SFINAE used
 
         // default naive multiplication
-        return form((static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp);
+        return form(static_cast<T>((static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp));
 
     }
 
@@ -462,53 +445,74 @@ public:
     {
         // if constexpr form c++17, SFINAE used
 
-        throw notImplementedException();
-        return 0; //form((static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp);
+        return form(static_cast<T>((static_cast<T2>(this->value) * static_cast<T2>(a<<dp)) >> dp));
     }
 
-    friend long long operator * (long long a, const fixed& other)
+    friend long long operator * (long long a, const Fixed& other)
     {
         return other * a;
     }
     
-    constexpr fixed& operator *= (const fixed& f)
+    constexpr Fixed& operator *= (const Fixed& f)
     {
         // if constexpr form c++17, SFINAE used
         
-        this->value = (static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp;
+        this->value = static_cast<T>((static_cast<T2>(this->value) * static_cast<T2>(f.value)) >> dp);
         return *this;
     }
 
     // Division
-    constexpr fixed operator / (const fixed& f) const
+    constexpr Fixed operator / (const Fixed& f) const
     {
-        return form((static_cast<T2>(this->value) << dp) / static_cast<T2>(f.value));
+        // if constexpr form c++17, SFINAE used
+
+        return form(static_cast<T>((static_cast<T2>(this->value) << dp) / static_cast<T2>(f.value)));
     }
 
-    constexpr fixed& operator /= (const fixed& f)
+    constexpr Fixed& operator /= (const Fixed& f)
     {
-        this->value = (static_cast<T2>(this->value) << dp) / static_cast<T2>(f.value);
+        // if constexpr form c++17, SFINAE used
+        
+        this->value = static_cast<T>((static_cast<T2>(this->value) << dp) / static_cast<T2>(f.value));
+    }
+
+    friend long long operator / (long long a, const Fixed& other)
+    {
+        return other.fastInverse() * a;
+    }
+
+    // inverse operator
+    Fixed fastInverse() const
+    {        
+        Fixed f;
+        throw notImplementedException();
+        return f;
     }
 
 private:
-    static constexpr fixed form(T v) { fixed k; k.value = v; return k; }
+    static constexpr Fixed form(T v) { Fixed k; k.value = v; return k; }
 
     template <typename T3>
     static constexpr short signum(T x) {
         return (x > 0) - (x < 0);
     }
+}; // class Fixed
 
-};
 
 ///
-// Special specializations for 32.32 fixed point
+// Specializations for 32.32 fixed point
 ///
 
 // using compl2 for sign. Max integer part = 2^(32-1)-1 = 2147483647
-using fp32_32 = fixed<int64_t, uint128_t, 32UL>;
+using fp32_32 = Fixed<int64_t, uint128_t, 32UL>;
+
+fp32_32 constexpr operator "" _fp32d32 (const long double d)
+{
+    return fp32_32(d);
+}
 
 template<>
-fp32_32 fp32_32::operator * (const fixed& f) const
+inline fp32_32 fp32_32::operator * (const Fixed& f) const
 {
     // integer and decimal decomposition
     int64_t thisAbsVal = std::abs(this->value);
@@ -530,22 +534,81 @@ fp32_32 fp32_32::operator * (const fixed& f) const
     return form(sign * (static_cast<int64_t>(res >> 32)));
 }
 
+template<>
+inline long long fp32_32::operator * (long long a) const
+{
+    int32_t decimalVal = static_cast<int32_t>(std::abs(this->value) & 0x00000000FFFFFFFF);
+    int32_t integerVal = static_cast<int32_t>((std::abs(this->value) & 0xFFFFFFFF00000000) >> 32);
+    
+    return signum<long long>(a) * signum<int32_t>(this->value) * static_cast<long long>(mul64x32d32(std::abs(a), integerVal, decimalVal));
+}
+
+template<>
+inline fp32_32 fp32_32::fastInverse() const
+{    
+    // Modified fast Inverse Square Root from Quake 3 Arena (not written by John Carmack) 
+    // https://blog.timhutt.co.uk/fast-inverse-square-root/
+    // https://whoisslimshady.medium.com/quake-iiis-or-fast-invsqrt-or-0x5f3759df-algorithm-47e6bf5bfa35
+    // https://stackoverflow.com/questions/11644441/fast-inverse-square-root-on-x64
+    
+    double number = static_cast<double>(*this);
+    double absNumber = std::abs(number);
+    long long i;
+    double x2, y;
+    //const double threehalfs = 1.5;
+
+    x2 = absNumber; // * 0.5;
+    y  = absNumber;
+    i  = * ( long long * ) &y;               
+    i  = 0x7FE0000000000000 - i; // TODO: (s) optimize with something less
+    y  = * ( double * ) &i;
+    
+
+    // f(y) = 1/(y^2) - x
+    // y is our estimated inverse square root, and we’re trying to get a better estimate. 
+    // To do that we want to get f(y) close to zero, which happens when y is correct and x equals the number that we’re taking the inverse-square-root of, 
+    // ie the input named ‘number’. The x from the above formula isn’t being updated, we know it exactly already. 
+
+    // The derivative of f(y) is -2/(y^3). This is because the x is constant, 1/y^2 is the same as y^-2, so multiply by -2 and subtract 1 from the exponent. 
+    // ynew = y - f(y)/f’(y), which after we enter the function and its derivative is 
+    // ynew = y - (1/(y^2) -x)/(-2/(y^3))
+    // = y + y/2 - x*(y^3)/2
+    // = y * (3/2 - y * y * x/2)
+    //y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
+
+    // f(y) = 1/y - x, f(y) = 0 => y = 1/x
+    // TODO: (s) change explaination
+    y  = y * ( 2 - (y * x2) );   // 1st iteration
+    y  = y * ( 2 - (y * x2) );   // 2nd iteration
+    y  = y * ( 2 - (y * x2) );   // 3rd iteration
+
+    return fp32_32(signum<double>(number) * y);
+}
+
+// end of specializations for 32.32 fixed point
+
+
 ///
-// Special specializations for 16.16 fixed point
+// Specializations for 16.16 fixed point
 ///
 
 // using compl2 for sign. Max integer part = 2^(16-1)-1 = 32767
-using fp16_16 = fixed<int32_t, int64_t, 16UL>;
+using fp16_16 = Fixed<int32_t, int64_t, 16UL>;
+
+fp16_16 constexpr operator "" _fp16d16 (const long double d)
+{
+    return fp16_16(d);
+}
 
 template<>
-fp16_16 fp16_16::operator * (const fixed& f) const
+inline fp16_16 fp16_16::operator * (const fp16_16& f) const
 {
     long long res = signum<int32_t>(this->value) * signum<int32_t>(f.value) * static_cast<long long>(mul32x32to64(std::abs(this->value), std::abs(f.value)));
     return form(res >> 16);
 }
 
 template<>
-long long fp16_16::operator * (long long a) const
+inline long long fp16_16::operator * (long long a) const
 {
     // mul64x32d32 is expecting a 32.32 fixed point number. Therefore, we convert the decimal part
     // from 2^16 to 2^32 by shifting left by 16 bit with inevitable loss of precision
@@ -556,12 +619,16 @@ long long fp16_16::operator * (long long a) const
 }
 
 template<>
-/*constexpr*/ fp16_16& fp16_16::operator *= (const fixed& f)
+inline /*constexpr*/ fp16_16& fp16_16::operator *= (const fp16_16& f)
 {
     this->value = (signum<int32_t>(this->value) * signum<int32_t>(f.value) * mul32x32to64(std::abs(this->value), std::abs(f.value))) >> 16;
     return *this;
 }
 
-}
+// end of specializations for 16.16 fixed point
+
+} // namespace miosix
+
+
 
 #endif

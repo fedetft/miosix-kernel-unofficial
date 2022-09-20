@@ -27,6 +27,8 @@
 
 #include "interfaces/virtual_clock.h"
 #include "time/timeconversion.h"
+#include "kernel/logging.h"
+#include <stdexcept>
 
 namespace miosix {
 
@@ -39,11 +41,9 @@ VirtualClock& VirtualClock::instance(){
 long long VirtualClock::IRQgetVirtualTimeNs(long long tsnc) noexcept
 {
     assertNonNegativeTime(tsnc);
-    
-    if(!init) return tsnc; // needed when system is booting up and until no sync period is set
-    //else return /*T0 +*/ vc_km1 + mul64x32d32(tsnc - tsnc_km1, vcdot_km1.getIntegerPart(), vcdot_km1.getDecimalPart()); //vcdot_km1  * (tsnc - tsnc_km1);
-    else return /*T0 +*/ vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
 
+    if(!init) return tsnc; // needed when system is booting up and until no sync period is set
+    else return /*T0 +*/ vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
 }
 
 long long VirtualClock::getVirtualTimeNs(long long tsnc) noexcept
@@ -57,7 +57,7 @@ long long VirtualClock::getVirtualTimeTicks(long long tsnc) noexcept
     return tc.ns2tick(getVirtualTimeNs(tsnc));
 }
 
-long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
+inline long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
 {   
     //assertInit();
     assertNonNegativeTime(vc_t);
@@ -81,12 +81,6 @@ long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
 // TODO: (s) the error should be passed from timesync for a more abstraction level
 void VirtualClock::updateVC(long long vc_k)
 {
-    FastInterruptDisableLock lck;
-    IRQupdateVC(vc_k);
-}
-
-void VirtualClock::IRQupdateVC(long long vc_k)
-{
     assertInit();
     assertNonNegativeTime(vc_k);
 
@@ -95,19 +89,14 @@ void VirtualClock::IRQupdateVC(long long vc_k)
     // calculating sync error
     long long e_k = (kT/* + T0*/) - vc_k;
 
-    VirtualClock::IRQupdateVC(vc_k, e_k);
+    VirtualClock::updateVC(vc_k, e_k);
 
     // next iteration values update
     this->k += 1;
 }
 
+// TODO: (s) pre-compute inv_vcdot_k(m1) + update it + use inv_vcdot_km1(m1)
 void VirtualClock::updateVC(long long vc_k, long long e_k)
-{
-    FastInterruptDisableLock lck;
-    IRQupdateVC(vc_k, e_k);
-}
-
-void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
     assertInit();
@@ -116,25 +105,29 @@ void VirtualClock::IRQupdateVC(long long vc_k, long long e_k)
     // controller correction
     // TODO: (s) need saturation for correction!
     //double u_k = fsync->computeCorrection(e_k);
-    long long u_k = fsync->computeCorrection(e_k);
+    fp32_32 u_k = fsync->computeCorrection(e_k);
     
     // estimating clock skew
     //fp32_32 D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
-    fp32_32 D_k = fp32_32(( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod);
+    fp32_32 D_k = ( fp32_32(vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
 
-    // performing virtual clock slope correction
-    this->vcdot_k = fp32_32(u_k * (beta - 1) + e_k * (1 - beta) + syncPeriod) / (D_k + syncPeriod); // FIXME: (s) 1.something rounded to 1
+    // performing virtual clock slope correction disabling interrupt
+    {
+        FastInterruptDisableLock dlck;
 
-    // next iteration values update
-    this->tsnc_km1 = deriveTsnc(vc_k);
-    this->vc_km1 = vc_k;
-    this->vcdot_km1 = this->vcdot_k;
+        this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
+
+        // next iteration values update
+        this->tsnc_km1 = deriveTsnc(vc_k);
+        this->vc_km1 = vc_k;
+        this->vcdot_km1 = this->vcdot_k;
+    }
 }
 
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 {
-    FastInterruptDisableLock lck;
-    IRQsetSyncPeriod(syncPeriod);
+    {FastInterruptDisableLock lck;
+    IRQsetSyncPeriod(syncPeriod);}
 }
 
 void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
@@ -165,18 +158,37 @@ void VirtualClock::IRQsetInitialOffset(long long T0)
     this->T0 = T0;
 }
 
-long long VirtualClock::deriveTsnc(long long vc_t)
+// TODO: (s) change to IRQ
+inline long long VirtualClock::deriveTsnc(long long vc_t)
 {
     assertInit();
     assertNonNegativeTime(vc_t);
 
-    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1;
+    auto GDB_1 = vc_t - vc_km1;
+    auto GDB_2 = tsnc_km1 * vcdot_km1;
+    auto GDB_3 = GDB_1 + GDB_2;
+    long long GDB_4 = static_cast<long long>(GDB_3);
+    int64_t absVal = std::abs(vcdot_km1.value);
+    int32_t absDecimalVal = static_cast<int32_t>(absVal & 0x00000000FFFFFFFF);
+    int32_t absIntegerVal = static_cast<int32_t>((absVal & 0xFFFFFFFF00000000) >> 32);
+    long long GDB_5 = GDB_4 * inv_vcdot_km1;
+
+    // TODO: (s) maybe i need basic correction to set time taking into account time it takes to perform this operation??
+    //return static_cast<long long>(fp32_32(vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1);
+    long long GDB_6 = vc_t - GDB_5;
+    if(vc_t >= 4e9)
+    {
+        long long GDB_20 = 10;
+    }
+    return GDB_5;
 }
 
 void VirtualClock::assertNonNegativeTime(long long time)
 {
     if(time < 0) 
-    { 
+    {
+        IRQerrorLog("\r\n***Exception: VC"); 
+        IRQerrorLog("\r\ntsnc is negative");
         throw std::invalid_argument(
             std::string("[ ") +  typeid(*this).name() +  std::string(" | ") + __FUNCTION__ + std::string(" ] Time cannot be negative")
         ); 
@@ -195,8 +207,9 @@ void VirtualClock::assertInit()
 
 void VirtualClock::IRQinit(){}
 
-VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(1.0), vcdot_km1(1.0), a(0.05), beta(0.025),
-                            k(0), T0(0), init(false), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
+VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(1), vcdot_km1(1), 
+                                inv_vcdot_k(1), inv_vcdot_km1(1), a(0.05), beta(0.025), k(0), T0(0), init(false), 
+                                fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
 
 

@@ -23,8 +23,8 @@ kernel/scheduler/priority/priority_scheduler.cpp                           \
 kernel/scheduler/control/control_scheduler.cpp                             \
 kernel/scheduler/edf/edf_scheduler.cpp                                     \
 time/timeconversion.cpp                                                    \
-time/flopsync3.cpp														   \
 time/flopsync_vht.cpp													   \
+time/flopsync3.cpp													   \
 filesystem/file_access.cpp                                                 \
 filesystem/file.cpp                                                        \
 filesystem/stringpart.cpp                                                  \
@@ -44,7 +44,7 @@ util/util.cpp                                                              \
 util/unicode.cpp                                                           \
 util/version.cpp                                                           \
 util/crc16.cpp                                                             \
-util/lcd44780.cpp
+util/lcd44780.cpp														   \
 
 ## Add the architecture dependand sources to the list of files to build.
 ## ARCH_SRC will contain different source files depending on which

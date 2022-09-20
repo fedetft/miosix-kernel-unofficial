@@ -58,14 +58,14 @@ public:
      * interfaces names
      *  
      */
-    long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
+    inline long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
 
     /**
      * @brief same as IRQgetUncorrectedTimeNs, just unified according to clock correction
      * interfaces names
      *  
      */
-    long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
+    inline long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
     
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
@@ -97,6 +97,8 @@ public:
      */
     long long getUncorrectedTimeTicks(long long vc_t);
 
+    // TODO: (s) spiegare che non è fatto il IRQ tutto a parte operazioni critiche
+    // perchè tanto update ogni 10s (IRQ se cambio variabili che rompono getTime())
     /**
      * Updates the internal value of the virtual clock
      * @param vc_k time of the virtual clock at the step t_0 + kT
@@ -108,10 +110,10 @@ public:
      * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
-    void IRQupdateVC(long long vc_k);
     void updateVC(long long vc_k);
 
-    // TODO: (s) change description
+    // TODO: (s) change description + spiegare che non è fatto il IRQ tutto a parte operazioni critiche
+    // perchè tanto update ogni 10s (IRQ se cambio variabili che rompono getTime())
     /**
      * Updates the internal value of the virtual clock
      * @param vc_k time of the virtual clock at the step t_0 + kT
@@ -123,7 +125,6 @@ public:
      * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
-    void IRQupdateVC(long long vc_k, long long e_k);
     void updateVC(long long vc_k, long long e_k);
 
     /**
@@ -165,7 +166,7 @@ private:
      * @param vc_t virtual clock time (ns)
      * @return long long uncorrected time (ns)
      */
-    long long deriveTsnc(long long vc_t);
+    inline long long deriveTsnc(long long vc_t);
 
     /**
      * Checks whether a passed time is negative or not. 
@@ -191,8 +192,10 @@ private:
     
     unsigned long long syncPeriod;
     
-    fp32_32 vcdot_k;    // slope of virtual clock at step k 
-    fp32_32 vcdot_km1;  // slope of virtual clock at step k-1
+    fp32_32 vcdot_k;        // slope of virtual clock at step k 
+    fp32_32 vcdot_km1;      // slope of virtual clock at step k-1
+    fp32_32 inv_vcdot_k;    // inverse of slope of virtual clock at step k 
+    fp32_32 inv_vcdot_km1;  // inverse of slope of virtual clock at step k-1
 
     // TODO: (s) move this to flopsync controller
     const fp32_32 a;

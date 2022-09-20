@@ -52,7 +52,7 @@ public:
      * \param error synchronization error
      * \return a pair with the clock correction, and the receiver window
      */
-    long long computeCorrection(long long e_k);
+    fp32_32 computeCorrection(long long e_k);
     
     /**
      * Used after a resynchronization to reset the controller state
@@ -67,7 +67,7 @@ public:
     /**
      * \return getter for the clock correction u(k)
      */
-    long long getClockCorrection();
+    fp32_32 getClockCorrection();
     
 private:
     /**
@@ -83,15 +83,15 @@ private:
     long long e_km2;
 
     // corrections
-    long long u_k;
-    long long u_km1;
-    long long u_km2;
+    fp32_32 u_k;
+    fp32_32 u_km1;
+    fp32_32 u_km2;
 
     // controller
-    fp32_32 factorP;
+    fp32_32 factorP = fp32_32(0.15);
 };
 
-}
+} // namespace miosix
 
 #endif //FLOPSYNC_3_H
 
