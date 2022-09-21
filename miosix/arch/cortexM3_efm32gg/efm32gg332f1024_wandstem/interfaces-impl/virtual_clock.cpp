@@ -95,7 +95,6 @@ void VirtualClock::updateVC(long long vc_k)
     this->k += 1;
 }
 
-// TODO: (s) pre-compute inv_vcdot_k(m1) + update it + use inv_vcdot_km1(m1)
 void VirtualClock::updateVC(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
@@ -104,30 +103,49 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
 
     // controller correction
     // TODO: (s) need saturation for correction!
-    //double u_k = fsync->computeCorrection(e_k);
     fp32_32 u_k = fsync->computeCorrection(e_k);
+
+    // estimating clock skew absorbing initial offset
+    static bool offsetInit = false;
+    long long deltaT = vc_k - vc_km1;
+    if (!offsetInit) { offsetInit = true; deltaT -= T0; }
+    long long D_k = ( deltaT * inv_vcdot_km1 ) - syncPeriod;
     
-    // estimating clock skew
-    //fp32_32 D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
-    fp32_32 D_k = ( fp32_32(vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
+    //long long D_k = ( (vc_k - vc_km1) * inv_vcdot_km1 ) - syncPeriod;
+
+    // pre computing multiplicative factors
+    // This was necessary because D_k + syncPeriod is a very big number and its inverse
+    // was not rapresentable correctly on just 32 bit leading to an approximated and therefore
+    // wrong vcdot_k factor.
+    static const long long prescaleExp = 8; // scale exponent, 2^n
+
+    // prescale denum by factor of 256
+    static const long long x = syncPeriod>>prescaleExp;
+    fp32_32 GDB_4 = fp32_32((D_k>>prescaleExp) + x);
+
+    // rescale everything by factor of 256
+    static const fp32_32 rescaleFactor = fp32_32(1LL<<8).fastInverse(); 
 
     // performing virtual clock slope correction disabling interrupt
     {
         FastInterruptDisableLock dlck;
 
-        this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / (D_k + syncPeriod);
+        //this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
+        this->vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / GDB_4) * rescaleFactor;
+        this->inv_vcdot_k = vcdot_k.fastInverse();
 
         // next iteration values update
         this->tsnc_km1 = deriveTsnc(vc_k);
         this->vc_km1 = vc_k;
         this->vcdot_km1 = this->vcdot_k;
+        this->inv_vcdot_km1 = this->inv_vcdot_k;
     }
 }
 
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
 {
-    {FastInterruptDisableLock lck;
-    IRQsetSyncPeriod(syncPeriod);}
+    FastInterruptDisableLock lck;
+    IRQsetSyncPeriod(syncPeriod);
 }
 
 void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
@@ -164,23 +182,7 @@ inline long long VirtualClock::deriveTsnc(long long vc_t)
     assertInit();
     assertNonNegativeTime(vc_t);
 
-    auto GDB_1 = vc_t - vc_km1;
-    auto GDB_2 = tsnc_km1 * vcdot_km1;
-    auto GDB_3 = GDB_1 + GDB_2;
-    long long GDB_4 = static_cast<long long>(GDB_3);
-    int64_t absVal = std::abs(vcdot_km1.value);
-    int32_t absDecimalVal = static_cast<int32_t>(absVal & 0x00000000FFFFFFFF);
-    int32_t absIntegerVal = static_cast<int32_t>((absVal & 0xFFFFFFFF00000000) >> 32);
-    long long GDB_5 = GDB_4 * inv_vcdot_km1;
-
-    // TODO: (s) maybe i need basic correction to set time taking into account time it takes to perform this operation??
-    //return static_cast<long long>(fp32_32(vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1);
-    long long GDB_6 = vc_t - GDB_5;
-    if(vc_t >= 4e9)
-    {
-        long long GDB_20 = 10;
-    }
-    return GDB_5;
+    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) * inv_vcdot_km1;
 }
 
 void VirtualClock::assertNonNegativeTime(long long time)

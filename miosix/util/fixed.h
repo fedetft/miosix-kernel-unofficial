@@ -582,7 +582,13 @@ inline fp32_32 fp32_32::fastInverse() const
     y  = y * ( 2 - (y * x2) );   // 2nd iteration
     y  = y * ( 2 - (y * x2) );   // 3rd iteration
 
-    return fp32_32(signum<double>(number) * y);
+    return fp32_32(signum<int64_t>(this->value) * y);
+}
+
+template<>
+inline fp32_32 fp32_32::operator / (const fp32_32& f) const
+{
+    return (*this) * f.fastInverse();
 }
 
 // end of specializations for 32.32 fixed point

@@ -38,7 +38,7 @@
 
 namespace miosix
 {
-
+// TODO: (s) muovere vht e vc dentro un header clock_sync.h
 template<typename Hsc_TA, typename Rtc_TA>
 class Vht : public CorrectionTile
 {
@@ -200,7 +200,62 @@ public:
      * @brief 
      * 
      */
+    void IRQresyncClock(){
+        long long nowRtc = Rtc_TA::IRQgetTimerCounter();
+        long long syncAtRtc = nowRtc + 2; // TODO: (s) generalize for random quirk
+        //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
+        long long prevCOMP1 = Rtc_TA::IRQgetVhtTimerMatchReg();
+        Rtc_TA::IRQsetVhtMatchReg(syncAtRtc);
+
+        //Virtual high resolution timer, init without starting the input mode!
+        Hsc_TA::IRQinitVhtTimer();
+        Hsc_TA::IRQstartVhtTimer();
+        
+        Rtc_TA::IRQclearVhtMatchFlag();
+        //Clean the buffer to avoid false reads
+        Hsc_TA::IRQgetVhtTimerCounter();
+        Hsc_TA::IRQgetVhtTimerCounter();
+        while(!Rtc_TA::IRQgetVhtMatchFlag()); // wait for first compare
+
+        long long timestamp = Hsc_TA::IRQgetVhtTimerCounter();
+        //Got the values, now polishment of flags and register
+        Rtc_TA::IRQclearVhtMatchFlag();
+        Hsc_TA::IRQclearVhtMatchFlag();
+        
+        Rtc_TA::IRQsetVhtMatchReg(prevCOMP1+1); // TODO: (s) generalize quirk
+        
+        long long syncAtHrt = mul64x32d32(syncAtRtc, 1464, 3623878656);
+        vhtClockOffset = syncAtHrt - timestamp;
+        syncPointExpectedHsc = syncAtHrt;
+        nextSyncPointRtc = syncAtRtc + syncPeriodRtc;
+        syncPointTheoreticalHsc = syncAtHrt;
+        syncPointActualHsc = syncAtHrt;
+
+        // clear flags not to resync immediately
+        Hsc_TA::IRQclearVhtMatchFlag();
+        Hsc_TA::IRQgetVhtTimerCounter();
+    }
+
+    /**
+     * @brief 
+     * 
+     */
     inline bool IRQisCorrectionEnabled() { return enabledCorrection; }
+
+    /**
+     * @brief 
+     * 
+     */
+    inline void IRQdisableCorrection()   
+    { 
+        //RTC->IEN &= ~RTC_IEN_COMP1; // may be used for pre-wake up timer etc
+        this->enabledCorrection = false; 
+    }
+    inline void IRQenableCorrection()    
+    { 
+        //RTC->IEN |= RTC_IEN_COMP1; // may be used for pre-wake up timer etc
+        this->enabledCorrection = true; 
+    }
     
 private:
     ///
@@ -244,50 +299,7 @@ private:
         IRQerrorLog("\r\n\n");
         miosix_private::IRQsystemReboot();
     }
-
-    /**
-     * @brief 
-     * 
-     */
-    /*
-    void IRQresyncClockVht(){
-        long long nowRtc=rtc.IRQgetValue();
-        long long syncAtRtc=nowRtc+2;
-        //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
-        long long prevCOMP1=RTC->COMP1;
-        RTC->COMP1=syncAtRtc-1;
-        //Virtual high resolution timer, init without starting the input mode!
-        TIMER2->CC[2].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
-                | TIMER_CC_CTRL_FILT_DISABLE
-                | TIMER_CC_CTRL_INSEL_PRS
-                | TIMER_CC_CTRL_PRSSEL_PRSCH4
-                | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-        PRS->CH[4].CTRL= PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
-        RTC->IFC=RTC_IFC_COMP1;
-        
-        //Clean the buffer to avoid false reads
-        TIMER2->CC[2].CCV;
-        TIMER2->CC[2].CCV;
-        
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
-
-        while(!(RTC->IF & RTC_IF_COMP1));
-        long long timestamp=b.IRQgetVhtTimestamp();
-        //Got the values, now polishment of flags and register
-        RTC->IFC=RTC_IFC_COMP1;
-        TIMER2->IFC=TIMER_IFC_CC2;
-        
-        RTC->COMP1=prevCOMP1;
-        while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
-        long long syncAtHrt=mul64x32d32(syncAtRtc, 1464, 3623878656);
-        HRTB::clockCorrection=syncAtHrt-timestamp;
-        HRTB::syncPointHrtExpected=syncAtHrt;
-        HRTB::nextSyncPointRtc=syncAtRtc+HRTB::syncPeriodRtc;
-        HRTB::syncPointHrtTheoretical=syncAtHrt;
-        HRTB::syncPointHrtActual=syncAtHrt;
-        vht.IRQoffsetUpdate(HRTB::syncPointHrtTheoretical,HRTB::syncPointHrtExpected);
-    }
-    */
+    
 
     TimeConversion tc;
 
