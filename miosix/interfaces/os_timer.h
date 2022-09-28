@@ -1,5 +1,6 @@
 /***************************************************************************
- *   Copyright (C) 2015-2021 by Terraneo Federico, Sasan Golchin           *
+ *   Copyright (C) 2015-2022 by Terraneo Federico, Sasan Golchin,          *
+ *                              Alessandro Sorrentino                      *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -532,27 +533,6 @@ public:
  * ...
  */
 
-///
-// Event and wait support structs
-///
-
-/**
- * @brief 
- * 
- */
-enum class WaitResult
-{
-    WAKEUP_IN_THE_PAST,
-    WAIT_COMPLETED,
-    WAITING
-};
-enum class EventResult
-{
-    EVENT,
-    EVENT_IN_THE_PAST,
-    EVENT_TIMEOUT,
-    BUSY,
-};
 
 ///
 // Reverse typelist logic
@@ -580,6 +560,8 @@ using reversed_typelist = decltype(reverse(std::declval<typelist<Ts...>>()));
 ///
 // Actual time proxy implementation
 ///
+// TODO: (s) dare possibilità a timerProxy di convertire il tempo
+// TODO: (s) cambiare nome alla classe
 template <typename Hsc_TA, typename... CorrectionStack>
 class TimerProxy
 {
@@ -664,10 +646,12 @@ public:
         return hsc->IRQTimerFrequency();
     }
 
+
     /**
-     * @brief 
+     * @brief DELETEME: (s)
      * 
      */
+    /*
     // TODO: (s) make everyting static
     inline void signalEvent()         
     { 
@@ -686,13 +670,13 @@ public:
             eventTimeout=true; 
             eventThread->wakeup(); 
         } 
-    }
+    }*/
 
     /**
-     * @brief 
+     * @brief DELETEME: (s)
      * 
      */
-    inline EventResult waitEvent(long long timeoutNs) { return absoluteWaitEvent(getTime() + timeoutNs); }
+    /*inline EventResult waitEvent(long long timeoutNs) { return absoluteWaitEvent(getTime() + timeoutNs); }
     inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs)
     {
         // lock guard, this allows only one thread to access waitEvent per time
@@ -737,7 +721,7 @@ public:
 
         // timeout
         return EventResult::EVENT_TIMEOUT;  
-    }
+    }*/
 
 private:
     ///
@@ -831,8 +815,6 @@ private:
     Hsc_TA * hsc = nullptr;
 
     // event
-    std::condition_variable event_cv;
-    std::mutex event_mutex;
     Thread* eventThread = nullptr;
     bool event = false;
     bool eventTimeout = false;

@@ -75,8 +75,29 @@ namespace miosix {
  *
  *     static inline void IRQsetVhtMatchReg(unsigned int v) {}
  *
- * Implements Transceiver required functions
+ * Implements Event timeout functions
  *
+ */
+
+/**
+ * Timers configuration: 
+ * 
+ * TIMER0->CC[0] free
+ * TIMER0->CC[1] free
+ * TIMER0->CC[2] free
+ * 
+ * TIMER1->CC[0] OUTPUT_COMPARE, os IRQ (lower 32-bit)
+ * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ (upper 32-bit)
+ * 
+ * TIMER1->CC[1] OUTPUT_COMPARE, event timeout or trigger (lower 32-bit)
+ * TIMER2->CC[1] OUTPUT_COMPARE, event timeout or trigger (upper 32-bit)
+ * 
+ * TIMER1->CC[2] INPUT_CAPTURE, timestamping (lower 32-bit)
+ * TIMER2->CC[2] INPUT_CAPTURE, timestamping (upper 32-bit)
+ * 
+ * TIMER3->CC[0] INPUT_CAPTURE, VHT
+ * TIMER3->CC[1] free
+ * TIMER3->CC[2] free
  */
 
 class Hsc : public TimerAdapter<Hsc, 32>
@@ -345,10 +366,10 @@ public:
     {
         // disable output compare interrupt
         TIMER1->IEN &= ~TIMER_IEN_CC1; // signal capture and compare register for OS interrupts
-        TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        //TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
         TIMER2->IEN &= ~TIMER_IEN_CC1;
-        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        //TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
         // clear output compare flag
         TIMER1->IFC |= TIMER_IFC_CC1;
