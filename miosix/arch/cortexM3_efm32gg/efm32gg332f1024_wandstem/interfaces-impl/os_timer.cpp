@@ -92,8 +92,7 @@ unsigned int osTimerGetFrequency()
 } //namespace miosix 
 
 #define TIMER_INTERRUPT_DEBUG
-
-std::atomic<bool> timeToTrigger(false);
+#define TIMER_EVENT_DEBUG
 
 /**
  * TIMER1 interrupt routine
@@ -108,13 +107,12 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {
+    // save value of TIMER1 counter right away to check for compare later
+    unsigned int upperTimerCounter = TIMER2->CNT;
+
     static miosix::TimerProxySpec * timerProxy = &miosix::TimerProxySpec::instance();
     static miosix::Hsc * hsc = timerProxy->getHscReference();
-
-    // second part of output compare for timer or event match. If we reached this interrupt, it means
-    // we already matched the upper part of the timer and we have now matched the lower part.
     
-    //hsc->IRQhandler();
 
     #ifdef TIMER_INTERRUPT_DEBUG
     if(hsc->IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
@@ -124,38 +122,40 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     if(hsc->IRQgetMatchFlag() || hsc->lateIrq || hsc->IRQgetOverflowFlag())
         hsc->IRQhandler();
 
-    // event flag timeout or trigger (CC[1]) 
-    if(hsc->IRQgetEventFlag() || hsc->lateEvent)
-    {
-        Hsc::IRQclearEventFlag();
-        long long tick = hsc->IRQgetTimeTick();
-        if(tick >= hsc->IRQgetEventTick())
+    // first part of output compare for event timeout or trigger (CC[1])
+    if(TIMER1->IF & TIMER_IF_CC1)
+    {   
+        #ifdef TIMER_EVENT_DEBUG
+        greenLedOff();
+        #endif
+        
+        // disable output compare interrupt on channel 1 for least significant timer
+        TIMER1->IEN &= ~TIMER_IEN_CC1;
+        TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER1->IFC |= TIMER_IFC_CC1;
+
+        // set and enable output compare interrupt on channel 1 for most significant timer
+        TIMER2->CC[1].CCV = hsc->IRQgetNextCCeventUpper();
+        TIMER2->IEN |= TIMER_IEN_CC1;
+        TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        if(events::getEventDirection() == events::EventDirection::OUTPUT)
         {
-            // case timeout
-            if(events::getEventDirection() == events::EventDirection::INPUT)
-            {
-                events::IRQsignalEventTimeout();
-                hsc->lateEvent = false;
-            }
-            // case trigger, wait for "+1" in upper TIMER2 part to trigger STXON with alternate function
-            else if(events::getEventDirection() == events::EventDirection::OUTPUT)
-            {
-                // set and enable output compare interrupt on channel 1 for most significant timer
-                if(TIMER2->CC[1].CCV != 0) TIMER2->CC[1].CCV += 1;
-                TIMER2->IEN |= TIMER_IEN_CC1; // to wake up waiting thread
-                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-                // connect TIMER2->CC1 to pin PA9 (stxon) on #0
-                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-
-                timeToTrigger = true;
-            }
-            else ; // unkonwn state, shouldn never reach here
+            // connect TIMER2->CC1 to pin PA9 (stxon) on #0
+            TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+            TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+            TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
         }
-        // FIXME: (s) se tick <= devo resettare il TIMER2! 
-        // magari ho interrupt y<<16 | z e sono a x<<32 | y<<16 | z ma devo aspettaer (x+1)<<32 | y<<16 | z
+
+        // if by the time we get here, the upper part of the counter has already matched
+        // the counter register or got past it, call TIMER2 handler directly instead of waiting
+        // for the other round of compare
+        // FIXME: (s) non funziona se sto aspettando parte alta dopo overflow (e.g. tono 65123 e devo aspettare 14)
+        /*if(upperTimerCounter >= hsc->IRQgetNextCCeventUpper())
+        {
+            TIMER2->IFS |= TIMER_IFS_CC1;
+            Hsc::IRQforcePendingEvent(); //TIMER2_IRQHandler();
+        }*/
     }
 
     // only enabled TIMER2 IRQ, both on same PRS
@@ -192,16 +192,13 @@ void __attribute__((naked)) TIMER2_IRQHandler()
 // it may cause problems if we're calling TIMER2 twice for the sleep while waiting for TIMER1?
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
-
     // save value of TIMER1 counter right away to check for compare later
     unsigned int lowerTimerCounter = TIMER1->CNT;
 
+    static miosix::Hsc * hsc = &miosix::Hsc::instance();
+
     // TIMER2 overflow, pending bit trick.
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
-
-    // if just overflow, no TIMER2 counter register match, return
-    //if(!(TIMER2->IF & TIMER_IF_CC0)) return;
     
     // first part of output compare for timer match, disable output compare interrupt
     // for TIMER2 and turn of output comapre interrupt of TIMER1
@@ -226,56 +223,42 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         // if by the time we get here, the lower part of the counter has already matched
         // the counter register or got past it, call TIMER1 handler directly instead of waiting
         // for the other round of compare
-        if(lowerTimerCounter >= hsc->IRQgetNextCCticksLower()) 
+        // FIXME: (s) test! see same event case comment
+        /*if(lowerTimerCounter >= hsc->IRQgetNextCCticksLower()) 
         {
             TIMER1->IFS |= TIMER_IFS_CC0;
-            NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
-        }
+            Hsc::IRQforcePendingIrq(); //TIMER1_IRQHandler();
+        }*/
     }
 
-    // first part of output compare for event match or timeout
-    if(TIMER2->IF & TIMER_IF_CC1)
-    {   
-        // disable output compare interrupt on channel 1 for most significant timer
-        TIMER2->IEN &= ~TIMER_IEN_CC1;
-        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->IFC |= TIMER_IFC_CC1;
-
-
-        // specific case in which our timeout is to trigger wire target GPIO to TIMER1 interrupt to fire 
-        // because the alternate function for the GPIO connected to the STXON is
-        // connected only to TIMER2 CC1, we have to wait for ticks-1 on the upper part,
-        // then wait for the lower part and then wait for the next upper part again 
-        //  TIMER2---ISR--->TIMER1---ISR--->TIMER2-->trigger on STXON
-        // (upper-1)        (lower)          (+1)
-        if(events::getEventDirection() == events::EventDirection::OUTPUT && timeToTrigger)
+    // second part of output compare for ttimeout or trigger (CC[1]). If we reached this interrupt, it means
+    // we already matched the lower part of the timer and we have now matched the upper part.
+    if(hsc->IRQgetEventFlag() || hsc->lateEvent)
+    {
+        Hsc::IRQclearEventFlag();
+        long long tick = hsc->IRQgetTimeTick();
+        if(tick >= hsc->IRQgetEventTick())
         {
-            events::IRQsignalEventTimeout();
-            timeToTrigger = false;
+            #ifdef TIMER_EVENT_DEBUG
+            greenLedOn();
+            #endif
 
-            // disconnect TIMER2->CC1 to pin PA9 (stxon)
-            TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
-            TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
-            TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
-        }
-        // disable output compare interrupt for TIMER2 and turn of output comapre interrupt of TIMER1
-        else // event direciton INPUT or just not the right time to trigger
-        {
-            // set and enable output compare interrupt on channel 1 for least significant timer
-            TIMER1->CC[1].CCV = hsc->IRQgetNextCCeventLower(); // underflow handling
-            TIMER1->IEN |= TIMER_IEN_CC1;
-            TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            // if by the time we get here, the lower part of the counter has already matched
-            // the counter register or got past it, call TIMER1 handler directly instead of waiting
-            // for the other round of compare
-            if(lowerTimerCounter >= hsc->IRQgetNextCCeventLower()) 
+            // specific case trigger
+            if(events::getEventDirection() == events::EventDirection::OUTPUT)
             {
-                TIMER1->IFS |= TIMER_IFS_CC1;
-                NVIC_SetPendingIRQ(TIMER1_IRQn); //TIMER1_IRQHandler();
+                // disconnect TIMER2->CC1 to pin PA9 (stxon)
+                TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
             }
+
+            // signal timeout or trigger
+            events::IRQsignalEventTimeout();
         }
-    } 
+        // FIXME: (s) se tick <= devo resettare il TIMER2! 
+        // magari ho interrupt y<<16 | z e sono a x<<32 | y<<16 | z ma devo aspettaer (x+1)<<32 | y<<16 | z
+        hsc->lateEvent = false;
+    }
 
     // Timestamping, wake up thread waiting for timestamp
     if(TIMER2->IF & TIMER_IF_CC2)

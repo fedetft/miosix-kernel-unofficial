@@ -127,7 +127,7 @@ bool configureEvent(Channel channel, EventDirection direction)
 // TODO: (s) refactor as absolute wait with max long long (infinite timeout)
 std::pair<EventResult, long long> waitEvent(Channel channel)
 {
-    // check if channel has been configured correctly (INPUT_CAPTURE)
+    /*// check if channel has been configured correctly (INPUT_CAPTURE)
     if (currentDirection != EventDirection::INPUT) throw BadEventTimerConfiguration();
 
     FastInterruptDisableLock dLock;
@@ -164,7 +164,8 @@ std::pair<EventResult, long long> waitEvent(Channel channel)
     // correct time
     long long correctedTimestampNs = timerProxy->IRQcorrectTimeNs(timestampNs);
 
-    return std::make_pair(EventResult::EVENT, correctedTimestampNs);
+    return std::make_pair(EventResult::EVENT, correctedTimestampNs);*/
+    return waitEvent(channel, std::numeric_limits<long long>::max());
 }
 std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs) 
 { 
@@ -264,14 +265,8 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     // register current thread for wakeup
     eventThread = Thread::IRQgetCurrentThread();
 
-    // set up timeout timer (avoid underflow if i have upper timer part as 0) -> we have one ISR call delay
-    long long absoluteTickTsnc = tc.ns2tick(absoluteNsTsnc);
-    long long upperTicks = (absoluteTickTsnc>>16) & 0x000000000000FFFF;
-    long long lowerTicks = absoluteTickTsnc & 0x000000000000FFFF;
-    // pre-wake on TIMER2 so we can call it again from TIMER1 (TIMER2->TIMER1->TIMER2->STXON)
-    long long scaledTime =  upperTicks != 0 ? tc.tick2ns( ((upperTicks-1)<<16) | lowerTicks ) : absoluteNsTsnc;
-
-    hsc->IRQsetEventNs(scaledTime);
+    // configure event on timer side
+    hsc->IRQsetEventNs(absoluteNsTsnc);
 
     eventTimeout = false;
     // wait for trigger to be fired

@@ -185,7 +185,7 @@ unsigned int osTimerGetFrequency();
  * number of ticks in the future the timer must be set, otherwise keep at 0 
  */
 // TODO: (s) use template for number of events (e.g. event 0 transc, event 1 gpio, ...)
-template<typename D, unsigned bits, unsigned quirkAdvance=0, unsigned eventChannels=0>
+template<typename D, unsigned bits, unsigned quirkAdvance=0> //, unsigned eventChannels=0> // TODO: (s) remove?
 class TimerAdapter
 {
 public:
@@ -342,7 +342,7 @@ public:
         auto tick2 = tick + quirkAdvance;
         upperEventTick = tick2 & upperMask;
         D::IRQsetEventMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
-        if(IRQgetEventTick() >= tick)
+        if(IRQgetTimeTick() >= tick)
         {
             D::IRQforcePendingEvent();
             lateEvent=true;

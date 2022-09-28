@@ -125,7 +125,7 @@ public:
 
     static inline unsigned int IRQgetTimerMatchReg()
     {
-        return (static_cast<unsigned int>(TIMER2->CC[0].CCV)<<16 ) | TIMER1->CC[0].CCV;
+        return (TIMER2->CC[0].CCV<<16) | TIMER1->CC[0].CCV;
     }
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
@@ -176,7 +176,7 @@ public:
         TIMER1->IFC |= TIMER_IFC_CC0;
 
         // clear pending interrupt
-        NVIC_ClearPendingIRQ(TIMER1_IRQn);
+        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
     }
 
     static inline void IRQforcePendingIrq()
@@ -332,14 +332,14 @@ public:
     ///
     static inline unsigned int IRQgetEventMatchReg()
     {
-        return (static_cast<unsigned int>(TIMER2->CC[1].CCV)<<16 ) | TIMER1->CC[1].CCV;
+        return (TIMER2->CC[1].CCV<<16) | TIMER1->CC[1].CCV;
     }
 
     static inline void IRQsetEventMatchReg(unsigned int v)
-    {
-        // clear previous TIMER2 setting
-        TIMER2->IFC |= TIMER_IFC_CC1;
-        //NVIC_ClearPendingIRQ(TIMER2_IRQn);
+    {  
+        // clear previous TIMER1 setting
+        TIMER1->IFC |= TIMER_IFC_CC1;
+        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
         uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
@@ -352,14 +352,15 @@ public:
         Hsc::nextCCeventUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
         
         // set and enable output compare interrupt on channel 0 for most significant timer
-        TIMER2->CC[1].CCV = Hsc::nextCCeventUpper;
-        TIMER2->IEN |= TIMER_IEN_CC1;
-        TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER1->CC[1].CCV = Hsc::nextCCeventLower;
+        TIMER1->IEN |= TIMER_IEN_CC1;
+        TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
 
     static inline bool IRQgetEventFlag()
     {
-        return TIMER1->IF & TIMER_IF_CC1;
+        //return TIMER1->IF & TIMER_IF_CC1;
+        return TIMER2->IF & TIMER_IF_CC1;
     }
 
     static inline void IRQclearEventFlag()
@@ -381,7 +382,7 @@ public:
 
     static inline void IRQforcePendingEvent()
     {
-        NVIC_SetPendingIRQ(TIMER1_IRQn);
+        NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
 
     ///
