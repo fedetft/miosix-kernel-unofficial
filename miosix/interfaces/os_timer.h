@@ -355,7 +355,7 @@ public:
      */
     inline void IRQsetEventNs(long long ns)
     {
-        IRQsetEventTick(tc.ns2tick(ns));
+        IRQsetEventTick(tc.ns2tick(ns)); // FIXME: (s) introduces convesion error + in hsc -1? sure?
     }
 
     /**
