@@ -68,18 +68,20 @@ static TimeConversion tc(Hsc::IRQTimerFrequency()); // FIXME: (s) if i use hsc->
 
 static EventDirection currentDirection = EventDirection::DISABLED;
 
-// channel is not needed because peripherals can be wired in a passive way using PRS(?) TODO: (s) check if GPIO need something for trigger 
+// channel is not needed?
 bool configureEvent(Channel channel, EventDirection direction)
 {
+    // check channel compatibility
+    //e.g. input in STXON return false...
+
     // save event direction state
     currentDirection = direction;
 
-    FastInterruptDisableLock dlck;
+    FastInterruptDisableLock dLock;
 
     // default is disabled state
     uint32_t TIMER1_FLAGS = 0;
     uint32_t TIMER2_FLAGS = 0;
-    uint32_t PRS_FLAGS    = 0;
     
     // INPUT_CAPTURE
     if(direction == EventDirection::INPUT)
@@ -89,24 +91,6 @@ bool configureEvent(Channel channel, EventDirection direction)
                                 | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
         TIMER2_FLAGS = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS 
                                 | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-
-        // TODO: (s) move to wait
-        // connect TIMER to GPIO using PRS
-        PRS_FLAGS = PRS_CH_CTRL_SOURCESEL_GPIOH;
-        
-        // selecting right channel for PRS binding
-        switch (channel)
-        {
-        case Channel::SFD:
-            PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN4;
-            break;
-        case Channel::STXON:
-            PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN12;
-            break;
-        default: // Channel::TIMESTAMP_IN_OUT:
-            PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN12;
-            break;
-        }
     }
     // OUTPUT_COMPARE
     else if(direction == EventDirection::OUTPUT)
@@ -119,52 +103,17 @@ bool configureEvent(Channel channel, EventDirection direction)
 
     TIMER1->CC[2].CTRL = TIMER1_FLAGS;
     TIMER2->CC[2].CTRL = TIMER2_FLAGS;
-    PRS->CH[0].CTRL    = PRS_FLAGS;
 
     return true;
 }
 
-// TODO: (s) refactor as absolute wait with max long long (infinite timeout)
+
+///
+// Event or timeout
+///
+
 std::pair<EventResult, long long> waitEvent(Channel channel)
 {
-    /*// check if channel has been configured correctly (INPUT_CAPTURE)
-    if (currentDirection != EventDirection::INPUT) throw BadEventTimerConfiguration();
-
-    FastInterruptDisableLock dLock;
-
-    // enable timers interrupt (PRS triggers both at the same time, just one needed)
-    TIMER2->IEN |= TIMER_IEN_CC2;
-    //TIMER1->IEN |= TIMER_IEN_CC2;
-
-    // register current thread for wakeup
-    eventThread = Thread::IRQgetCurrentThread();
-
-    // TODO: (s) future idea: go to sleep and wake up if GPIO is high, then resync clock
-    event = false;
-    while(!event) // avoid spurious wakeup(s) (risk of race condition)
-    {
-        Thread::IRQwait(); //< wait for signal_event
-        {
-            FastInterruptEnableLock eLock(dLock);
-            Thread::yield();
-        } 
-    }
-
-    // disable timer interrupts
-    TIMER2->IEN &= ~TIMER_IEN_CC2;
-    //TIMER1->IEN &= ~TIMER_IEN_CC2;
-
-    // reset event status
-    eventThread = nullptr;
-
-    // read captured timer value
-    long long timestampTick = hsc->upperTimeTick | (TIMER2->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
-    long long timestampNs = tc.tick2ns(timestampTick);
-
-    // correct time
-    long long correctedTimestampNs = timerProxy->IRQcorrectTimeNs(timestampNs);
-
-    return std::make_pair(EventResult::EVENT, correctedTimestampNs);*/
     return waitEvent(channel, std::numeric_limits<long long>::max());
 }
 std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs) 
@@ -182,6 +131,29 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     if (!gotLock) return std::make_pair(EventResult::BUSY, 0);
 
     FastInterruptDisableLock dLock;
+
+    // connect correct channel
+    uint32_t PRS_FLAGS = 0;
+
+    // connect TIMER to GPIO using PRS (GPIOH--PRS-->TIMER)
+    PRS_FLAGS = PRS_CH_CTRL_SOURCESEL_GPIOH;
+    
+    // selecting right channel for PRS binding
+    // TODO: (s) non gestire casi non possibili
+    switch (channel)
+    {
+    case Channel::SFD: // PA8, excChB including SFD and FRM_DONE
+        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN8;
+        break;
+    case Channel::STXON: // PA9
+        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN9;
+        break;
+    default: // Channel::TIMESTAMP_IN_OUT: 
+        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN12;
+        break;
+    }
+
+    PRS->CH[0].CTRL = PRS_FLAGS;
 
     // uncorrect time
     long long absoluteTimeoutNsTsnc = timerProxy->IRQuncorrectTimeNs(absoluteTimeoutNs);
@@ -222,6 +194,9 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     // reset event status
     eventThread = nullptr;
 
+    // disconnect GPIOH--PRS-->TIMER connection
+    PRS->CH[0].CTRL = 0;
+
     // event received before timeout
     if(event)
     {
@@ -239,6 +214,9 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
 }
 
+///
+// Trigger
+///
 EventResult triggerEvent(Channel channel, long long ns) 
 { 
     return absoluteTriggerEvent(channel, getTime() + ns); 
@@ -292,6 +270,10 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     //TIMER2->IEN &= ~TIMER_IEN_CC1;
     //TIMER1->IEN &= ~TIMER_IEN_CC1;
 }
+
+///
+// Signals
+///
 
 void IRQsignalEvent()         
 { 
