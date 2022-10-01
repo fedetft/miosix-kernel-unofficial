@@ -151,6 +151,17 @@ public:
      */
     void IRQinit();
     
+    /**
+     * @brief 
+     * 
+     */
+    inline std::pair<fp32_32, long long> getFastCorrectionPair()
+    {
+        return std::make_pair(a_km1, b_km1); 
+    }
+
+    // DELETEME: (s)
+    inline fp32_32 getVcdot() { return this->vcdot_km1; }
     
 private:
     VirtualClock();
@@ -166,7 +177,7 @@ private:
      * @param vc_t virtual clock time (ns)
      * @return long long uncorrected time (ns)
      */
-    inline long long deriveTsnc(long long vc_t);
+    inline long long IRQderiveTsnc(long long vc_t);
 
     /**
      * Checks whether a passed time is negative or not. 
@@ -215,6 +226,9 @@ private:
     Flopsync3* fsync; // late init
     TimeConversion tc;
 
+    // fast correction parameters (ax + b)
+    fp32_32 a_km1;
+    long long b_km1;
 };
 }
 

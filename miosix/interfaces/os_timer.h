@@ -36,6 +36,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include "util/fixed.h"
 
 #ifdef WITH_VIRTUAL_CLOCK
 #include "interfaces/virtual_clock.h"
@@ -575,26 +576,6 @@ public:
         static TimerProxy tp;
         return tp;
     }
-    
-    /**
-     * @brief 
-     * 
-     * @return long long 
-     */
-    inline long long IRQgetTimeNs()
-    {
-        return IRQcorrectTimeNs(hsc->IRQgetTimeNs());
-    }
-
-    /**
-     * @brief 
-     * 
-     * @param ns 
-     */
-    inline void IRQsetIrqNs(long long ns)
-    {
-        hsc->IRQsetIrqNs(IRQuncorrectTimeNs(ns));
-    }
 
     /**
      * @brief 
@@ -609,12 +590,36 @@ public:
         // correciton stack init
         IRQinitCorrection<CorrectionStack...>::call();
 
+        // Time conversion init
+        tc = &(hsc->tc); // valid pointer as long as hsc instance exists (all the duration of the program)
     } 
-
-    Hsc_TA* getHscReference()
+    
+    /**
+     * @brief 
+     * 
+     * @return long long 
+     */
+    inline long long IRQgetTimeNs()
     {
-        return hsc;
+        return a * hsc->IRQgetTimeNs() + b; //IRQcorrectTimeNs(hsc->IRQgetTimeNs());
     }
+
+    /**
+     * @brief 
+     * 
+     * @param ns 
+     */
+    inline void IRQsetIrqNs(long long ns)
+    {
+        hsc->IRQsetIrqNs((ns - b) / a); // hsc->IRQsetIrqNs(IRQuncorrectTimeNs(ns));
+    }
+
+    /**
+     * @brief Get the Hsc Reference object
+     * 
+     * @return Hsc_TA* 
+     */
+    Hsc_TA* getHscReference() { return hsc; }
 
     /**
      * @brief 
@@ -626,11 +631,38 @@ public:
         hsc->IRQsetTimeNs(IRQuncorrectTimeNs(ns));
     }
 
+    /**
+     * @brief wrapper class
+     * 
+     * @param ns 
+     * @return long long 
+     */
+    inline long long ns2tick(long long ns)
+    {
+        return tc->ns2tick(ns);
+    }
+    inline long long tick2ns(long long tick)
+    {
+        return tc->tick2ns(tick);
+    }
+
+    /**
+     * @brief 
+     * 
+     * @param ns 
+     * @return long long 
+     */
     inline long long IRQcorrectTimeNs(long long ns)
     {
         return IRQcorrectTime<CorrectionStack...>::call(ns);
     }
 
+    /**
+     * @brief 
+     * 
+     * @param ns 
+     * @return long long 
+     */
     inline long long IRQuncorrectTimeNs(long long ns)
     {
         return IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns);
@@ -646,88 +678,29 @@ public:
         return hsc->IRQTimerFrequency();
     }
 
-
     /**
-     * @brief DELETEME: (s)
+     * @brief 
      * 
      */
-    /*
-    // TODO: (s) make everyting static
-    inline void signalEvent()         
-    { 
-        // avoid spurious wakeups
-        if(eventThread)
-        {
-            event=true; 
-            eventThread->wakeup();  
-        }
-    }
-    inline void signalEventTimeout()  
-    { 
-        // avoid spurious wakeups
-        if(eventThread)
-        {
-            eventTimeout=true; 
-            eventThread->wakeup(); 
-        } 
-    }*/
-
-    /**
-     * @brief DELETEME: (s)
-     * 
-     */
-    /*inline EventResult waitEvent(long long timeoutNs) { return absoluteWaitEvent(getTime() + timeoutNs); }
-    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs)
+    // TODO: (s) make it general
+    inline void IRQrecomputeFastCorrectionPair()
     {
-        // lock guard, this allows only one thread to access waitEvent per time
-        std::unique_lock<std::mutex> lck(this->event_mutex, std::try_to_lock);
-        bool gotLock = lck.owns_lock();
-        if (!gotLock) return EventResult::BUSY;
-        
-        FastInterruptDisableLock dLock;
-
-        long long absoluteTimeoutNsTsnc = IRQuncorrectTimeNs(absoluteTimeoutNs);
-
-        // if-guard, event in the past
-        if(hsc->IRQgetTimeNs() > absoluteTimeoutNsTsnc) return EventResult::EVENT_IN_THE_PAST;
-
-        // set up timeout timer
-        hsc->IRQsetEventNs(absoluteTimeoutNsTsnc);
-
-        // register current thread for wakeup
-        eventThread = Thread::IRQgetCurrentThread();
-
-        event = false;
-        eventTimeout = false;
-        // wait for condition or timeout interrupt
-        while(hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc && !event && !eventTimeout)
-        {
-            // putting thread to sleep, woken up by either timeout or desired interrupt
-            Thread::IRQwait();
-            {
-                FastInterruptEnableLock eLock(dLock);
-                Thread::yield();
-            }
-        }
-
-        // reset timeout timer
-        Hsc_TA::IRQclearEventFlag();
-        
-        // reset event status
-        eventThread = nullptr;
-
-        // event received before timeout
-        if(event) return EventResult::EVENT;
-
-        // timeout
-        return EventResult::EVENT_TIMEOUT;  
-    }*/
+        // FIXME: (s) remove instance of course and make it dependent from CorrectionStack
+        fp32_32 a1, a2;
+        long long b1, b2;
+        std::tie(a1, b1) = VirtualClock::instance().getFastCorrectionPair();
+        //std::tie(a2, b2) = VhtSpec::instance().getFastCorrectionPair();
+        this->a = a1;
+        this->b = b1;
+    }
 
 private:
     ///
     // Constructors
     ///
-    TimerProxy(){}
+    TimerProxy() : hsc(nullptr), tc(nullptr), 
+                    eventThread(nullptr), event(false), eventTimeout(false), 
+                    a(1), b(0) {}
     TimerProxy(const TimerProxy&)=delete;
     TimerProxy& operator=(const TimerProxy&)=delete;
 
@@ -812,12 +785,17 @@ private:
     ///
     // class variables
     ///
-    Hsc_TA * hsc = nullptr;
+    Hsc_TA * hsc;
+    TimeConversion * tc;
 
     // event
-    Thread* eventThread = nullptr;
-    bool event = false;
-    bool eventTimeout = false;
+    Thread * eventThread;
+    bool event;
+    bool eventTimeout;
+
+    // get time params
+    fp32_32 a;
+    long long b;
 };
 
 } //namespace miosix

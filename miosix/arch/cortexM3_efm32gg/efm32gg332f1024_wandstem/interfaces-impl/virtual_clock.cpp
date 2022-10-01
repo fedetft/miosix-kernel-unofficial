@@ -29,6 +29,8 @@
 #include "time/timeconversion.h"
 #include "kernel/logging.h"
 #include <stdexcept>
+#include "correction_types.h" 
+#include <algorithm> // DELETEME: (s)
 
 namespace miosix {
 
@@ -64,7 +66,7 @@ inline long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
 
     if(!init) return vc_t; // needed when system is booting up and until no sync period is set
     // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-    else return deriveTsnc(vc_t);
+    else return IRQderiveTsnc(vc_t);
 }
 
 long long VirtualClock::getUncorrectedTimeNs(long long vc_t)
@@ -95,6 +97,31 @@ void VirtualClock::updateVC(long long vc_k)
     this->k += 1;
 }
 
+long long closestPowerOfTwo(unsigned long long v)
+{
+    /*if(n < 1) return 0;
+    long long res = 1;
+    // Try all powers starting from 2^1
+    for (int i = 0; i < 8 * sizeof(unsigned long long); i++) {
+        long long curr = 1 << i;
+        // If current power is more than n, break
+        if (curr > n)
+            break;
+        res = curr;
+    }
+    return res;*/
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v++;
+
+    return v>>1;
+}
+
 void VirtualClock::updateVC(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
@@ -105,41 +132,86 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
     // TODO: (s) need saturation for correction!
     fp32_32 u_k = fsync->computeCorrection(e_k);
 
-    // estimating clock skew absorbing initial offset
+    // estimating clock skew absorbing initial offset if starting from zero
     static bool offsetInit = false;
+    static bool secondOffsetInit = false;
     long long deltaT = vc_k - vc_km1;
-    if (!offsetInit) { offsetInit = true; deltaT -= T0; }
+    if(offsetInit && !secondOffsetInit)
+    {
+        deltaT += T0;
+        secondOffsetInit = true;
+    }
+    if (!offsetInit) 
+    { 
+        offsetInit = true; 
+        setInitialOffset(vc_k); // sets T0
+        deltaT -= T0;
+    }
     long long D_k = ( deltaT * inv_vcdot_km1 ) - syncPeriod;
-    
+
+    //long long D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
+    //       ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
     //long long D_k = ( (vc_k - vc_km1) * inv_vcdot_km1 ) - syncPeriod;
 
+    // NOTE: this approach was discarded because of the poor rapresentation
+    // we were getting when inverting prescaledDenum for the division
+    // remember: in fp32_32, division is just multiplication by the reciprocal 
     // pre computing multiplicative factors
     // This was necessary because D_k + syncPeriod is a very big number and its inverse
     // was not rapresentable correctly on just 32 bit leading to an approximated and therefore
     // wrong vcdot_k factor.
-    static const long long prescaleExp = 8; // scale exponent, 2^n
+    /*static const long long prescaleExp = 24; // scale exponent, 2^n
 
-    // prescale denum by factor of 256
-    static const long long x = syncPeriod>>prescaleExp;
-    fp32_32 GDB_4 = fp32_32((D_k>>prescaleExp) + x);
+    // prescale denum by factor of 2^prescaleExp
+    static const long long prescaledSyncPeriod = syncPeriod>>prescaleExp;
+    // TODO: (s) usare prescaleOp alla potenza di due più vicina (spiegare che inverso di potenza di due invertibile senza approx)
+    fp32_32 prescaledDenum = fp32_32((D_k>>prescaleExp) + prescaledSyncPeriod); 
+    // rescale everything by factor of 256 (note inverse, evaluated at compile time)
+    static constexpr fp32_32 rescaleFactor(1/static_cast<double>(1LL<<prescaleExp));*/
 
-    // rescale everything by factor of 256
-    static const fp32_32 rescaleFactor = fp32_32(1LL<<8).fastInverse(); 
+    // TODO: (s) should be numerator instead of just D_k + syncPeriod
+    fp32_32 closest2pow = fp32_32(std::min(closestPowerOfTwo(D_k + syncPeriod), (1LL<<26)));
+    fp32_32 prescaledDenum = closest2pow;
+    fp32_32 rescaleFactor = fp32_32((D_k + syncPeriod) / closest2pow).fastInverse();
+
+    static TimerProxySpec * timerProxy = &TimerProxySpec::instance();
 
     // performing virtual clock slope correction disabling interrupt
     {
-        FastInterruptDisableLock dlck;
+        FastInterruptDisableLock dLock;
 
+        // TODO: (s) don't scale all num but every single element because sum may overflow!
+        // perchè fp32_32(syncPeriod) potrebbe non starci in 32 bit signed
         //this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
-        this->vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / GDB_4) * rescaleFactor;
+        //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
+        //this->vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / prescaledDenum) * rescaleFactor;
+        this->vcdot_k = fp32_32(syncPeriod / prescaledDenum) * rescaleFactor;
         this->inv_vcdot_k = vcdot_k.fastInverse();
 
         // next iteration values update
-        this->tsnc_km1 = deriveTsnc(vc_k);
+        this->tsnc_km1 = IRQderiveTsnc(vc_k);
         this->vc_km1 = vc_k;
         this->vcdot_km1 = this->vcdot_k;
         this->inv_vcdot_km1 = this->inv_vcdot_k;
+
+        // calculate fast correction parameters
+        fp32_32 a = vcdot_km1;
+        long long b = vc_km1 - vcdot_km1 * tsnc_km1;
+        this->a_km1 = a;
+        this->b_km1 = b;
+
+        timerProxy->IRQrecomputeFastCorrectionPair();
     }
+
+    /* DEBUG PRINTS */
+    // iprintf("SyncPeriod:\t%lld\n", syncPeriod);
+    // printf("closest2pow:\t%lld\n", closest2pow.value>>32);
+    // printf("prescaledDenum\t%.15f\n", static_cast<double>(prescaledDenum));
+    // printf("syncPeriod / prescaledDenum:\t%lld\n", syncPeriod / prescaledDenum);
+    // printf("(syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
+    // printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
+    // printf("inv_vcdot_km1:\t%.20f\n", (double)inv_vcdot_km1);
+    // iprintf("D_k:\t\t%lld\n", D_k);
 }
 
 void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
@@ -177,11 +249,12 @@ void VirtualClock::IRQsetInitialOffset(long long T0)
 }
 
 // TODO: (s) change to IRQ
-inline long long VirtualClock::deriveTsnc(long long vc_t)
+inline long long VirtualClock::IRQderiveTsnc(long long vc_t)
 {
     assertInit();
     assertNonNegativeTime(vc_t);
 
+    // (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1;
     return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) * inv_vcdot_km1;
 }
 
@@ -210,8 +283,8 @@ void VirtualClock::assertInit()
 void VirtualClock::IRQinit(){}
 
 VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(1), vcdot_km1(1), 
-                                inv_vcdot_k(1), inv_vcdot_km1(1), a(0.05), beta(0.025), k(0), T0(0), init(false), 
-                                fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
+                                inv_vcdot_k(1), inv_vcdot_km1(1), a(0.05), beta(0.025), k(0), T0(0), init(false),
+                                a_km1(1LL), b_km1(0), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
 
 
