@@ -28,7 +28,7 @@
 #include "interfaces/os_timer.h"
 #include "time/timeconversion.h"
 #include "hsc.h"
-#include "interfaces-impl/correction_types.h"
+#include "interfaces-impl/time_types_spec.h"
 #include "interfaces/hw_eventstamping.h"
 #include <atomic>
 
@@ -36,7 +36,7 @@ using namespace miosix;
 
 namespace miosix {
 
-static TimerProxySpec * timerProxy = &TimerProxySpec::instance();
+static VirtualClockSpec * vc = &VirtualClockSpec::instance();
 
 long long getTime() noexcept
 {
@@ -46,45 +46,44 @@ long long getTime() noexcept
 
 long long IRQgetTime() noexcept
 {
-    return timerProxy->IRQgetTimeNs();
+    return vc->IRQgetTimeNs();
 }
 
 namespace internal {
 
 void IRQosTimerInit()
 {
+    // TODO: (s) remove init + instances! init inside constructor
+
     // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
     Rtc::instance().IRQinit();
     //rtc->IRQinit();
     #endif
 
-    timerProxy->IRQinit(); // inits HSC and correction stack
+    #if defined(WITH_VHT)
+    VhtSpec::instance().IRQinit();
+    #endif
+
+    vc->IRQinit(); // inits HSC and correction stack
 }
 
 void IRQosTimerSetTime(long long ns) noexcept
 {
-    timerProxy->IRQsetTimeNs(ns);
+    vc->IRQsetTimeNs(ns);
     // TODO: (s) also RTC for VHT alignment
 }
 
 // time assumed not to be on the past, checked by caller
 void IRQosTimerSetInterrupt(long long ns) noexcept
 {
-    timerProxy->IRQsetIrqNs(ns);
-}
-
-// TODO: (s) make it IRQ
-// time assumed not to be on the past, checked by caller
-void osTimerSetEvent(long long ns) noexcept // DELETEME: (s)
-{
-    //timerProxy->waitEvent(ns);
+    vc->IRQsetIrqNs(ns);
 }
 
 unsigned int osTimerGetFrequency()
 {
     InterruptDisableLock dLock;
-    return timerProxy->IRQTimerFrequency();
+    return vc->IRQTimerFrequency();
 }
 
 } //namespace internal
@@ -110,9 +109,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     // save value of TIMER1 counter right away to check for compare later
     unsigned int upperTimerCounter = TIMER2->CNT;
 
-    static miosix::TimerProxySpec * timerProxy = &miosix::TimerProxySpec::instance();
-    static miosix::Hsc * hsc = timerProxy->getHscReference();
-    
+    static miosix::Hsc * hsc = &miosix::Hsc::instance();
 
     #ifdef TIMER_INTERRUPT_DEBUG
     if(hsc->IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
@@ -281,11 +278,10 @@ void __attribute__((naked)) TIMER3_IRQHandler()
 
 void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
-
     #ifdef WITH_VHT
-    static miosix::Vht<miosix::Hsc, miosix::Rtc> * vht = &miosix::Vht<miosix::Hsc, miosix::Rtc>::instance();
-    
+    static miosix::Hsc * hsc = &miosix::Hsc::instance();
+    static miosix::VhtSpec * vht = &miosix::VhtSpec::instance();
+       
     // if-guard
     if(!hsc->IRQgetVhtMatchFlag()) return; // FIXME: (s) check, shouldn't it be flag from TIMER3?
 

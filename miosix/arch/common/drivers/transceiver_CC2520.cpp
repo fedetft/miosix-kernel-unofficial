@@ -34,7 +34,7 @@
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
-#include "interfaces-impl/correction_types.h" //< TimerProxySpec
+#include "interfaces-impl/time_types_spec.h" //< TimerProxySpec
 
 using namespace std;
 

@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C)  2022 by Sorrentino Alessandro                          *
+ *   Copyright (C) 2022 by Sorrentino Alessandro                           *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -25,63 +25,55 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "flopsync3.h"
+#pragma once
 
-using namespace std;
+///
+// imports
+///
+
+#include "interfaces/os_timer.h"
+
+// high speed clock
+#include "interfaces-impl/hsc.h" 
+
+
+// real time clock
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+#include "interfaces-impl/rtc.h" 
+#endif
+
+// virtual clock and vht
+#ifdef WITH_FLOPSYNC
+#include "interfaces/flopsync3.h"
+#endif
+
+///
+// typedef(s)
+///
 
 namespace miosix {
 
-Flopsync3& Flopsync3::instance(){
-    static Flopsync3 fsync;
-    return fsync;
+#if defined(WITH_VHT) && !defined(WITH_FLOPSYNC)
+using VirtualClockSpec = VirtualClock<Hsc, 1>;
+#elif !defined(WITH_VHT) && defined(WITH_FLOPSYNC)
+using VirtualClockSpec = VirtualClock<Hsc, 1>;
+#elif defined(WITH_VHT) && defined(WITH_FLOPSYNC)
+using VirtualClockSpec = VirtualClock<Hsc, 2>;
+#else
+using VirtualClockSpec = VirtualClock<Hsc, 0>;
+#endif
+
 }
 
-fp32_32 Flopsync3::computeCorrection(long long e_k)
+// Because the vht class it templates, all its implementation is contianed in the
+// header file. Therefore, we need to import it after having defined VirtualClockSpec.
+#ifdef WITH_VHT
+#include "interfaces/vht.h"
+#endif
+
+namespace miosix
 {
-    // computing controller output
-    //this->u_k = 0.15 * e_k; // * 1e-9;
-    this->u_k = factorP * static_cast<fp32_32>(e_k);
-
-    // updating internal status for next iteration
-    this->e_km2 = this->e_km1;
-    this->e_km1 = this->e_k;
-    this->e_k = e_k;
-    
-    this->u_km2 = this->u_km1;
-    this->u_km1 = this->u_k;
-
-    return this->u_k;
-}
-
-void Flopsync3::reset()
-{
-    // errors
-    this->e_k   = 0;
-    this->e_km1 = 0;
-    this->e_km2 = 0;
-
-    // corrections
-    this->u_k   = 0;
-    this->u_km1 = 0;
-    this->u_km2 = 0;
-
-    // controller
-    this->factorP(0.15);
-}
-
-fp32_32 Flopsync3::getClockCorrection()
-{
-    return this->u_k;
-}
-
-long long Flopsync3::getSyncError()
-{
-    return this->e_k;
-}
-
-Flopsync3::Flopsync3()
-{
-    Flopsync3::reset();
-}
-
+    #if defined(WITH_VHT)
+    using VhtSpec = Vht<Hsc, Rtc>;
+    #endif
 }

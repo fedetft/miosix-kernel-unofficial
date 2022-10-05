@@ -35,7 +35,10 @@
 #include "time/timeconversion.h"
 #include "time/flopsync_vht.h"
 #include "kernel/logging.h"
+#include "util/fixed.h"
+#include "interfaces-impl/time_types_spec.h"
 
+// TODO: (s) refactor factorI and factorD using fp32_32 type + remove explicit mul64x32d32
 namespace miosix
 {
 // TODO: (s) muovere vht e vc dentro un header clock_sync.h
@@ -43,10 +46,17 @@ template<typename Hsc_TA, typename Rtc_TA>
 class Vht : public CorrectionTile
 {
 public:
-    static Vht& instance(){
+    static Vht& instance()
+    {
         static Vht vht;
         return vht;
     }
+
+    /**
+     * @brief 
+     * 
+     */
+    const unsigned int posCorrection;
 
     /**
      * @brief 
@@ -58,8 +68,9 @@ public:
     {
         if(!init) { return ns; }
 
-        long long tick = tc.ns2tick(ns) /*+ vhtClockOffset*/;
-        return tc.tick2ns(syncPointTheoreticalHsc + fastNegMul(tick - syncPointExpectedHsc, factorI, factorD));
+        //long long tick = tc.ns2tick(ns) /*+ vhtClockOffset*/;
+        //return tc.tick2ns(syncPointTheoreticalHsc + fastNegMul(tick - syncPointExpectedHsc, factorI, factorD));
+        return a_km1 * ns + b_km1;
     }
 
     /**
@@ -72,8 +83,9 @@ public:
     {
         if(!init) { return ns; }
 
-        long long tick = tc.ns2tick(ns);
-        return tc.tick2ns(syncPointExpectedHsc + fastNegMul(tick - syncPointTheoreticalHsc, inverseFactorI, inverseFactorD) /*- vhtClockOffset*/);
+        //long long tick = tc.ns2tick(ns);
+        //return tc.tick2ns(syncPointExpectedHsc + fastNegMul(tick - syncPointTheoreticalHsc, inverseFactorI, inverseFactorD) /*- vhtClockOffset*/);
+        return (ns - b_km1) / a_km1;
     }
 
     /**
@@ -128,31 +140,16 @@ public:
         // first VHT correction
         IRQupdateImpl(syncPointTheoreticalHsc, syncPointExpectedHsc, 0);
 
-        // start periodic VHT thead ()
-        //std::thread vhtThread = std::thread([this]{ this->vhtLoop(); }); //std::thread(&miosix::Vht<Hsc_TA, Rtc_TA>::vhtLoop, this);
-        //Thread* vhtThread = Thread::create(&vhtLoop, 2048, 1, this);  // old definition with stack size
-        //static_cast<void>(vhtThread); // avoid unused variable warning
-
         this->init = true;
     }
 
     /**
      * @brief 
      * 
-     * @param syncPointTheoreticalHsc
-     * @param syncPointComputed 
-     */
-    /*void IRQoffsetUpdate(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc){
-        this->syncPointTheoreticalHsc = syncPointTheoreticalHsc;
-        this->syncPointExpectedHsc = syncPointExpectedHsc;
-    }*/
-
-    /**
-     * @brief 
-     * 
      * @param syncPointActualHsc 
      */
-    void IRQupdate(long long syncPointActualHsc){
+    void IRQupdate(long long syncPointActualHsc)
+    {
         this->syncPointActualHsc = syncPointActualHsc + vhtClockOffset;
 
         // set next RTC trigger
@@ -182,7 +179,8 @@ public:
      * @param syncPointComputed 
      * @param vhtClockOffset 
      */
-    void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync){
+    inline void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync)
+    {
         
         //efficient way to calculate the factor T/(T+u(k))
         long long temp = (syncPeriodHsc<<32) / (syncPeriodHsc + clockCorrectionFlopsync);
@@ -194,13 +192,28 @@ public:
         
         inverseFactorI = static_cast<unsigned int>((inverseTemp & 0xFFFFFFFF00000000LLU)>>32);
         inverseFactorD = static_cast<unsigned int>(inverseTemp);
+
+        // compute aX + b coefficient pairs
+        fp32_32 a; a.value = (static_cast<int64_t>(factorI)<<32) | factorD;
+        long long b = tc.tick2ns(syncPointTheoreticalHsc - (a * syncPointExpectedHsc));
+
+        // update internal and vc coeff. at position N only if necessary
+        static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
+        if(a_km1 != a || b_km1 != b)
+        {
+            this->a_km1 = a;
+            this->b_km1 = b;
+
+            vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
+        }
     }
 
     /**
      * @brief 
      * 
      */
-    void IRQresyncClock(){
+    void IRQresyncClock()
+    {
         long long nowRtc = Rtc_TA::IRQgetTimerCounter();
         long long syncAtRtc = nowRtc + 2; // TODO: (s) generalize for random quirk
         //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
@@ -261,10 +274,9 @@ private:
     ///
     // Constructors
     ///
-    Vht() : tc(EFM32_HFXO_FREQ), 
-            syncPointTheoreticalHsc(0), syncPointExpectedHsc(0), syncPointActualHsc(0), 
-            syncPeriodHsc(9609375), syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
-            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), enabledCorrection(true), 
+    Vht() : posCorrection(0), tc(EFM32_HFXO_FREQ), syncPointTheoreticalHsc(0), syncPointExpectedHsc(0), 
+            syncPointActualHsc(0), syncPeriodHsc(9609375), syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
+            factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), a_km1(1), b_km1(0), enabledCorrection(true), 
             maxTheoreticalError(static_cast<long long>(static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f)),
             vhtClockOffset(0), flopsyncVHT(nullptr), init(false) {}
     Vht(const Vht&)=delete;
@@ -320,6 +332,10 @@ private:
     unsigned int inverseFactorI;
     unsigned int inverseFactorD;
     long long error;
+
+    // fast correction parameters
+    fp32_32 a_km1;
+    long long b_km1;
 
     bool enabledCorrection;
     const long long maxTheoreticalError; // max error less than 300ppm

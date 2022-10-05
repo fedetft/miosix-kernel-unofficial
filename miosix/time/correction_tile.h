@@ -25,10 +25,10 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#ifndef SYNCHRONIZER_H
-#define SYNCHRONIZER_H
+#pragma once
 
 #include "miosix.h"
+#include "util/fixed.h"
 
 namespace miosix {
 
@@ -51,9 +51,9 @@ public:
     virtual long long IRQcorrect(long long ns)=0;
     virtual long long IRQuncorrect(long long ns)=0;
 
-    virtual void IRQinit()=0;
+    //virtual void IRQinit()=0;
+    
+    // force a and b variables?
 };
 
 }
-
-#endif

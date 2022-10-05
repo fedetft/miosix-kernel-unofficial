@@ -25,112 +25,47 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "interfaces/virtual_clock.h"
+#include "interfaces/flopsync3.h"
 #include "time/timeconversion.h"
 #include "kernel/logging.h"
 #include <stdexcept>
-#include "correction_types.h" 
 #include <algorithm> // DELETEME: (s)
+#include "interfaces-impl/time_types_spec.h"
 
 namespace miosix {
 
-VirtualClock& VirtualClock::instance(){
-    static VirtualClock vt;
+Flopsync3& Flopsync3::instance(){
+    static Flopsync3 vt;
     return vt;
 }
 
 // TODO: (s) replace assert with various error handlers
-long long VirtualClock::IRQgetVirtualTimeNs(long long tsnc) noexcept
+long long Flopsync3::IRQcorrect(long long tsnc)
 {
     assertNonNegativeTime(tsnc);
-
-    if(!init) return tsnc; // needed when system is booting up and until no sync period is set
-    else return /*T0 +*/ vc_km1 + vcdot_km1 * (tsnc - tsnc_km1);
+    return a_km1 * tsnc + b_km1;
 }
 
-long long VirtualClock::getVirtualTimeNs(long long tsnc) noexcept
-{
-    FastInterruptDisableLock lck;
-    return IRQgetVirtualTimeNs(tsnc);
-}
-
-long long VirtualClock::getVirtualTimeTicks(long long tsnc) noexcept
-{
-    return tc.ns2tick(getVirtualTimeNs(tsnc));
-}
-
-inline long long VirtualClock::IRQgetUncorrectedTimeNs(long long vc_t)
+inline long long Flopsync3::IRQuncorrect(long long vc_t)
 {   
     //assertInit();
     assertNonNegativeTime(vc_t);
-
-    if(!init) return vc_t; // needed when system is booting up and until no sync period is set
-    // inverting VC formula vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-    else return IRQderiveTsnc(vc_t);
+    return (vc_t - b_km1) / a_km1;
 }
 
-long long VirtualClock::getUncorrectedTimeNs(long long vc_t)
-{
-    FastInterruptDisableLock lck;
-    return IRQgetUncorrectedTimeNs(vc_t);
-}
-
-long long VirtualClock::getUncorrectedTimeTicks(long long vc_t)
-{
-    return tc.ns2tick(getUncorrectedTimeNs(vc_t));
-}
-
-// TODO: (s) the error should be passed from timesync for a more abstraction level
-void VirtualClock::updateVC(long long vc_k)
-{
-    assertInit();
-    assertNonNegativeTime(vc_k);
-
-    long long kT = this->k * this->syncPeriod;
-
-    // calculating sync error
-    long long e_k = (kT/* + T0*/) - vc_k;
-
-    VirtualClock::updateVC(vc_k, e_k);
-
-    // next iteration values update
-    this->k += 1;
-}
-
-long long closestPowerOfTwo(unsigned long long v)
-{
-    /*if(n < 1) return 0;
-    long long res = 1;
-    // Try all powers starting from 2^1
-    for (int i = 0; i < 8 * sizeof(unsigned long long); i++) {
-        long long curr = 1 << i;
-        // If current power is more than n, break
-        if (curr > n)
-            break;
-        res = curr;
-    }
-    return res;*/
-    v--;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    v++;
-
-    return v>>1;
-}
-
-void VirtualClock::updateVC(long long vc_k, long long e_k)
+long long closestPowerOfTwo(unsigned long long); // forward declaration
+void Flopsync3::updateVC(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
     assertInit();
     assertNonNegativeTime(vc_k);
 
+    static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
+
     // controller correction
-    // TODO: (s) need saturation for correction!
-    fp32_32 u_k = fsync->computeCorrection(e_k);
+    static constexpr fp32_32 factorP(0.15);
+    fp32_32 e_kFP(e_k);
+    fp32_32 u_k = factorP * e_kFP;
 
     // estimating clock skew absorbing initial offset if starting from zero
     static bool offsetInit = false;
@@ -147,60 +82,71 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
         setInitialOffset(vc_k); // sets T0
         deltaT -= T0;
     }
-    long long D_k = ( deltaT * inv_vcdot_km1 ) - syncPeriod;
 
     //long long D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
-    //       ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
-    //long long D_k = ( (vc_k - vc_km1) * inv_vcdot_km1 ) - syncPeriod;
-
-    // NOTE: this approach was discarded because of the poor rapresentation
+    //       ↓↓        ↓↓       ↓↓       ↓↓   
+    long long D_k = ( deltaT / vcdot_km1 ) - syncPeriod;
+    // NOTE: DELETEME: (s), this approach was discarded because of the poor rapresentation
     // we were getting when inverting prescaledDenum for the division
     // remember: in fp32_32, division is just multiplication by the reciprocal 
     // pre computing multiplicative factors
     // This was necessary because D_k + syncPeriod is a very big number and its inverse
     // was not rapresentable correctly on just 32 bit leading to an approximated and therefore
     // wrong vcdot_k factor.
-    /*static const long long prescaleExp = 24; // scale exponent, 2^n
 
-    // prescale denum by factor of 2^prescaleExp
-    static const long long prescaledSyncPeriod = syncPeriod>>prescaleExp;
-    // TODO: (s) usare prescaleOp alla potenza di due più vicina (spiegare che inverso di potenza di due invertibile senza approx)
-    fp32_32 prescaledDenum = fp32_32((D_k>>prescaleExp) + prescaledSyncPeriod); 
-    // rescale everything by factor of 256 (note inverse, evaluated at compile time)
-    static constexpr fp32_32 rescaleFactor(1/static_cast<double>(1LL<<prescaleExp));*/
+    // static const long long prescaleExp = 24; // scale exponent, 2^n
 
-    // TODO: (s) should be numerator instead of just D_k + syncPeriod
-    fp32_32 closest2pow = fp32_32(std::min(closestPowerOfTwo(D_k + syncPeriod), (1LL<<26)));
-    fp32_32 prescaledDenum = closest2pow;
-    fp32_32 rescaleFactor = fp32_32((D_k + syncPeriod) / closest2pow).fastInverse();
+    // // prescale denum by factor of 2^prescaleExp
+    // static const long long prescaledSyncPeriod = syncPeriod>>prescaleExp;
+    // fp32_32 prescaledDenum = fp32_32((D_k>>prescaleExp) + prescaledSyncPeriod); 
+    // // rescale everything by factor of 256 (note inverse, evaluated at compile time)
+    // static constexpr fp32_32 rescaleFactor(1/static_cast<double>(1LL<<prescaleExp));
 
-    static TimerProxySpec * timerProxy = &TimerProxySpec::instance();
+
+    // this approach aims to scale down syncPeriod contribute in the formula since its value do npt
+    // fit 32 signed bit in the fp32_32 type.
+    // Since we have at the denumerator D_k + syncPeriod, that in fp32_32 is implemented as a
+    // multiplication for the inverse, we want a power of two in order to avoid loss during inversion.
+    // For this reason, we find the closest poewr of two to the sum D_k + syncperiod that would
+    // fit in 32-bit signed integer part. Of course, since we rescaled part of the formula,
+    // we need a rescaling factor to have things back to normal. This approach cannot avoid loss
+    // in precision and long operations are prepared here with interrupt enabled.
+    long long closest2pow = std::min(closestPowerOfTwo(D_k + syncPeriod), (1LL<<26));
+    fp32_32 closest2powFP(closest2pow);
+    fp32_32 prescaledDenum = closest2powFP;
+    //fp32_32 rescaleFactor = fp32_32((D_k + syncPeriod) / closest2powFP).fastInverse();
+    //       ↓↓        ↓↓       ↓↓       ↓↓       ↓↓          ↓↓          ↓↓      
+    fp32_32 rescaleFactor = ( (fp32_32(D_k) / closest2powFP) + (syncPeriod / closest2powFP) ).fastInverse();
 
     // performing virtual clock slope correction disabling interrupt
     {
         FastInterruptDisableLock dLock;
 
-        // TODO: (s) don't scale all num but every single element because sum may overflow!
+        // FIXME: (s) drives vcdot_k to zero! why??
         // perchè fp32_32(syncPeriod) potrebbe non starci in 32 bit signed
         //this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
         //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
         //this->vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / prescaledDenum) * rescaleFactor;
-        this->vcdot_k = fp32_32(syncPeriod / prescaledDenum) * rescaleFactor;
-        this->inv_vcdot_k = vcdot_k.fastInverse();
+        //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
+        this->vcdot_k = ( ( (u_k * (beta - 1) + e_kFP * (1 - beta)) / prescaledDenum ) + ( syncPeriod / prescaledDenum ) ) * rescaleFactor;
 
         // next iteration values update
-        this->tsnc_km1 = IRQderiveTsnc(vc_k);
+        this->tsnc_km1 = IRQuncorrect(vc_k);
         this->vc_km1 = vc_k;
         this->vcdot_km1 = this->vcdot_k;
-        this->inv_vcdot_km1 = this->inv_vcdot_k;
 
         // calculate fast correction parameters
         fp32_32 a = vcdot_km1;
         long long b = vc_km1 - vcdot_km1 * tsnc_km1;
-        this->a_km1 = a;
-        this->b_km1 = b;
 
-        timerProxy->IRQrecomputeFastCorrectionPair();
+        // update internal and vc coeff. at position N only if necessary
+        if(a_km1 != a || b_km1 != b)
+        {
+            this->a_km1 = a;
+            this->b_km1 = b;
+
+            vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
+        }
     }
 
     /* DEBUG PRINTS */
@@ -211,54 +157,45 @@ void VirtualClock::updateVC(long long vc_k, long long e_k)
     // printf("(syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
     // printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
     // printf("inv_vcdot_km1:\t%.20f\n", (double)inv_vcdot_km1);
+    // printf("a:\t\t%.20f\n", (double)a_km1);
+    // iprintf("b:\t\t%lld\n", b_km1);
+    // printf("D_k:\t\t%.20f\n", (double)D_k);
     // iprintf("D_k:\t\t%lld\n", D_k);
 }
 
-void VirtualClock::setSyncPeriod(unsigned long long syncPeriod)
+void Flopsync3::setSyncPeriod(unsigned long long syncPeriod)
 {
     FastInterruptDisableLock lck;
     IRQsetSyncPeriod(syncPeriod);
 }
 
-void VirtualClock::IRQsetSyncPeriod(unsigned long long syncPeriod)
+void Flopsync3::IRQsetSyncPeriod(unsigned long long syncPeriod)
 {
     // TODO: (s) do not throw but use IRQlogerror instead
-    if(syncPeriod > VirtualClock::maxPeriod) { throw std::logic_error("Sync period cannot be more than maximum!"); };  
+    if(syncPeriod > Flopsync3::maxPeriod) { throw std::logic_error("Sync period cannot be more than maximum!"); };  
     if(syncPeriod == 0) { throw std::logic_error("Sync period cannot be zero!"); };  
 
     // init values with T or -T
     this->syncPeriod    = syncPeriod;
     this->vc_km1        = -syncPeriod;
     this->tsnc_km1      = -syncPeriod;
-    
-    this->fsync = &Flopsync3::instance();
 
     this->init = true;
 }
 
-void VirtualClock::setInitialOffset(long long T0)
+void Flopsync3::setInitialOffset(long long T0)
 {
     FastInterruptDisableLock lck;
     IRQsetInitialOffset(T0);
 }
 
-void VirtualClock::IRQsetInitialOffset(long long T0)
+void Flopsync3::IRQsetInitialOffset(long long T0)
 {
     assertNonNegativeTime(T0);
     this->T0 = T0;
 }
 
-// TODO: (s) change to IRQ
-inline long long VirtualClock::IRQderiveTsnc(long long vc_t)
-{
-    assertInit();
-    assertNonNegativeTime(vc_t);
-
-    // (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) / vcdot_km1;
-    return (vc_t - vc_km1 + tsnc_km1 * vcdot_km1) * inv_vcdot_km1;
-}
-
-void VirtualClock::assertNonNegativeTime(long long time)
+void Flopsync3::assertNonNegativeTime(long long time)
 {
     if(time < 0) 
     {
@@ -270,7 +207,7 @@ void VirtualClock::assertNonNegativeTime(long long time)
     }
 }
 
-void VirtualClock::assertInit()
+void Flopsync3::assertInit()
 {
     if(!init)
     {
@@ -280,12 +217,30 @@ void VirtualClock::assertInit()
     }
 }
 
-void VirtualClock::IRQinit(){}
+Flopsync3::Flopsync3() : posCorrection(VirtualClockSpec::numCorrections-1), maxPeriod(1099511627775), 
+                            syncPeriod(0), vcdot_k(1), vcdot_km1(1), inv_vcdot_k(1), inv_vcdot_km1(1), 
+                            a(0.05), beta(0.025), k(0), T0(0), init(false), tc(EFM32_HFXO_FREQ), 
+                            a_km1(1LL), b_km1(0) {}
 
-VirtualClock::VirtualClock() : maxPeriod(1099511627775), syncPeriod(0), vcdot_k(1), vcdot_km1(1), 
-                                inv_vcdot_k(1), inv_vcdot_km1(1), a(0.05), beta(0.025), k(0), T0(0), init(false),
-                                a_km1(1LL), b_km1(0), fsync(nullptr), tc(EFM32_HFXO_FREQ) {}
 
+///
+// Utils
+///
 
+// Bit Twiddling Hacks
+// calculates the closest power of two less or equal then the number v
+long long closestPowerOfTwo(unsigned long long v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v++;
+
+    return v>>1;
+}
 
 } // namespace miosix

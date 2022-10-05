@@ -27,11 +27,7 @@
 
 #pragma once
 
-#ifndef VIRTUAL_CLOCK_H
-#define VIRTUAL_CLOCK_H
-
 #include "time/timeconversion.h"
-#include "time/flopsync3.h"
 #include "cassert"
 #include "stdio.h"
 #include "miosix.h"
@@ -46,71 +42,31 @@ namespace miosix {
  * the FLOPSYNC-3 synchronization algorithm. It receives FLOPSYNC-3 data
  * and parameters as input, preserving a state capable of correcting an arbitrary
  * timestamp, using an equation of type texpected = tstart + coeff * skew
- */
-class VirtualClock  : public CorrectionTile
+ */ //TODO: (s) template posizione stack in correzione
+class Flopsync3  : public CorrectionTile
 {
 public:
-    static VirtualClock& instance();
-
-    // FIXME: (s) IRQ correct! define normal in interface
-    /**
-     * @brief same as IRQgetVirtualTimeNs, just unified according to clock correction
-     * interfaces names
-     *  
-     */
-    inline long long IRQcorrect(long long tsnc) { return IRQgetVirtualTimeNs(tsnc); }
+    static Flopsync3& instance();
 
     /**
-     * @brief same as IRQgetUncorrectedTimeNs, just unified according to clock correction
-     * interfaces names
-     *  
+     * @brief 
+     * 
      */
-    inline long long IRQuncorrect(long long vc_t) { return IRQgetUncorrectedTimeNs(vc_t); }
-    
-    /**
-     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
-     * @param tsnc uncorrected time (ns)
-     * @return the corrected time (ns) according to Flopsync3 correction
-     */
-    long long IRQgetVirtualTimeNs(long long tsnc) noexcept;
-    long long getVirtualTimeNs(long long tsnc) noexcept;
-    
+    const unsigned int posCorrection;
+
     /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
      * @param tsnc uncorrected time (ns)
      * @return the corrected time (ticks) according to Flopsync3 correction
      */
-    long long getVirtualTimeTicks(long long tsnc) noexcept;
+    long long IRQcorrect(long long tsnc);
 
     /**
      * Converts a corrected time, expressed in ns, into an uncorrected one in ns
      * @param vc_t corrected time (ns)
      * @return the uncorrected time (ns)
      */
-    long long IRQgetUncorrectedTimeNs(long long vc_t);
-    long long getUncorrectedTimeNs(long long vc_t);
-    
-    /**
-     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
-     * @param vc_t corrected time (ns)
-     * @return the uncorrected time (ticks)
-     */
-    long long getUncorrectedTimeTicks(long long vc_t);
-
-    // TODO: (s) spiegare che non è fatto il IRQ tutto a parte operazioni critiche
-    // perchè tanto update ogni 10s (IRQ se cambio variabili che rompono getTime())
-    /**
-     * Updates the internal value of the virtual clock
-     * @param vc_k time of the virtual clock at the step t_0 + kT
-     * - t_0 is the first synchronization time point in the local clock, in ns, corrected by FLOPSYNC-2 and VHT.
-     * - k is the number of iterations of the synchronizer.
-     * - T is the synchronization interval, as passed in the setSyncPeriod function
-     * 
-     * Please note that vc_k is in function of the tsnc_k (uncorrected time at current pase t_0 + kT)
-     * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-     * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
-     */
-    void updateVC(long long vc_k);
+    long long IRQuncorrect(long long vc_t);
 
     // TODO: (s) change description + spiegare che non è fatto il IRQ tutto a parte operazioni critiche
     // perchè tanto update ogni 10s (IRQ se cambio variabili che rompono getTime())
@@ -144,40 +100,13 @@ public:
      */
     void IRQsetInitialOffset(long long T0);
     void setInitialOffset(long long T0);
-
-    /**
-     * @brief 
-     * 
-     */
-    void IRQinit();
-    
-    /**
-     * @brief 
-     * 
-     */
-    inline std::pair<fp32_32, long long> getFastCorrectionPair()
-    {
-        return std::make_pair(a_km1, b_km1); 
-    }
-
-    // DELETEME: (s)
-    inline fp32_32 getVcdot() { return this->vcdot_km1; }
     
 private:
-    VirtualClock();
-    VirtualClock(const VirtualClock&)=delete;
-    VirtualClock& operator=(const VirtualClock&)=delete;
+    Flopsync3();
+    Flopsync3(const Flopsync3&)=delete;
+    Flopsync3& operator=(const Flopsync3&)=delete;
 
     /* utils functions */
-
-    /**
-     * calculates the tsnc associated with a virtual clock time by inverting the clock formula.
-     * tsnc = (vc_t - vc_km1 + tsnc_km1 * vcdot_km1)/ vcdot_km1)
-     * 
-     * @param vc_t virtual clock time (ns)
-     * @return long long uncorrected time (ns)
-     */
-    inline long long IRQderiveTsnc(long long vc_t);
 
     /**
      * Checks whether a passed time is negative or not. 
@@ -196,11 +125,12 @@ private:
     void assertInit();
 
     /* class variables */
+    // NOTE: what we need for the correction is just a and b coefficients.
+    // most of the other variables here are assigned just for debugging purposes.
 
     //Max period, necessary to guarantee the proper behaviour of runUpdate
     //They are 2^40=1099s
     const unsigned long long maxPeriod;
-    
     unsigned long long syncPeriod;
     
     fp32_32 vcdot_k;        // slope of virtual clock at step k 
@@ -208,7 +138,6 @@ private:
     fp32_32 inv_vcdot_k;    // inverse of slope of virtual clock at step k 
     fp32_32 inv_vcdot_km1;  // inverse of slope of virtual clock at step k-1
 
-    // TODO: (s) move this to flopsync controller
     const fp32_32 a;
     const fp32_32 beta;    // denormalized pole for feedback linearization dynamics
 
@@ -223,7 +152,6 @@ private:
     long long tsnc_km1; // -T
     long long vc_km1;   // -T
 
-    Flopsync3* fsync; // late init
     TimeConversion tc;
 
     // fast correction parameters (ax + b)
@@ -231,6 +159,4 @@ private:
     long long b_km1;
 };
 }
-
-#endif /* VIRTUAL_CLOCK_H */
 

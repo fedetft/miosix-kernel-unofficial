@@ -33,7 +33,7 @@
 #include <limits>
 #include "interfaces-impl/spi.h" // TODO: (s) correct basing on implementations from interface??
 #include "interfaces/peripheral.h"
-#include "interfaces-impl/correction_types.h" // TODO: (s) correct basing on implementations from interface??
+#include "interfaces-impl/time_types_spec.h" // TODO: (s) correct basing on implementations from interface??
 
 namespace miosix {
 

@@ -34,7 +34,7 @@
 #include "stdio.h"
 #include "miosix.h" // DELETEME: (s)
 #include "bsp_impl.h"
-#include "correction_types.h"
+#include "time_types_spec.h"
 
 using namespace miosix;
 
@@ -47,7 +47,7 @@ namespace miosix {
 
 static Rtc* rtc = nullptr; 
 static Hsc* hsc = nullptr;
-static TimerProxySpec * timerProxy = nullptr;
+static VirtualClockSpec * vc = nullptr;
 #ifdef WITH_VHT
 static VhtSpec * vht = nullptr;
 #endif
@@ -69,8 +69,8 @@ void IRQdeepSleepInit()
 {
     // instances of RTC and HSC
     rtc         = &Rtc::instance();
-    timerProxy  = &TimerProxySpec::instance();
-    hsc         = timerProxy->getHscReference();
+    vc          = &VirtualClockSpec::instance();
+    hsc         = &Hsc::instance();
 
     #ifdef WITH_VHT
     vht         = &VhtSpec::instance();
@@ -96,7 +96,7 @@ bool IRQdeepSleep(long long abstime)
     #endif
 
     // 2. perform deep sleep
-    IRQdeepSleep_impl(timerProxy->IRQuncorrectTimeNs(abstime));
+    IRQdeepSleep_impl(vc->IRQuncorrectTimeNs(abstime));
 
     // 3. re-align HSC and Real Time Clock
     IRQresyncClocks(); 
@@ -165,7 +165,7 @@ inline void IRQdeepSleep_impl(long long abstime)
         }
 
         bool lateWakeUp = false;
-
+        
         // digest all pending interrupts before going in deep sleep
         // needed since efm32 lacks of standby flag that tells us if the micro was
         // able to go in deep sleep mode or not.
@@ -191,6 +191,7 @@ inline void IRQdeepSleep_impl(long long abstime)
 
             pendingNVIC = NVIC->ISPR[0U] > 0;
         }
+        
         if(lateWakeUp) break;
         __ISB(); // avoids anticipating deep sleep before finishing serving interrupts
 
@@ -199,6 +200,7 @@ inline void IRQdeepSleep_impl(long long abstime)
         // we need to handle TIMER1 interrupt before sleeping because HSC timer will be
         // power-gated during sleep and TIMER1IRQHandler_Impl will never be called if not
         // by next iteration TIMER2 -> TIMER1
+        // TODO: (s) maybe use sleep prevention lock on ISR? got by TIMER2, released by TIMER1
         if(TIMER1->CC[0].CTRL & TIMER_CC_CTRL_MODE_OUTPUTCOMPARE)
         {
             while(!hsc->IRQgetMatchFlag())

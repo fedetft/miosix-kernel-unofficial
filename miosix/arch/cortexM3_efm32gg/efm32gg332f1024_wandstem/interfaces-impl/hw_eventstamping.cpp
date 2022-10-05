@@ -26,12 +26,13 @@
  ***************************************************************************/
 
 #include "interfaces/hw_eventstamping.h"
-#include "correction_types.h"
+#include "time_types_spec.h"
 #include "miosix.h"
 #include <tuple>
 #include <mutex>
 #include <atomic>
 #include "hwmapping.h"
+
 namespace miosix
 {
 
@@ -54,7 +55,7 @@ static std::atomic<bool>eventTimeout(false);
 // Actual interface 
 ///
 
-static TimerProxySpec * timerProxy = &TimerProxySpec::instance();
+static VirtualClockSpec * vc = &VirtualClockSpec::instance();
 static Hsc * hsc = &Hsc::instance();
 static TimeConversion tc(Hsc::IRQTimerFrequency()); // FIXME: (s) if i use hsc->tc doesn't work!
 
@@ -156,7 +157,7 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     PRS->CH[0].CTRL = PRS_FLAGS;
 
     // uncorrect time
-    long long absoluteTimeoutNsTsnc = timerProxy->IRQuncorrectTimeNs(absoluteTimeoutNs);
+    long long absoluteTimeoutNsTsnc = vc->IRQuncorrectTimeNs(absoluteTimeoutNs);
 
     // if-guard, event in the past
     if(hsc->IRQgetTimeNs() > absoluteTimeoutNsTsnc) return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
@@ -205,7 +206,7 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
         long long timestampNs = tc.tick2ns(timestampTick);
 
         // correct time
-        long long correctedTimestampNs = timerProxy->IRQcorrectTimeNs(timestampNs);
+        long long correctedTimestampNs = vc->IRQcorrectTimeNs(timestampNs);
 
         return std::make_pair(EventResult::EVENT, correctedTimestampNs);
     }
@@ -235,7 +236,7 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     FastInterruptDisableLock dLock;
 
     // uncorrect time
-    long long absoluteNsTsnc = timerProxy->IRQuncorrectTimeNs(absoluteNs);
+    long long absoluteNsTsnc = vc->IRQuncorrectTimeNs(absoluteNs);
 
     // if-guard, event in the past
     if(hsc->IRQgetTimeNs() > absoluteNsTsnc) return EventResult::TRIGGER_IN_THE_PAST;
