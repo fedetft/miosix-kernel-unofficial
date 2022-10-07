@@ -210,7 +210,7 @@ struct uint128_t {
         INTERNAL.LOWER = this->LOWER >> s;
 
         // sum remain from upper shifting
-        INTERNAL.LOWER |= (this->UPPER & ((1LLU<<s)-1))<<(64-s);
+        INTERNAL.LOWER |= (this->UPPER & ((1LLU<<s)-1))<<(64-s); // FIXME: (s) con s > 64 si rompe
 
         // right shift upper part
         INTERNAL.UPPER = this->UPPER >> s;
@@ -226,7 +226,7 @@ struct uint128_t {
         INTERNAL.UPPER = this->UPPER << s;
 
         // sum remain from lower shifting
-        INTERNAL.UPPER |= (this->LOWER & ~((1LLU<<(64-s))-1))>>(64-s);
+        INTERNAL.UPPER |= (this->LOWER & ~((1LLU<<(64-s))-1))>>(64-s); // FIXME: (s) con s > 64 si rompe
 
         // left shift upper part
         INTERNAL.LOWER = this->LOWER << s;
@@ -447,7 +447,12 @@ public:
 
         return form(static_cast<T>((static_cast<T2>(this->value) * static_cast<T2>(a<<dp)) >> dp));
     }
+    long long operator * (unsigned long long a) const
+    {
+        // if constexpr form c++17, SFINAE used
 
+        return form(static_cast<T>((static_cast<T2>(this->value) * static_cast<T2>(a<<dp)) >> dp));
+    }
     friend long long operator * (long long a, const Fixed& other)
     {
         return other * a;
@@ -488,6 +493,26 @@ public:
         throw notImplementedException();
         return f;
     }
+
+    // comparison operator
+    constexpr bool operator ==  (const Fixed& f)  { return this->value == f.value; }
+    constexpr bool operator ==  (double other)    { return (*this) == Fixed(other); }
+    
+    constexpr bool operator !=  (const Fixed& f)  { return this->value != f.value; }
+    constexpr bool operator !=  (double other)    { return (*this) != Fixed(other); }
+
+    constexpr bool operator <   (const Fixed& f)  { return this->value < f.value; }
+    constexpr bool operator <   (double other)    { return (*this) < Fixed(other); }
+
+    constexpr bool operator <=  (const Fixed& f)  { return this->value <= f.value; }
+    constexpr bool operator <=  (double other)    { return (*this) <= Fixed(other); }
+
+    constexpr bool operator >   (const Fixed& f)  { return this->value > f.value; }
+    constexpr bool operator >   (double other)    { return (*this) > Fixed(other); }
+
+    constexpr bool operator >=  (const Fixed& f)  { return this->value >= f.value; }
+    constexpr bool operator >=  (double other)    { return (*this) >= Fixed(other); }
+
 
 private:
     static constexpr Fixed form(T v) { Fixed k; k.value = v; return k; }
@@ -535,12 +560,31 @@ inline fp32_32 fp32_32::operator * (const Fixed& f) const
 }
 
 template<>
+inline fp32_32& fp32_32::operator *= (const Fixed& f)
+{
+    this->value = ((*this) * f).value;
+    return *this;
+}
+
+template<>
 inline long long fp32_32::operator * (long long a) const
 {
-    int32_t decimalVal = static_cast<int32_t>(std::abs(this->value) & 0x00000000FFFFFFFF);
-    int32_t integerVal = static_cast<int32_t>((std::abs(this->value) & 0xFFFFFFFF00000000) >> 32);
+    int64_t absVal = std::abs(this->value);
+    int32_t decimalVal = static_cast<int32_t>(absVal & 0x00000000FFFFFFFF);
+    int32_t integerVal = static_cast<int32_t>((absVal & 0xFFFFFFFF00000000) >> 32);
     
     return signum<long long>(a) * signum<int32_t>(this->value) * static_cast<long long>(mul64x32d32(std::abs(a), integerVal, decimalVal));
+}
+
+// highly optimised function since it's used by the getTime()
+template<>
+inline long long fp32_32::operator * (unsigned long long a) const
+{
+    int64_t absVal = std::abs(this->value);
+    int32_t decimalVal = static_cast<int32_t>(absVal & 0x00000000FFFFFFFF);
+    int32_t integerVal = static_cast<int32_t>((absVal & 0xFFFFFFFF00000000) >> 32);
+    
+    return this->value > 0 ? mul64x32d32(a, integerVal, decimalVal) : -mul64x32d32(a, integerVal, decimalVal);
 }
 
 template<>

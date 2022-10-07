@@ -30,7 +30,6 @@
 
 #include "time/timeconversion.h"
 #include "kernel/scheduler/timer_interrupt.h"
-#include "time/correction_tile.h"
 #include <tuple>
 #include <condition_variable>
 #include <mutex>
@@ -238,7 +237,6 @@ public:
     /**
      * \return the current time in nanoseconds
      */
-    // FIXME: (s) getTime is a noexcept function! use irqerror
     inline long long IRQgetTimeNs()
     {
         return tc.tick2ns(IRQgetTimeTick());
@@ -528,269 +526,6 @@ public:
  */
 
 
-///
-// Reverse typelist logic
-///
-template<class... Ts>
-struct typelist{};
-
-template<class... Ts, class... Us>
-auto concat(typelist<Ts...>, typelist<Us...>) -> typelist<Ts..., Us...>;
-
-auto reverse(typelist<>) -> typelist<>;
-
-template<class Head, class... Tail>
-auto reverse(typelist<Head, Tail...>)
-    -> decltype(
-        concat(
-               reverse(std::declval<typelist<Tail...>>()),
-               std::declval<typelist<Head>>()
-               ) // concat
-      ); // decltype
-
-template<class... Ts>
-using reversed_typelist = decltype(reverse(std::declval<typelist<Ts...>>()));
-
-///
-// Actual time proxy implementation
-///
-// TODO: (s) cambiare nome alla classe
-// TODO: (s) chiamare questo coso con VirtualClock e VirtualClock => NonlinearFlopsync
-// template <typename Hsc_TA, typename... CorrectionStack>
-// class TimerProxy
-// {
-// public:
-//     /**
-//      * @brief 
-//      * 
-//      * @return TimerProxy& 
-//      */
-//     static TimerProxy& instance(){
-//         static TimerProxy tp;
-//         return tp;
-//     }
-
-
-//     /**
-//      * @brief 
-//      * 
-//      */
-//     inline void IRQinit()
-//     {
-//         // High speed clock init
-//         hsc = &Hsc_TA::instance();
-//         hsc->IRQinit();
-
-//         // correciton stack init
-//         IRQinitCorrection<CorrectionStack...>::call();
-
-//         // Time conversion init
-//         tc = &(hsc->tc); // valid pointer as long as hsc instance exists (all the duration of the program)
-//     } 
-    
-//     /**
-//      * @brief 
-//      * 
-//      * @return long long 
-//      */
-//     inline long long IRQgetTimeNs()
-//     {
-//         return a * hsc->IRQgetTimeNs() + b; //IRQcorrectTimeNs(hsc->IRQgetTimeNs());
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetIrqNs(long long ns)
-//     {
-//         hsc->IRQsetIrqNs((ns - b) / a); // hsc->IRQsetIrqNs(IRQuncorrectTimeNs(ns));
-//     }
-
-//     /**
-//      * @brief Get the Hsc Reference object
-//      * 
-//      * @return Hsc_TA* 
-//      */
-//     Hsc_TA* getHscReference() { return hsc; }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      */
-//     inline void IRQsetTimeNs(long long ns)
-//     {
-//         hsc->IRQsetTimeNs(IRQuncorrectTimeNs(ns));
-//     }
-
-//     /**
-//      * @brief wrapper class
-//      * 
-//      * @param ns 
-//      * @return long long 
-//      */
-//     inline long long ns2tick(long long ns)
-//     {
-//         return tc->ns2tick(ns);
-//     }
-//     inline long long tick2ns(long long tick)
-//     {
-//         return tc->tick2ns(tick);
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      * @return long long 
-//      */
-//     inline long long IRQcorrectTimeNs(long long ns)
-//     {
-//         return IRQcorrectTime<CorrectionStack...>::call(ns);
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @param ns 
-//      * @return long long 
-//      */
-//     inline long long IRQuncorrectTimeNs(long long ns)
-//     {
-//         return IRQuncorrect_impl(reversed_typelist<CorrectionStack...>{}, ns);
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      * @return unsigned int 
-//      */
-//     inline unsigned int IRQTimerFrequency()
-//     {
-//         return hsc->IRQTimerFrequency();
-//     }
-
-//     /**
-//      * @brief 
-//      * 
-//      */
-//     // TODO: (s) make it general
-//     inline void IRQrecomputeFastCorrectionPair()
-//     {
-//         fp32_32 a1, a2;
-//         long long b1, b2;
-//         //std::tie(a1, b1) = VirtualClock::instance().getFastCorrectionPair();
-//         //std::tie(a2, b2) = Vht<Hsc_TA, Rtc>::instance().getFastCorrectionPair();
-//         this->a = a2;
-//         this->b = tc->tick2ns(b2);
-//     }
-
-// private:
-//     ///
-//     // Constructors
-//     ///
-//     TimerProxy() : hsc(nullptr), tc(nullptr), 
-//                     eventThread(nullptr), event(false), eventTimeout(false), 
-//                     a(1), b(0) {}
-//     TimerProxy(const TimerProxy&)=delete;
-//     TimerProxy& operator=(const TimerProxy&)=delete;
-
-//     ///
-//     // Clock correction init
-//     ///
-
-//     // no correction, empty Pack
-//     template<typename... Ts>
-//     struct IRQinitCorrection
-//     {
-//         static inline void call() {
-//             return; // terminate recursion
-//         }
-//     };
-
-//     // 1 or more elements
-//     template <typename Head, typename ...Tail>
-//     struct IRQinitCorrection<Head, Tail...>
-//     {
-//         static inline void call()
-//         {
-//             (&Head::instance())->IRQinit(); 
-//             IRQinitCorrection<Tail...>::call();
-//         }
-//     };
-
-//     ///
-//     // Clock correction recursion functions
-//     ///
-
-//     // no correction, empty Pack
-//     template<typename... Ts>
-//     struct IRQcorrectTime
-//     {
-//         static inline long long call(long long ns) {
-//             return ns;
-//         }
-//     };
-
-//     // 1 or more elements
-//     template <typename Head, typename ...Tail>
-//     struct IRQcorrectTime<Head, Tail...>
-//     {
-//         static inline long long call(long long ns)
-//         {
-//             return (&Head::instance())->IRQcorrect(IRQcorrectTime<Tail...>::call(ns));
-//         }
-//     };
-
-
-//     ///
-//     // Clock uncorrection recursion functions (derive tsnc)
-//     ///
-
-//     // entry point for template pack call
-//     template<class... Ts>
-//     inline long long IRQuncorrect_impl(typelist<Ts...>, long long x)
-//     {
-//         return IRQuncorrectTime<Ts...>::call(x);
-//     }
-
-//     // no correction, empty Pack
-//     template<typename... Ts>
-//     struct IRQuncorrectTime
-//     {
-//         static inline long long call(long long ns) {
-//             return ns;
-//         }
-//     };
-
-//     // 1 or more elements
-//     template <typename Head, typename ...Tail>
-//     struct IRQuncorrectTime<Head, Tail...>
-//     {
-//         static inline long long call(long long ns)
-//         {
-//             return (&Head::instance())->IRQuncorrect(IRQuncorrectTime<Tail...>::call(ns));
-//         }
-//     };
-
-//     ///
-//     // class variables
-//     ///
-//     Hsc_TA * hsc;
-//     TimeConversion * tc;
-
-//     // event
-//     Thread * eventThread;
-//     bool event;
-//     bool eventTimeout;
-
-//     // get time params
-//     fp32_32 a;
-//     long long b;
-// };
-
 template <typename Hsc_TA, unsigned int N>
 class VirtualClock
 {
@@ -862,7 +597,7 @@ public:
      */
     inline long long IRQcorrectTimeNs(long long ns)
     {
-        return a * ns + b;
+        return a * static_cast<unsigned long long>(ns) + b;
     }
 
     /**
@@ -873,7 +608,7 @@ public:
      */
     inline long long IRQuncorrectTimeNs(long long ns)
     {
-        return (ns - b) / a;
+        return static_cast<unsigned long long>(ns - b) / a;
     }
 
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
@@ -906,7 +641,7 @@ public:
 
         this->a = a;
         this->b = b;
-
+        
         return true;
     }
 
@@ -967,7 +702,7 @@ template <typename Hsc_TA>
 class VirtualClock<Hsc_TA, 0>
 {
 public:
-    const unsigned int numCorrections = 0;
+    static constexpr unsigned int numCorrections = 0;
     
     /**
      * @brief 
@@ -1046,6 +781,15 @@ public:
     inline long long IRQuncorrectTimeNs(long long ns)
     {
         return ns;
+    }
+
+    /**
+     * @brief Here just to avoid compilation error
+     * 
+     */
+    inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
+    {
+        return true;
     }
 
     /**
