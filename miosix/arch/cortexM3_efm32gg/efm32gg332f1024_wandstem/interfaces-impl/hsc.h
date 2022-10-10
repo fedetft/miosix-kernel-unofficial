@@ -328,7 +328,7 @@ public:
     #endif // #ifdef WITH_VHT
 
     ///
-    // Event extension
+    // Event (with timestamp) or trigger extension 
     ///
     static inline unsigned int IRQgetEventMatchReg()
     {
@@ -344,17 +344,24 @@ public:
         // extracting lower and upper 16-bit parts from match value
         uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
         uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
-
+        
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
         Hsc::nextCCeventLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
         Hsc::nextCCeventUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
-        
+
         // set and enable output compare interrupt on channel 0 for most significant timer
         TIMER1->CC[1].CCV = Hsc::nextCCeventLower;
         TIMER1->IEN |= TIMER_IEN_CC1;
         TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+        // force interrupt pending if lower part is zero, needed?
+        if (Hsc::nextCCeventLower == 0/* || Hsc::nextCCeventLower == TIMER1->CNT-1*/)
+        {
+            TIMER1->IFS |= TIMER_IFS_CC1;
+            NVIC_SetPendingIRQ(TIMER1_IRQn);
+        }
     }
 
     static inline bool IRQgetEventFlag()
@@ -378,6 +385,17 @@ public:
 
         // clear pending interrupt
         //NVIC_ClearPendingIRQ(TIMER1_IRQn);
+    }
+
+    static inline uint32_t IRQgetEventTimestamp()
+    {
+        return (TIMER2->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
+    }
+
+    static inline void clearTimestampBuffer()
+    {
+        IRQgetEventTimestamp();
+        IRQgetEventTimestamp();
     }
 
     static inline void IRQforcePendingEvent()

@@ -34,11 +34,14 @@
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
-#include "interfaces-impl/time_types_spec.h" //< TimerProxySpec
+#include "interfaces-impl/hsc.h"  // DELETEME: (s) won't be needed anymore after common import
 
 using namespace std;
+using namespace miosix::events;
 
 namespace miosix {
+
+static Hsc * hsc = &Hsc::instance(); // DELETEME: (s) won't be needed anymore after common import
 
 /**
  * NOTE: after implementing the driver for this transceiver, it was clear that
@@ -304,16 +307,17 @@ void Transceiver::sendAt(const void* pkt, int size, long long when)
     
     writePacketToTxBuffer(pkt,size);
     
-    long long w = tc.ns2tick(when-turnaround); // TODO: (s) fix, no more ticks but propagate ns to absolute trigger
+    long long w = when-turnaround;
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
-    // FIXME: (s)
-    if(timerProxy->absoluteWaitTrigger(w)==true)
+
+    if(absoluteTriggerEvent(w, Channel::STXON)!=EventResult::TRIGGER)
     {
 	//See diagram on page 69 of datasheet
         commandStrobe(CC2520Command::SFLUSHTX);
         throw runtime_error("Transceiver::sendAt too late to send");
     }
+    //iprintf("%lld\n", getTime());
     handlePacketTransmissionEvents(size);
 }
 
@@ -349,9 +353,7 @@ RecvResult Transceiver::recv(void *pkt, int size, long long timeout)
             if(inFifo>=lengthByte+1)
             {
                 //Timestamp is wrong and we know it, so we don't set valid
-                // TODO: (s) remove ::Correct param + remove dependency from ticks inside timer!!
-                // FIXME: (s)
-                result.timestamp = timerProxy->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+                result.timestamp = (hsc->upperTimeTick | Hsc::IRQgetEventTimestamp()) - (preambleSfdTime+rxSfdLag);
                 
                 //We may still be in the middle of another packet reception, so
                 //this may cause FRM_DONE to occur without a previous SFD,
@@ -413,10 +415,8 @@ CC2520StatusBitmask Transceiver::commandStrobe(CC2520Command cmd)
     return spi.sendRecv(toByte(cmd));
 }
 
-// TODO: (s) ask!
 Transceiver::Transceiver() : spi(Spi::instance()), state(CC2520State::DEEPSLEEP), 
-                                waiting(nullptr), transceiverPowerDomainRefCount(0),
-                                timerProxy(&TimerProxySpec::instance()), tc(timerProxy->IRQTimerFrequency())
+                                waiting(nullptr), transceiverPowerDomainRefCount(0)
 {
     registerGpioIrq(internalSpi::miso::getPin(), GpioIrqEdge::RISING,
     [this]{
@@ -452,9 +452,8 @@ void Transceiver::startRxAndWaitForRssi()
         if(status & CC2520Status::RSSI_VALID) break;
         if(i==retryTimes-1)
             throw runtime_error("Transceiver::startRxAndWaitForRssi timeout");
-        // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration! also not sure it's the correct method
-        //timer->wait(tc.ns2tick(rssiWait));
-        waitEvent(rssiWait);
+        // dummy channel and eventDirection, just wait for timeout
+        waitEvent(rssiWait, Channel::SFD); 
     }
 }
 
@@ -489,7 +488,6 @@ void Transceiver::writePacketToTxBuffer(const void* pkt, int size)
     }
 }
 
-// FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
 void Transceiver::handlePacketTransmissionEvents(int size)
 {   
     DeepSleepLock dslck;
@@ -498,14 +496,13 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     bool silentError=false;
     restart:
     //Wait for the first event to occur (SFD)
-    //if(timer->waitTimeoutOrEvent(tc.ns2tick(sfdTimeout))==true)
-    if(waitEvent(sfdTimeout) != EventResult::EVENT)
+    if(waitEvent(sfdTimeout, Channel::SFD).first != EventResult::EVENT)
     {
         //In case of timeout, abort current transmission
         idle();
         throw runtime_error("Transceiver::handlePacketTransmissionEvents timeout 1");
     }
-    
+
     unsigned int exc=getExceptions(0b111);
     if(exc & CC2520Exception::SFD)
     {
@@ -552,9 +549,7 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     }
     
     //Wait for the second event to occur (TX_FRM_DONE)
-    // FIXME: (s) method waitTimeoutOrEvent is missing transceiver configuration!
-    // bool timeout=timer->waitTimeoutOrEvent(tc.ns2tick(maxPacketTimeout));
-    bool timeout=waitEvent(maxPacketTimeout)!=EventResult::EVENT;
+    bool timeout=waitEvent(maxPacketTimeout, Channel::SFD).first != EventResult::EVENT;
     exc=getExceptions(0b001);
     if(timeout==true || (exc & CC2520Exception::TX_FRM_DONE)==0)
     {
@@ -576,21 +571,18 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
 {
     DeepSleepLock dslck;
 
-    // TODO: (s) remove tick dependency
-    //timeout = tc.ns2tick(timeout);
     //Wait for the first event to occur (SFD), or timeout
-    // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
-    //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
-    if(absoluteWaitEvent(timeout) != EventResult::EVENT)
+    EventResult eventResult;
+    long long timestamp;
+    std::tie(eventResult, timestamp) = absoluteWaitEvent(timeout, Channel::SFD);
+    if(eventResult != EventResult::EVENT)
     {
         result.error=RecvResult::TIMEOUT;
         return true;
     }
     //NOTE: the returned timestamp is the time where the first byte of the
     //packet is received, while the cc2520 allows timestamping at the SFD
-    
-    // FIXME: (s)
-    result.timestamp = timerProxy->getExtEventTimestamp() - (preambleSfdTime+rxSfdLag);
+    result.timestamp = timestamp - (preambleSfdTime+rxSfdLag);
     unsigned int exc=getExceptions(0b011);
     if(exc & CC2520Exception::RX_OVERFLOW)
     {
@@ -626,9 +618,8 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     //long long tt=timer->getValue()+tc.ns2tick(slack+timePerByte*size);
     long long tt=getTime()+slack+timePerByte*size;
     auto secondTimeout=config.strictTimeout ? min(timeout,tt) : max(timeout,tt);
-    // FIXME: (s) absoluteWaitEvent is missing transceiver configuration!
-    //if(timer->absoluteWaitTimeoutOrEvent(timeout) == true)
-    if(absoluteWaitEvent(secondTimeout) != EventResult::EVENT)
+
+    if(absoluteWaitEvent(secondTimeout, Channel::SFD).first != EventResult::EVENT)
     {
         // TODO: (s) check
         //if(timer->getValue()<timeout)
@@ -779,14 +770,15 @@ short int Transceiver::decodeRssi(unsigned char reg)
     return rawRssi-76; //See datasheet
 }
 
-inline EventResult Transceiver::waitEvent(long long timeoutNs)
+inline std::pair<EventResult, long long> Transceiver::waitEvent(long long timeoutNs, Channel channel)
 {
-    return absoluteWaitEvent(getTime() + timeoutNs);
+    return absoluteWaitEvent(getTime() + timeoutNs, channel);
 }
 
-inline EventResult Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs)
+inline std::pair<EventResult, long long> Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs, Channel channel)
 {
-    static constexpr long long oneTick2Ns = 1 / EFM32_HFXO_FREQ; // 20 (.8) ns
+    // FIXME: (s) can't divide in both, division returns zero
+    /*static constexpr long long oneTick2Ns = 1 / EFM32_HFXO_FREQ; // 20 (.8) ns
     static constexpr unsigned int minTimeDiff = 200 / EFM32_HFXO_FREQ;
 
     // TODO: (s) spostare in timer! + ricalcolare 
@@ -811,21 +803,49 @@ inline EventResult Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs)
     // cleanBufferTrasceiver();
     // enableCC0InterruptTim3(false); //enableCC0Interrupt
     // enableCC0InterruptTim2(true);
-    
+    */
     if(transceiver::excChB::value()){
-        // TODO: (s) various configurations + the one by default
-        return EventResult::EVENT;
+        // read captured timer value
+        long long timestampTick = hsc->upperTimeTick | Hsc::IRQgetEventTimestamp();
+        long long timestampNs = hsc->tc.tick2ns(timestampTick);
+
+        // return event
+        return std::make_pair(EventResult::EVENT, timestampNs);
     }
 
+    /*
     if(wakeUpInThePast){
         // enableCC0InterruptTim2(false);
         // enableCC1InterruptTim2(false);
 
         return EventResult::EVENT_IN_THE_PAST;
-    }
+    }*/
 
+    // configure event wait
+    configureEvent(channel, EventDirection::INPUT);
     // wait for event
-    return timerProxy->absoluteWaitEvent(absoluteTimeoutNs);
+    auto eventResultPack = events::absoluteWaitEvent(channel, absoluteTimeoutNs);
+    // deconfigure event wait
+    configureEvent(channel, EventDirection::DISABLED);
+
+    return eventResultPack;
+}
+
+inline EventResult Transceiver::triggerEvent(long long ns, Channel channel)
+{
+    return absoluteTriggerEvent(getTime() + ns, channel);
+}
+
+inline EventResult Transceiver::absoluteTriggerEvent(long long absoluteNs, Channel channel)
+{
+    // configure event wait
+    configureEvent(channel, EventDirection::OUTPUT);
+    // wait for event
+    EventResult eventResult = events::absoluteTriggerEvent(channel, absoluteNs);
+    // deconfigure event wait
+    configureEvent(channel, EventDirection::DISABLED);
+
+    return eventResult;
 }
 
 void Transceiver::enableTransceiverPowerDomain()

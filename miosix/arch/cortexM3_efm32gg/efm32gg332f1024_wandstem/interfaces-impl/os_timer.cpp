@@ -1,5 +1,5 @@
 /***************************************************************************
- *   Copyright (C) 2016 by Fabiano Riccardi, Sasan                         *
+ *   Copyright (C) 2022 by Fabiano Riccardi, Sasan, Alessandro Sorrentino  *
  *                                                                         *
  *   This program is free software; you can redistribute it and/or modify  *
  *   it under the terms of the GNU General Public License as published by  *
@@ -36,7 +36,6 @@ using namespace miosix;
 
 namespace miosix {
 
-static VirtualClockSpec * vc = &VirtualClockSpec::instance();
 
 long long getTime() noexcept
 {
@@ -54,7 +53,6 @@ namespace internal {
 void IRQosTimerInit()
 {
     // TODO: (s) remove init + instances! init inside constructor
-
     // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
     Rtc::instance().IRQinit();
@@ -91,7 +89,7 @@ unsigned int osTimerGetFrequency()
 } //namespace miosix 
 
 #define TIMER_INTERRUPT_DEBUG
-#define TIMER_EVENT_DEBUG
+//#define TIMER_EVENT_DEBUG
 
 /**
  * TIMER1 interrupt routine
@@ -125,7 +123,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
         #ifdef TIMER_EVENT_DEBUG
         greenLedOff();
         #endif
-        
+
         // disable output compare interrupt on channel 1 for least significant timer
         TIMER1->IEN &= ~TIMER_IEN_CC1;
         TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -138,17 +136,29 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
 
         if(events::getEventDirection() == events::EventDirection::OUTPUT)
         {
-            // connect TIMER2->CC1 to pin PA9 (stxon) on #0
+            // (0) TRIGGER: connect TIMER2->CC1 to pin PA9 (stxon) on #0
             TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
             TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
             TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
         }
-
+        auto tmp1 = TIMER2->CNT;
+        auto tmp2 = TIMER2->CC[1].CCV;
+        
+        // force interrupt pending if we're under 1.365312ms (TIMER2->CCV = 0) or we already match the upper part.
+        // Note, because of quirk, without this we would be expecting 14 (15 - 1) but we're reading 15 causing a deadlock.
+        if (Hsc::IRQgetNextCCeventUpper() == 0 || Hsc::IRQgetNextCCeventUpper() == TIMER2->CNT-1)
+        {
+            TIMER2->IFS |= TIMER_IFS_CC1;
+            Hsc::IRQforcePendingEvent();  //TIMER2_IRQHandler();
+        }
+        
         // if by the time we get here, the upper part of the counter has already matched
         // the counter register or got past it, call TIMER2 handler directly instead of waiting
         // for the other round of compare
-        // FIXME: (s) non funziona se sto aspettando parte alta dopo overflow (e.g. tono 65123 e devo aspettare 14)
-        /*if(upperTimerCounter >= hsc->IRQgetNextCCeventUpper())
+        // first check if not enough since we could be still expecting a lower value after overflow
+        // (e.g. i'm at 65123, i wait for --6513--*OVERFLOW*-->14)
+        // TODO: (s) i'm pretty sure it's wrong...
+        /*else if(upperTimerCounter >= hsc->IRQgetNextCCeventUpper() && TIMER2->CNT-1 >= Hsc::IRQgetNextCCeventUpper())
         {
             TIMER2->IFS |= TIMER_IFS_CC1;
             Hsc::IRQforcePendingEvent(); //TIMER2_IRQHandler();
@@ -233,28 +243,59 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     if(hsc->IRQgetEventFlag() || hsc->lateEvent)
     {
         Hsc::IRQclearEventFlag();
-        long long tick = hsc->IRQgetTimeTick();
-        if(tick >= hsc->IRQgetEventTick())
+
+        // (2) TRIGGER: CMOA cleared, we can terminate trigger procedure
+        if(TIMER2->CC[1].CTRL & TIMER_CC_CTRL_CMOA_CLEAR)
         {
+            TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+            TIMER2->IEN &= ~TIMER_IEN_CC1;
+            TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
+            TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+
             #ifdef TIMER_EVENT_DEBUG
             greenLedOn();
             #endif
 
-            // specific case trigger
-            if(events::getEventDirection() == events::EventDirection::OUTPUT)
-            {
-                // disconnect TIMER2->CC1 to pin PA9 (stxon)
-                TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
-                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
-                TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
-            }
-
-            // signal timeout or trigger
+            // signal trigger
             events::IRQsignalEventTimeout();
         }
-        // FIXME: (s) se tick <= devo resettare il TIMER2! 
-        // magari ho interrupt y<<16 | z e sono a x<<32 | y<<16 | z ma devo aspettaer (x+1)<<32 | y<<16 | z
-        hsc->lateEvent = false;
+        else  // trigger or event
+        {
+            long long tick = hsc->IRQgetTimeTick();
+            if(tick >= hsc->IRQgetEventTick())
+            {
+                // trigger case
+                if(events::getEventDirection() == events::EventDirection::OUTPUT) 
+                {
+                    // (1) TRIGGER: specific case trigger, trigger was fired and we now need to clear STXON using CMOA
+                    if(TIMER2->CC[1].CTRL & TIMER_CC_CTRL_CMOA_SET)
+                    {
+                        // disconnect TIMER2->CC1 to pin PA9 (stxon)
+                        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                        TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
+                        TIMER2->CC[1].CCV = static_cast<uint32_t>(TIMER2->CNT+1); // takes max 2^16 / 48e6 [s] = 1.365312ms
+                    }
+                }
+                // event case
+                else if (events::getEventDirection() == events::EventDirection::INPUT)
+                {
+                    #ifdef TIMER_EVENT_DEBUG
+                    greenLedOff();
+                    #endif
+
+                    events::IRQsignalEventTimeout(); // signal event timeout
+                }
+                else; // DISABLED, shouldn't get here
+            }
+            // lower 32-bit timer may match but not he upper 32-bit extended part, make another round
+            else
+            {
+                TIMER1->IEN |= TIMER_IEN_CC1;
+                TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            }
+            
+            hsc->lateEvent = false;
+        }
     }
 
     // Timestamping, wake up thread waiting for timestamp
@@ -283,7 +324,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     static miosix::VhtSpec * vht = &miosix::VhtSpec::instance();
        
     // if-guard
-    if(!hsc->IRQgetVhtMatchFlag()) return; // FIXME: (s) check, shouldn't it be flag from TIMER3?
+    if(!hsc->IRQgetVhtMatchFlag()) return;
 
     // PRS captured RTC current value inside the CC_0 of the TIMER3 (lower part of timer)
     hsc->IRQclearVhtMatchFlag();

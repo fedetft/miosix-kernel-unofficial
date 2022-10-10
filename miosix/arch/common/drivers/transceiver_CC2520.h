@@ -33,7 +33,7 @@
 #include <limits>
 #include "interfaces-impl/spi.h" // TODO: (s) correct basing on implementations from interface??
 #include "interfaces/peripheral.h"
-#include "interfaces-impl/time_types_spec.h" // TODO: (s) correct basing on implementations from interface??
+#include "interfaces/hw_eventstamping.h"
 
 namespace miosix {
 
@@ -366,8 +366,17 @@ private:
      * @param timeoutNs 
      * @return EventResult 
      */
-    inline EventResult waitEvent(long long timeoutNs);
-    inline EventResult absoluteWaitEvent(long long absoluteTimeoutNs);
+    inline std::pair<events::EventResult, long long> waitEvent(long long timeoutNs, events::Channel channel);
+    inline std::pair<events::EventResult, long long> absoluteWaitEvent(long long absoluteTimeoutNs, events::Channel channel);
+
+    /**
+     * @brief wait event wrappers for preliminary transceiver configuration
+     * 
+     * @param timeoutNs 
+     * @return EventResult 
+     */
+    inline events::EventResult triggerEvent(long long timeoutNs, events::Channel channel);
+    inline events::EventResult absoluteTriggerEvent(long long absoluteTimeoutNs, events::Channel channel);
     
     /**
      * The transceiver power domain is handled using a reference count.
@@ -391,8 +400,6 @@ private:
      */
     void disableTransceiverPowerDomain();
 
-    TimerProxySpec * timerProxy;
-    TimeConversion tc;
     Spi& spi;
     CC2520State state;
     TransceiverConfiguration config;

@@ -38,7 +38,7 @@ namespace events
 // forward declaration
 //enum class Channel;
 
-// FIXME: (s) temporary solution
+// FIXME: (s) temporary solution, should go in cpp but cannot do forward declaration!
 enum class Channel
 {
     SFD,
@@ -85,15 +85,8 @@ enum class EventResult
  * @return true 
  * @return false 
  */
-bool configureEvent(Channel channel, EventDirection direction);
+void configureEvent(Channel channel, EventDirection direction);
 
-/**
- * @brief 
- * 
- * @param channel 
- * @return std::pair<EventResult, long long> 
- */
-std::pair<EventResult, long long> waitEvent(Channel channel); // TODO: (s) su input, se output ERRORE
 
 /**
  * @brief 

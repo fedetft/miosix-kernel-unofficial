@@ -59,8 +59,8 @@ OPT_BOARD := efm32gg332f1024_wandstem
 ## -O2 is recomended otherwise, as it provides a good balance between code
 ## size and speed
 ##
-OPT_OPTIMIZATION := -O0
-#OPT_OPTIMIZATION := -O2
+#OPT_OPTIMIZATION := -O0
+OPT_OPTIMIZATION := -O2
 #OPT_OPTIMIZATION := -O3
 #OPT_OPTIMIZATION := -Os
 
@@ -2137,7 +2137,8 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
         $(BOARD_INC)/interfaces-impl/spi.cpp                        \
         $(BOARD_INC)/interfaces-impl/os_timer.cpp                   \
         $(BOARD_INC)/interfaces-impl/deep_sleep.cpp                 \
-        $(BOARD_INC)/interfaces-impl/virtual_clock.cpp              \
+        $(BOARD_INC)/interfaces-impl/hw_eventstamping.cpp           \
+        $(BOARD_INC)/interfaces-impl/flopsync3.cpp                  \
         $(BOARD_INC)/interfaces-impl/gpioirq.cpp                    \
 
         ## Add a #define to allow querying board name
@@ -2189,6 +2190,7 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
     ARCH_SRC +=                                              \
     arch/common/core/interrupts_cortexMx.cpp                 \
     arch/common/drivers/serial_efm32.cpp                     \
+    arch/common/drivers/transceiver_CC2520.cpp               \
     $(ARCH_INC)/interfaces-impl/portability.cpp              \
     $(ARCH_INC)/interfaces-impl/gpio_impl.cpp                \
     $(ARCH_INC)/interfaces-impl/delays.cpp                   \
