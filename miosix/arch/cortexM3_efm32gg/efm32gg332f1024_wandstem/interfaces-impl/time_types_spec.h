@@ -26,7 +26,7 @@
  ***************************************************************************/
 
 #pragma once
-
+// TODO: (s) define here pointers to Hsc and Rtc!
 ///
 // imports
 ///
@@ -42,11 +42,8 @@
 #include "interfaces-impl/rtc.h" 
 #endif
 
-// virtual clock and vht
-#ifdef WITH_FLOPSYNC
-#include "interfaces/flopsync3.h"
-#endif
-
+//< deferred import for virtual clock and vht
+                                                                
 ///
 // typedef(s)
 ///
@@ -63,17 +60,24 @@ using VirtualClockSpec = VirtualClock<Hsc, 2>;
 using VirtualClockSpec = VirtualClock<Hsc, 0>;
 #endif
 
-}
+inline VirtualClockSpec * vc = &VirtualClockSpec::instance();
 
-// Because the vht class it templates, all its implementation is contianed in the
-// header file. Therefore, we need to import it after having defined VirtualClockSpec.
-#ifdef WITH_VHT
-#include "interfaces/vht.h"
+#if defined(WITH_VHT)
+// forward declaration of Vht, body defined in clock_sync.h
+template<typename Hsc_TA, typename Rtc_TA>
+class Vht;
+
+using VhtSpec = Vht<Hsc, Rtc>;
 #endif
 
-namespace miosix
-{
-    #if defined(WITH_VHT)
-    using VhtSpec = Vht<Hsc, Rtc>;
-    #endif
 }
+
+// Since Vht is a templated class, its implementation is fully contained in clock_sync.h.
+// Therefore, to update coefficiencies a and b in the virtual clock, we need to use a
+// specialization of the virtual clock. clock_sync.h cannot therefore be imported 
+// before the definition of VirtualClockSpec.
+
+// virtual clock and vht
+#if defined(WITH_FLOPSYNC) || defined(WITH_VHT)
+#include "time/clock_sync.h"
+#endif

@@ -25,7 +25,7 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "interfaces/flopsync3.h"
+#include "time/clock_sync.h"
 #include "time/timeconversion.h"
 #include "kernel/logging.h"
 #include <stdexcept>
@@ -54,13 +54,13 @@ inline long long Flopsync3::IRQuncorrect(long long vc_t)
 }
 
 long long closestPowerOfTwo(unsigned long long); // forward declaration
-void Flopsync3::updateVC(long long vc_k, long long e_k)
+void Flopsync3::IRQupdate(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
     assertInit();
     assertNonNegativeTime(vc_k);
 
-    static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
+    //static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
 
     // controller correction
     static constexpr fp32_32 factorP(0.15);
@@ -85,24 +85,8 @@ void Flopsync3::updateVC(long long vc_k, long long e_k)
 
     //long long D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
     //       ↓↓        ↓↓       ↓↓       ↓↓   
-    long long D_k = ( deltaT / vcdot_km1 ) - syncPeriod;
-    // NOTE: DELETEME: (s), this approach was discarded because of the poor rapresentation
-    // we were getting when inverting prescaledDenum for the division
-    // remember: in fp32_32, division is just multiplication by the reciprocal 
-    // pre computing multiplicative factors
-    // This was necessary because D_k + syncPeriod is a very big number and its inverse
-    // was not rapresentable correctly on just 32 bit leading to an approximated and therefore
-    // wrong vcdot_k factor.
-
-    // static const long long prescaleExp = 24; // scale exponent, 2^n
-
-    // // prescale denum by factor of 2^prescaleExp
-    // static const long long prescaledSyncPeriod = syncPeriod>>prescaleExp;
-    // fp32_32 prescaledDenum = fp32_32((D_k>>prescaleExp) + prescaledSyncPeriod); 
-    // // rescale everything by factor of 256 (note inverse, evaluated at compile time)
-    // static constexpr fp32_32 rescaleFactor(1/static_cast<double>(1LL<<prescaleExp));
-
-
+    long long D_k = ( deltaT / vcdot_km1 ) - syncPeriod; // TODO: (s) prescale delta e usare fp32_32
+    
     // this approach aims to scale down syncPeriod contribute in the formula since its value do npt
     // fit 32 signed bit in the fp32_32 type.
     // Since we have at the denumerator D_k + syncPeriod, that in fp32_32 is implemented as a
@@ -117,18 +101,20 @@ void Flopsync3::updateVC(long long vc_k, long long e_k)
     //fp32_32 rescaleFactor = fp32_32((D_k + syncPeriod) / closest2powFP).fastInverse();
     //       ↓↓        ↓↓       ↓↓       ↓↓       ↓↓          ↓↓          ↓↓      
     fp32_32 rescaleFactor = ( (fp32_32(D_k) / closest2powFP) + (syncPeriod / closest2powFP) ).fastInverse();
+    
+    // TODO: (s) ns2tick stateful!! disabilitare interrupt
+    // calculating vcdot_k with interrupts enabled, perform assignment with interrupts disabled
+    //fp32_32 vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
+    //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
+    //fp32_32 vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / prescaledDenum) * rescaleFactor;
+    //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
+    fp32_32 vcdot_k = ( ( (u_k * (beta - 1) + e_kFP * (1 - beta)) / prescaledDenum ) + ( syncPeriod / prescaledDenum ) ) * rescaleFactor;
 
     // performing virtual clock slope correction disabling interrupt
     {
         FastInterruptDisableLock dLock;
 
-        // FIXME: (s) drives vcdot_k to zero! why??
-        // perchè fp32_32(syncPeriod) potrebbe non starci in 32 bit signed
-        //this->vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
-        //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
-        //this->vcdot_k = ((u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / prescaledDenum) * rescaleFactor;
-        //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
-        this->vcdot_k = ( ( (u_k * (beta - 1) + e_kFP * (1 - beta)) / prescaledDenum ) + ( syncPeriod / prescaledDenum ) ) * rescaleFactor;
+        this->vcdot_k = vcdot_k;
 
         // next iteration values update
         this->tsnc_km1 = IRQuncorrect(vc_k);
@@ -155,7 +141,7 @@ void Flopsync3::updateVC(long long vc_k, long long e_k)
     // printf("prescaledDenum\t%.15f\n", static_cast<double>(prescaledDenum));
     // printf("syncPeriod / prescaledDenum:\t%lld\n", syncPeriod / prescaledDenum);
     // printf("(syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
-    // printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
+    printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
     // printf("inv_vcdot_km1:\t%.20f\n", (double)inv_vcdot_km1);
     // printf("a:\t\t%.20f\n", (double)a_km1);
     // iprintf("b:\t\t%lld\n", b_km1);
