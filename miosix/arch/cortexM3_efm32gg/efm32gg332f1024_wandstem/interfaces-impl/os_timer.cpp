@@ -55,12 +55,12 @@ void IRQosTimerInit()
     // TODO: (s) remove init + instances! init inside constructor
     // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-    Rtc::instance().IRQinit();
+    rtc->IRQinit();
     //rtc->IRQinit();
     #endif
 
     #if defined(WITH_VHT)
-    VhtSpec::instance().IRQinit();
+    vht->IRQinit();
     #endif
 
     vc->IRQinit(); // inits HSC and correction stack
@@ -107,8 +107,6 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
     // save value of TIMER1 counter right away to check for compare later
     unsigned int upperTimerCounter = TIMER2->CNT;
 
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
-
     #ifdef TIMER_INTERRUPT_DEBUG
     if(hsc->IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
     #endif
@@ -141,8 +139,6 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
             TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
             TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
         }
-        auto tmp1 = TIMER2->CNT;
-        auto tmp2 = TIMER2->CC[1].CCV;
         
         // force interrupt pending if we're under 1.365312ms (TIMER2->CCV = 0) or we already match the upper part.
         // Note, because of quirk, without this we would be expecting 14 (15 - 1) but we're reading 15 causing a deadlock.
@@ -201,8 +197,6 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
     // save value of TIMER1 counter right away to check for compare later
     unsigned int lowerTimerCounter = TIMER1->CNT;
-
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
 
     // TIMER2 overflow, pending bit trick.
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
@@ -319,9 +313,8 @@ void __attribute__((naked)) TIMER3_IRQHandler()
 
 void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
+    greenLedOn();
     #ifdef WITH_VHT
-    static miosix::Hsc * hsc = &miosix::Hsc::instance();
-    static miosix::VhtSpec * vht = &miosix::VhtSpec::instance();
        
     // if-guard
     if(!hsc->IRQgetVhtMatchFlag()) return;
@@ -339,7 +332,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
         vht->IRQupdate(syncPointActualHsc);
 
     #endif
-
+    greenLedOff();
 }
 
 /**
@@ -355,8 +348,6 @@ void __attribute__((naked)) RTC_IRQHandler()
 void __attribute__((used)) RTChandlerImpl()
 {
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-
-    static miosix::Rtc * rtc = &miosix::Rtc::instance();
     
     // handle RTC overflow
     if(rtc->IRQgetOverflowFlag()) { rtc->IRQoverflowHandler(); }

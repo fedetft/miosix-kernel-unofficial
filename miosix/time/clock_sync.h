@@ -35,12 +35,11 @@
 #include <stdexcept>
 #include "time/flopsync_vht.h"
 #include "kernel/logging.h"
-#include "interfaces-impl/time_types_spec.h"
 
 namespace miosix {
 
 // forward declaration
-
+//....
 
 ///
 // Correction tile
@@ -73,16 +72,10 @@ public:
 // VHT
 ///
 
-// TODO: (s) refactor factorI and factorD using fp32_32 type + remove explicit mul64x32d32
-template<typename Hsc_TA, typename Rtc_TA>
 class Vht : public CorrectionTile
 {
 public:
-    static Vht& instance()
-    {
-        static Vht vht;
-        return vht;
-    }
+    static Vht& instance();
 
     /**
      * @brief 
@@ -96,14 +89,7 @@ public:
      * @param ns 
      * @return long long 
      */
-    long long IRQcorrect(long long ns)
-    {
-        if(!init) { return ns; }
-
-        //long long tick = tc.ns2tick(ns) /*+ vhtClockOffset*/;
-        //return tc.tick2ns(syncPointTheoreticalHsc + fastNegMul(tick - syncPointExpectedHsc, factorI, factorD));
-        return a_km1 * ns + b_km1;
-    }
+    long long IRQcorrect(long long ns);
 
     /**
      * @brief 
@@ -111,98 +97,21 @@ public:
      * @param ns 
      * @return long long 
      */
-    long long IRQuncorrect(long long ns)
-    {
-        if(!init) { return ns; }
-
-        //long long tick = tc.ns2tick(ns);
-        //return tc.tick2ns(syncPointExpectedHsc + fastNegMul(tick - syncPointTheoreticalHsc, inverseFactorI, inverseFactorD) /*- vhtClockOffset*/);
-        return (ns - b_km1) / a_km1;
-    }
+    long long IRQuncorrect(long long ns);
 
     /**
      * @brief sync between RTC and HSC every 20ms 
      * Since we execute instructions at 48Mhz, we execute multiple instructions before each RTC tick
      * 
      */
-    void IRQinit()
-    {
-        this->flopsyncVHT = &FlopsyncVHT::instance();
-
-        // setting up VHT timer
-        Hsc_TA::IRQinitVhtTimer();
-        Hsc_TA::IRQstartVhtTimer();
-
-        Rtc_TA::IRQinitVhtTimer();
-        Rtc_TA::IRQstartVhtTimer(); // read inside rtc.h
-
-        // performing VHT initialization
-        unsigned int nowRtc = Rtc_TA::IRQgetTimerCounter() + 2; // TODO: (s) this is for undocumented quirk, generalize! + CHECK OVERFLOW
-        Rtc_TA::IRQsetVhtMatchReg(nowRtc);
-
-        Rtc_TA::IRQclearVhtMatchFlag();
-        // WARNING: this while may break if connected to GDB while doing step-by-step execution from above
-        while(!Rtc_TA::IRQgetVhtMatchFlag()); // wait for first compare
-
-        // Reading vht timestamp but replacing lower part of counter with RTC value
-        long long vhtTimestamp = Hsc_TA::IRQgetVhtTimerCounter();
-
-        if(vhtTimestamp > Hsc_TA::IRQgetTimerCounter()){
-            vhtTimestamp -= 1<<16; // equivalent to ((TIMER2->CNT-1)<<16) | TIMER3->CC[0].CCV;
-        }
-
-        Rtc_TA::IRQclearVhtMatchFlag();
-        Hsc_TA::IRQclearVhtMatchFlag();
-
-        #if EFM32_HFXO_FREQ != 48000000 || EFM32_LFXO_FREQ != 32768
-        #error "Clock frequency assumption not satisfied"
-        #endif
-
-        // first VHT correction
-        //conversion factor between RTC and HRT is 48e6/32768=1464+3623878656/2^32
-        long long nowHsc = mul64x32d32(nowRtc, 1464, 3623878656);
-        this->vhtClockOffset = nowHsc - vhtTimestamp;
-        this->syncPointExpectedHsc = nowHsc;
-
-        // resync done, set next resync
-        this->nextSyncPointRtc = nowRtc + syncPeriodRtc;
-        Rtc_TA::IRQsetVhtMatchReg(nextSyncPointRtc);
-        this->syncPointTheoreticalHsc = nowHsc;
-
-        // first VHT correction
-        IRQupdateImpl(syncPointTheoreticalHsc, syncPointExpectedHsc, 0);
-
-        this->init = true;
-    }
+    void IRQinit();
 
     /**
      * @brief 
      * 
      * @param syncPointActualHsc 
      */
-    void IRQupdate(long long syncPointActualHsc)
-    {
-        this->syncPointActualHsc = syncPointActualHsc + vhtClockOffset;
-
-        // set next RTC trigger
-        this->nextSyncPointRtc += this->syncPeriodRtc; // increments next RTC sync point as currentSyncPoint + syncPeriod
-        this->syncPointTheoreticalHsc += this->syncPeriodHsc; // increments next HSC sync point as theoreticalSyncPoint + syncPeriod
-        this->syncPointExpectedHsc += this->syncPeriodHsc + this->clockCorrectionFlopsync;
-
-        Rtc_TA::IRQclearVhtMatchFlag(); // clear RTC output channel
-        Rtc_TA::IRQsetVhtMatchReg(Rtc_TA::IRQgetVhtTimerMatchReg() + syncPeriodRtc);
-
-        // calculate required parameters
-        this->error = this->syncPointActualHsc - syncPointExpectedHsc;
-        this->clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);
-
-        // TODO: (s) extend error.h types and print everything inside error.cpp + recover
-        // handle case in which error exceeds maximum theoretical error
-        if(error < -maxTheoreticalError || error > maxTheoreticalError) 
-            IRQhandleErrorException();
-
-        IRQupdateImpl(syncPointTheoreticalHsc, syncPointExpectedHsc, clockCorrectionFlopsync);
-    }
+    void IRQupdate(long long syncPointActualHsc);
 
     /**
      * @brief 
@@ -211,75 +120,13 @@ public:
      * @param syncPointComputed 
      * @param vhtClockOffset 
      */
-    inline void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync)
-    {
-        
-        //efficient way to calculate the factor T/(T+u(k))
-        long long temp = (syncPeriodHsc<<32) / (syncPeriodHsc + clockCorrectionFlopsync);
-        //calculate inverse of previous factor (T+u(k))/T
-        long long inverseTemp = ((syncPeriodHsc + clockCorrectionFlopsync)<<32) / syncPeriodHsc;
-        
-        factorI = static_cast<unsigned int>((temp & 0xFFFFFFFF00000000LLU)>>32);
-        factorD = static_cast<unsigned int>(temp);
-        
-        inverseFactorI = static_cast<unsigned int>((inverseTemp & 0xFFFFFFFF00000000LLU)>>32);
-        inverseFactorD = static_cast<unsigned int>(inverseTemp);
-
-        // compute aX + b coefficient pairs
-        fp32_32 a; a.value = (static_cast<int64_t>(factorI)<<32) | factorD;
-        long long b = tc.tick2ns(syncPointTheoreticalHsc - (a * syncPointExpectedHsc));
-
-        // update internal and vc coeff. at position N only if necessary
-        //static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
-        if(a_km1 != a || b_km1 != b)
-        {
-            this->a_km1 = a;
-            this->b_km1 = b;
-
-            vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
-        }
-    }
+    void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync);
 
     /**
      * @brief 
      * 
      */
-    void IRQresyncClock()
-    {
-        long long nowRtc = Rtc_TA::IRQgetTimerCounter();
-        long long syncAtRtc = nowRtc + 2; // TODO: (s) generalize for random quirk
-        //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
-        long long prevCOMP1 = Rtc_TA::IRQgetVhtTimerMatchReg();
-        Rtc_TA::IRQsetVhtMatchReg(syncAtRtc);
-
-        //Virtual high resolution timer, init without starting the input mode!
-        Hsc_TA::IRQinitVhtTimer();
-        Hsc_TA::IRQstartVhtTimer();
-        
-        Rtc_TA::IRQclearVhtMatchFlag();
-        //Clean the buffer to avoid false reads
-        Hsc_TA::IRQgetVhtTimerCounter();
-        Hsc_TA::IRQgetVhtTimerCounter();
-        while(!Rtc_TA::IRQgetVhtMatchFlag()); // wait for first compare
-
-        long long timestamp = Hsc_TA::IRQgetVhtTimerCounter();
-        //Got the values, now polishment of flags and register
-        Rtc_TA::IRQclearVhtMatchFlag();
-        Hsc_TA::IRQclearVhtMatchFlag();
-        
-        Rtc_TA::IRQsetVhtMatchReg(prevCOMP1+1); // TODO: (s) generalize quirk
-        
-        long long syncAtHrt = mul64x32d32(syncAtRtc, 1464, 3623878656);
-        vhtClockOffset = syncAtHrt - timestamp;
-        syncPointExpectedHsc = syncAtHrt;
-        nextSyncPointRtc = syncAtRtc + syncPeriodRtc;
-        syncPointTheoreticalHsc = syncAtHrt;
-        syncPointActualHsc = syncAtHrt;
-
-        // clear flags not to resync immediately
-        Hsc_TA::IRQclearVhtMatchFlag();
-        Hsc_TA::IRQgetVhtTimerCounter();
-    }
+    void IRQresyncClock();
 
     /**
      * @brief 
@@ -446,6 +293,12 @@ public:
      */
     void IRQsetInitialOffset(long long T0);
     void setInitialOffset(long long T0);
+
+    /**
+     * @brief Resets a and b parameters among with all control variables
+     * 
+     */
+    void reset();
     
 private:
     Flopsync3();
@@ -500,19 +353,9 @@ private:
 
     TimeConversion tc;
 
-    // fast correction parameters (ax + b)
+    // fast correction parameters (ax + b), "a" DOES NOT refear to the flopsync controller parameter
     fp32_32 a_km1;
     long long b_km1;
 };
-
-#if defined(WITH_VHT) && !defined(WITH_FLOPSYNC)
-using VirtualClockSpec = VirtualClock<Hsc, 1>;
-#elif !defined(WITH_VHT) && defined(WITH_FLOPSYNC)
-using VirtualClockSpec = VirtualClock<Hsc, 1>;
-#elif defined(WITH_VHT) && defined(WITH_FLOPSYNC)
-using VirtualClockSpec = VirtualClock<Hsc, 2>;
-#else
-using VirtualClockSpec = VirtualClock<Hsc, 0>;
-#endif
 
 }

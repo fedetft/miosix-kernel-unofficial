@@ -381,6 +381,12 @@ public:
         return *this;
     }
 
+    constexpr Fixed& operator = (int32_t a)
+    {
+        this->value = a<<dp;
+        return *this;
+    }
+
     // Negation
     constexpr Fixed operator - () const
     {

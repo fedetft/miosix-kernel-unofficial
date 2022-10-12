@@ -34,14 +34,13 @@
 #include <algorithm>
 #include <cassert>
 #include <kernel/scheduler/scheduler.h>
-#include "interfaces-impl/hsc.h"  // DELETEME: (s) won't be needed anymore after common import
+#include "interfaces-impl/time_types_spec.h"
 
 using namespace std;
 using namespace miosix::events;
 
 namespace miosix {
 
-static Hsc * hsc = &Hsc::instance(); // DELETEME: (s) won't be needed anymore after common import
 
 /**
  * NOTE: after implementing the driver for this transceiver, it was clear that

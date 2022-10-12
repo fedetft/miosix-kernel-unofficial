@@ -334,6 +334,7 @@ public:
         auto tick2 = tick + quirkAdvance;
         upperEventTick = tick2 & upperMask;
         D::IRQsetEventMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+
         if(IRQgetTimeTick() >= tick)
         {
             D::IRQforcePendingEvent();
@@ -347,7 +348,7 @@ public:
      */
     inline void IRQsetEventNs(long long ns)
     {
-        IRQsetEventTick(tc.ns2tick(ns)); // FIXME: (s) introduces convesion error + in hsc -1? sure?
+        IRQsetEventTick(tc.ns2tick(ns));
     }
 
     /**
@@ -608,6 +609,9 @@ public:
      */
     inline long long IRQuncorrectTimeNs(long long ns)
     {
+        // TODO: (s) 0.1% max di errore
+        // TODO: (s) siccome a nell'intorno di 1, l'inverso non ho perdita grave di quant.
+        // TODO: (s) precisione del fixed point è buona
         return static_cast<unsigned long long>(ns - b) / a;
     }
 

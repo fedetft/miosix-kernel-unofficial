@@ -26,58 +26,54 @@
  ***************************************************************************/
 
 #pragma once
-// TODO: (s) define here pointers to Hsc and Rtc!
+
 ///
 // imports
 ///
 
-#include "interfaces/os_timer.h"
-
-// high speed clock
+/* High Speed Clock */
 #include "interfaces-impl/hsc.h" 
 
-
-// real time clock
-#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+/* Real Time Clock */
 #include "interfaces-impl/rtc.h" 
-#endif
 
-//< deferred import for virtual clock and vht
-                                                                
+/* Virtual Clock */  
+#include "interfaces/os_timer.h"
+
+/* Flopsync3 e Virtual High Resolution Timer */  
+#include "time/clock_sync.h"
+
+
 ///
 // typedef(s)
-///
+/// 
 
 namespace miosix {
 
-#if defined(WITH_VHT) && !defined(WITH_FLOPSYNC)
-using VirtualClockSpec = VirtualClock<Hsc, 1>;
+/* High Speed Clock */
+extern Hsc * hsc; //< HSC
+
+/* Real Time Clock */
+#if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
+extern Rtc * rtc; //< RTC
+#endif
+
+/* Virtual Clock */
+#if defined(WITH_VHT) && defined(WITH_FLOPSYNC)
+using VirtualClockSpec = VirtualClock<Hsc, 2>;
 #elif !defined(WITH_VHT) && defined(WITH_FLOPSYNC)
 using VirtualClockSpec = VirtualClock<Hsc, 1>;
-#elif defined(WITH_VHT) && defined(WITH_FLOPSYNC)
-using VirtualClockSpec = VirtualClock<Hsc, 2>;
+#elif defined(WITH_VHT) && !defined(WITH_FLOPSYNC)
+using VirtualClockSpec = VirtualClock<Hsc, 1>;
 #else
 using VirtualClockSpec = VirtualClock<Hsc, 0>;
 #endif
 
-inline VirtualClockSpec * vc = &VirtualClockSpec::instance();
+extern VirtualClockSpec * vc; //< VC 
 
+/* Virtual High Resolution Timer */
 #if defined(WITH_VHT)
-// forward declaration of Vht, body defined in clock_sync.h
-template<typename Hsc_TA, typename Rtc_TA>
-class Vht;
-
-using VhtSpec = Vht<Hsc, Rtc>;
+extern Vht * vht; //< VHT
 #endif
 
 }
-
-// Since Vht is a templated class, its implementation is fully contained in clock_sync.h.
-// Therefore, to update coefficiencies a and b in the virtual clock, we need to use a
-// specialization of the virtual clock. clock_sync.h cannot therefore be imported 
-// before the definition of VirtualClockSpec.
-
-// virtual clock and vht
-#if defined(WITH_FLOPSYNC) || defined(WITH_VHT)
-#include "time/clock_sync.h"
-#endif

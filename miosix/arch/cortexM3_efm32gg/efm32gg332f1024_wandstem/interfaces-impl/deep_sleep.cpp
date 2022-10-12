@@ -45,13 +45,6 @@ using namespace miosix;
 
 namespace miosix {
 
-static Rtc* rtc = nullptr; 
-static Hsc* hsc = nullptr;
-static VirtualClockSpec * vc = nullptr;
-#ifdef WITH_VHT
-static VhtSpec * vht = nullptr;
-#endif
-
 static TimeConversion* RTCtc = nullptr;
 
 // forward declaration
@@ -67,15 +60,6 @@ void IRQresyncClocks();
 ///
 void IRQdeepSleepInit()
 {
-    // instances of RTC and HSC
-    rtc         = &Rtc::instance();
-    vc          = &VirtualClockSpec::instance();
-    hsc         = &Hsc::instance();
-
-    #ifdef WITH_VHT
-    vht         = &VhtSpec::instance();
-    #endif
-
     RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());   
 }
 
