@@ -24,7 +24,6 @@ kernel/scheduler/control/control_scheduler.cpp                             \
 kernel/scheduler/edf/edf_scheduler.cpp                                     \
 time/timeconversion.cpp                                                    \
 time/flopsync_vht.cpp													   \
-time/flopsync3.cpp													   \
 filesystem/file_access.cpp                                                 \
 filesystem/file.cpp                                                        \
 filesystem/stringpart.cpp                                                  \

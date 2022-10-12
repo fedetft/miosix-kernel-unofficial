@@ -60,8 +60,6 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     assertInit();
     assertNonNegativeTime(vc_k);
 
-    //static VirtualClockSpec * vc = &VirtualClockSpec::instance(); // FIXME: (s) remove instance
-
     // controller correction
     static constexpr fp32_32 factorP(0.15);
     fp32_32 e_kFP(e_k);
@@ -201,6 +199,14 @@ void Flopsync3::assertInit()
             std::string("[ ") +  typeid(*this).name() +  std::string(" | ") + __FUNCTION__ + std::string(" ] Virtual clock has not been initialized yet.")
         );
     }
+}
+
+void Flopsync3::reset()
+{
+    //this->a_km1 = 1;
+    //this->b_km1 = 1;
+    //...
+    // TODO: (s) update VC coeff?
 }
 
 Flopsync3::Flopsync3() : posCorrection(VirtualClockSpec::numCorrections-1), maxPeriod(1099511627775), 
