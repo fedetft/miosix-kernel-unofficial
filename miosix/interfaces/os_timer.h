@@ -177,7 +177,6 @@ unsigned int osTimerGetFrequency();
  * actual interrupt time. If this is the case set this parameter to the minimum
  * number of ticks in the future the timer must be set, otherwise keep at 0 
  */
-// TODO: (s) use template for number of events (e.g. event 0 transc, event 1 gpio, ...)
 template<typename D, unsigned bits, unsigned quirkAdvance=0> //, unsigned eventChannels=0> // TODO: (s) remove?
 class TimerAdapter
 {
@@ -190,10 +189,10 @@ public:
     
     long long upperTimeTick = 0; //Extended timer counter (upper bits)
     long long upperIrqTick = 0;  //Extended interrupt time point (upper bits)
-    long long upperEventTick = 0;  //Extended interrupt time point (upper bits)
+    long long upperTriggerTick = 0;  //Extended interrupt time point (upper bits)
     miosix::TimeConversion tc;
     bool lateIrq=false;
-    bool lateEvent=false;
+    bool lateTrigger=false;
     
     /**
      * \return the current time in ticks
@@ -328,17 +327,16 @@ public:
      * Schedule the next os interrupt
      * \param ns absolute time in ticks, must be > 0
      */
-    // TODO: (s) check for different boards
-    inline void IRQsetEventTick(long long tick)
+    inline void IRQsetTriggerTick(long long tick)
     {
         auto tick2 = tick + quirkAdvance;
-        upperEventTick = tick2 & upperMask;
-        D::IRQsetEventMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+        upperTriggerTick = tick2 & upperMask;
+        D::IRQsetTriggerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
 
         if(IRQgetTimeTick() >= tick)
         {
-            D::IRQforcePendingEvent();
-            lateEvent=true;
+            D::IRQforcePendingTrigger();
+            lateTrigger=true;
         }
     }
     
@@ -346,17 +344,17 @@ public:
      * Schedule the next os interrupt
      * \param ns absolute time in nanoseconds, must be > 0
      */
-    inline void IRQsetEventNs(long long ns)
+    inline void IRQsetTriggerNs(long long ns)
     {
-        IRQsetEventTick(tc.ns2tick(ns));
+        IRQsetTriggerTick(tc.ns2tick(ns));
     }
 
     /**
      * \return the time when the next os interrupt is scheduled in ticks
      */
-    inline long long IRQgetEventTick()
+    inline long long IRQgetTriggerTick()
     {
-        return upperEventTick | D::IRQgetEventMatchReg();
+        return upperTriggerTick | D::IRQgetTriggerMatchReg();
     }
     
     /**
@@ -378,13 +376,13 @@ public:
         }
 
 
-        /*if(D::IRQgetEventFlag() || lateEvent)
+        /*if(D::IRQgetTriggerFlag() || lateTrigger)
         {
-            D::IRQclearEventFlag();
+            D::IRQclearTriggerFlag();
             long long tick=IRQgetTimeTick();
-            if(tick >= IRQgetEventTick() || lateEvent)
+            if(tick >= IRQgetTriggerTick() || lateTrigger)
             {
-                lateEvent = false;
+                lateTrigger = false;
                 // signal timeout
             }
         }*/

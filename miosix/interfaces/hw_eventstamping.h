@@ -114,7 +114,7 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs); // watc
  */
 void IRQsignalEvent();
 void IRQsignalEventTimeout();
-
+void IRQsignalTrigger();
 /**
  * @brief Get the Event Direction object
  * 

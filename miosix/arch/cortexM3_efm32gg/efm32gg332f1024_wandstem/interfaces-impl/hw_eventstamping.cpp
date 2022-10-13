@@ -49,17 +49,14 @@ enum class Channel;
 ///
 
 static std::mutex eventMutex;
-static Thread* eventThread = nullptr;
+static Thread* waitingThread = nullptr;
 static std::atomic<bool>event(false);
+static std::atomic<bool>trigger(false);
 static std::atomic<bool>eventTimeout(false);
 
 ///
 // Actual interface 
 ///
-
-//static VirtualClockSpec * vc = &VirtualClockSpec::instance();
-static Hsc * hsc = &Hsc::instance();
-static TimeConversion tc(Hsc::IRQTimerFrequency()); // FIXME: (s) if i use hsc->tc doesn't work!
 
 // SFD, STXON, TIMESTAMP_IN_OUT //< channels
 /*enum class Channel
@@ -73,7 +70,6 @@ static EventDirection currentDirection = EventDirection::DISABLED;
 
 inline void configureEventHelper(GpioPin pinChannel, EventDirection direction)
 {
-    // TODO: (s) svegliare trigger con sempre gpioirq e non timeout
     if(direction == EventDirection::INPUT)
     {
         try // register GPIO irq
@@ -111,7 +107,7 @@ void configureEvent(Channel channel, EventDirection direction)
     case Channel::STXON: // PA9
         configureEventHelper(transceiver::stxon::getPin(), direction);
         break;
-    default: // PE12, Channel::TIMESTAMP_IN_OUT: 
+    default: // PE12, TIMESTAMP_IN_OUT: 
         configureEventHelper(expansion::gpio10::getPin(), direction);
         break;
     }
@@ -121,36 +117,38 @@ void configureEvent(Channel channel, EventDirection direction)
 
     {
         FastInterruptDisableLock dLock;
-
-        // default is disabled state
-        uint32_t TIMER1_FLAGS = 0;
-        uint32_t TIMER2_FLAGS = 0;
         
         // INPUT_CAPTURE
         if(direction == EventDirection::INPUT)
         {
             // configure timer as input capture triggered by PRS
-            TIMER1_FLAGS = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
+            TIMER1->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
                                     | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-            TIMER2_FLAGS = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS 
+            TIMER3->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS 
                                     | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+
+            // TODO: (s) set PRS here and just use waitEvent as wrapper for waiting?
         }
         // OUTPUT_COMPARE
         else if(direction == EventDirection::OUTPUT)
         {
             // configure timer as output compare
-            TIMER1_FLAGS = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-            TIMER2_FLAGS = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; 
+            TIMER2->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            TIMER3->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; 
 
             // connect TIMER2 output using routing table //< set and reset moved into TIMER2_ISR
             //TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
             //TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
             //TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
         }
-        else ; // DISABLED
-
-        TIMER1->CC[2].CTRL = TIMER1_FLAGS;
-        TIMER2->CC[2].CTRL = TIMER2_FLAGS;
+        // DISABLED
+        else 
+        {
+            TIMER1->CC[2].CTRL = 0;
+            TIMER2->CC[1].CTRL = 0;
+            TIMER3->CC[1].CTRL = 0;
+            TIMER3->CC[2].CTRL = 0;
+        }
     }
 }
 
@@ -211,17 +209,17 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     if(hsc->IRQgetTimeNs() > absoluteTimeoutNsTsnc) return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
 
     // set up timeout timer
-    hsc->IRQsetEventNs(absoluteTimeoutNsTsnc);
+    hsc->IRQsetTriggerNs(absoluteTimeoutNsTsnc);
 
     // clean timestamp buffer
     Hsc::clearTimestampBuffer();
 
     // enable timers interrupt (PRS triggers both at the same time, just one needed)
-    TIMER2->IEN |= TIMER_IEN_CC2;
-    //TIMER1->IEN |= TIMER_IEN_CC2;
+    //TIMER3->IEN |= TIMER_IEN_CC2;
+    TIMER1->IEN |= TIMER_IEN_CC2;
 
     // register current thread for wakeup
-    eventThread = Thread::IRQgetCurrentThread();
+    waitingThread = Thread::IRQgetCurrentThread();
 
     event = false;
     eventTimeout = false;
@@ -237,14 +235,14 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     }
     
     // disable timer interrupts
-    TIMER2->IEN &= ~TIMER_IEN_CC2;
-    //TIMER1->IEN &= ~TIMER_IEN_CC2;
+    //TIMER3->IEN &= ~TIMER_IEN_CC2;
+    TIMER1->IEN &= ~TIMER_IEN_CC2;
 
     // reset timeout timer
-    Hsc::IRQclearEventFlag();
+    Hsc::IRQclearTriggerFlag();
 
     // reset event status
-    eventThread = nullptr;
+    waitingThread = nullptr;
 
     // disconnect GPIOH--PRS-->TIMER connection
     PRS->CH[0].CTRL = 0;
@@ -267,8 +265,8 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     if(event)
     {
         // read captured timer value
-        long long timestampTick = hsc->upperTimeTick | Hsc::IRQgetEventTimestamp(); //(TIMER2->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
-        long long timestampNs = tc.tick2ns(timestampTick);
+        long long timestampTick = hsc->upperTimeTick | Hsc::IRQgetEventTimestamp();
+        long long timestampNs = hsc->tc.tick2ns(timestampTick);
 
         // correct time
         long long correctedTimestampNs = vc->IRQcorrectTimeNs(timestampNs);
@@ -283,6 +281,7 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
 ///
 // Trigger
 ///
+
 EventResult triggerEvent(Channel channel, long long ns) 
 { 
     return absoluteTriggerEvent(channel, getTime() + ns); 
@@ -307,14 +306,14 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     if(hsc->IRQgetTimeNs() > absoluteNsTsnc) return EventResult::TRIGGER_IN_THE_PAST;
 
     // register current thread for wakeup
-    eventThread = Thread::IRQgetCurrentThread();
+    waitingThread = Thread::IRQgetCurrentThread();
 
     // configure event on timer side
-    hsc->IRQsetEventNs(absoluteNsTsnc);
-    greenLedOff();
-    eventTimeout = false;
+    hsc->IRQsetTriggerNs(absoluteNsTsnc);
+
+    trigger = false;
     // wait for trigger to be fired (avoids spurious wakeups)
-    while(hsc->IRQgetTimeNs() <= absoluteNsTsnc && !eventTimeout)
+    while(hsc->IRQgetTimeNs() <= absoluteNsTsnc && !trigger)
     {
         // putting thread to sleep, woken up by either timeout or desired interrupt
         Thread::IRQwait();
@@ -325,14 +324,14 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     }
 
     // reset timeout timer
-    Hsc::IRQclearEventFlag();
+    Hsc::IRQclearTriggerFlag();
 
     // reset event status
-    eventThread = nullptr;
+    waitingThread = nullptr;
 
-    // disable timer interrupts
-    TIMER2->IEN &= ~TIMER_IEN_CC1;
-    TIMER1->IEN &= ~TIMER_IEN_CC1;
+    // disable timer interrupts (done in ISR)
+    //TIMER2->IEN &= ~TIMER_IEN_CC1;
+    //TIMER1->IEN &= ~TIMER_IEN_CC1;
 
     return EventResult::TRIGGER;
 }
@@ -343,22 +342,33 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
 
 void IRQsignalEvent()         
 { 
-    if(eventThread)
+    if(waitingThread)
     {
         event=true; 
-        eventThread->IRQwakeup();  
-        if(eventThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+        waitingThread->IRQwakeup();  
+        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		    Scheduler::IRQfindNextThread();
     }
 }
+
 void IRQsignalEventTimeout()  
 {  
-    //iprintf("X\n");
-    if(eventThread)
+    if(waitingThread)
     {
         eventTimeout=true; 
-        eventThread->IRQwakeup(); 
-        if(eventThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+        waitingThread->IRQwakeup(); 
+        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+		    Scheduler::IRQfindNextThread();
+    } 
+}
+
+void IRQsignalTrigger()  
+{  
+    if(waitingThread)
+    {
+        trigger=true; 
+        waitingThread->IRQwakeup(); 
+        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		    Scheduler::IRQfindNextThread();
     } 
 }

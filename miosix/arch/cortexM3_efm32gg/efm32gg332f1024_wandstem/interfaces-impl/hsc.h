@@ -79,7 +79,9 @@ namespace miosix {
  *
  */
 
+//> OLD CONFIGURATION <//
 /**
+ * 
  * Timers configuration: 
  * 
  * TIMER0->CC[0] free
@@ -98,6 +100,32 @@ namespace miosix {
  * TIMER3->CC[0] INPUT_CAPTURE, VHT
  * TIMER3->CC[1] free
  * TIMER3->CC[2] free
+ */
+
+//> NEW CONFIGURATION <//
+/**
+ * Timers configuration: 
+ * TIMER0 [Unclocked][free]
+ * TIMER1 [Clocked]
+ * TIMER2 [Clocked]
+ * TIMER3 [Unclocked][OFU]
+ * 
+ * TIMER0->CC[0] free
+ * TIMER0->CC[1] free
+ * TIMER0->CC[2] free
+ * 
+ * TIMER1->CC[0] free
+ * TIMER1->CC[1] free
+ * TIMER1->CC[2] INPUT_CAPTURE,  timestamping       (lower 32-bit) <- SFD/TIMESTAMP_IN (PRS) / -> TIMESTAMP_OUT
+ * 
+ * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ             (lower 32-bit)
+ * TIMER2->CC[1] OUTPUT_COMPARE, timeout or trigger (lower 32-bit) -> STXON
+ * TIMER2->CC[2] free
+ * 
+ * TIMER3->CC[0] OUTPUT_COMPARE, os IRQ             (upper 32-bit)
+ * TIMER3->CC[1] OUTPUT_COMPARE, timeout or trigger (upper 32-bit)
+ * TIMER3->CC[2] INPUT_CAPTURE,  timestamping       (upper 32-bit) <- SFD/TIMESTAMP_IN (PRS)
+ * 
  */
 
 class Hsc : public TimerAdapter<Hsc, 32>
@@ -119,19 +147,19 @@ public:
 
     static inline void IRQsetTimerCounter(unsigned int v)
     {
-        TIMER1->CNT = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
-        TIMER2->CNT = static_cast<uint16_t> ((v >> 16) & 0xFFFFUL); // upper part
+        TIMER2->CNT = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
+        TIMER3->CNT = static_cast<uint16_t> ((v >> 16) & 0xFFFFUL); // upper part
     }
 
     static inline unsigned int IRQgetTimerMatchReg()
     {
-        return (TIMER2->CC[0].CCV<<16) | TIMER1->CC[0].CCV;
+        return (TIMER3->CC[0].CCV<<16) | TIMER2->CC[0].CCV;
     }
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
         // clear previous TIMER2 setting
-        TIMER2->IFC |= TIMER_IFC_CC0;
+        TIMER3->IFC |= TIMER_IFC_CC0;
         //NVIC_ClearPendingIRQ(TIMER2_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
@@ -145,35 +173,35 @@ public:
         Hsc::nextCCticksUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
         
         // set and enable output compare interrupt on channel 0 for most significant timer
-        TIMER2->CC[0].CCV = Hsc::nextCCticksUpper;
-        TIMER2->IEN |= TIMER_IEN_CC0;
-        TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
+        TIMER3->IEN |= TIMER_IEN_CC0;
+        TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
 
     static inline bool IRQgetOverflowFlag()
     {
-        return TIMER2->IF & TIMER_IF_OF;
+        return TIMER3->IF & TIMER_IF_OF;
     }
 
     static inline void IRQclearOverflowFlag()
     {
-        TIMER2->IFC |= TIMER_IFC_OF;
+        TIMER3->IFC |= TIMER_IFC_OF;
     }
 
     static inline bool IRQgetMatchFlag()
     {
-        return TIMER1->IF & TIMER_IF_CC0;
+        return TIMER2->IF & TIMER_IF_CC0;
     }
 
     static inline void IRQclearMatchFlag()
     {
         // disable output compare interrupt
-        TIMER1->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
-        TIMER1->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER1->CC[0].CCV = 0;
+        TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->CC[0].CCV = 0;
 
         // clear output compare flag
-        TIMER1->IFC |= TIMER_IFC_CC0;
+        TIMER2->IFC |= TIMER_IFC_CC0;
 
         // clear pending interrupt
         //NVIC_ClearPendingIRQ(TIMER1_IRQn);
@@ -181,26 +209,29 @@ public:
 
     static inline void IRQforcePendingIrq()
     {
-        NVIC_SetPendingIRQ(TIMER1_IRQn);
+        NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
 
     static inline void IRQstopTimer()
     {
         TIMER1->CMD=TIMER_CMD_STOP;
+        TIMER2->CMD=TIMER_CMD_STOP;
     }
 
     static inline void IRQstartTimer()
     {
         TIMER1->CTRL |= TIMER_CTRL_SYNC;
         TIMER2->CTRL |= TIMER_CTRL_SYNC;
+        TIMER3->CTRL |= TIMER_CTRL_SYNC;
 
-        TIMER1->CMD = TIMER_CMD_START;
+        TIMER2->CMD = TIMER_CMD_START;
         
         //Synchronization is required only when timers are to start.
         //If the sync is not disabled after start, start/stop on another timer
         //(e.g. TIMER0) will affect the behavior of context switch timer!
         TIMER1->CTRL &= ~TIMER_CTRL_SYNC;
         TIMER2->CTRL &= ~TIMER_CTRL_SYNC;
+        TIMER3->CTRL &= ~TIMER_CTRL_SYNC;
     }
 
     static unsigned int IRQTimerFrequency()
@@ -211,21 +242,25 @@ public:
     static void IRQinitTimer()
     {
         // clock timers configuration (chaning two 16 bit timers to get a 32 one)
-        // TIMER1 => lower part
-        // TIMER2 => upper part
-        // When TIMER1 overflows, TIMER2 counter is updated 
+        // TIMER2 => lower part
+        // TIMER3 => upper part
+        // When TIMER2 overflows, TIMER3 counter is updated 
         // (automatic chaninig for neighborhood timers with CTRL_SYNC)
+        // TIMER1 is used just for timestamp_out, check top of file
 
         // power the timers
-        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER1 | CMU_HFPERCLKEN0_TIMER2 | CMU_HFPERCLKEN0_PRS;
+        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER1 | CMU_HFPERCLKEN0_TIMER2 | CMU_HFPERCLKEN0_TIMER3 | CMU_HFPERCLKEN0_PRS;
 
         // timers control config
         TIMER1->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
                 | TIMER_CTRL_PRESC_DIV1;
-        
-        TIMER2->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_TIMEROUF;
+        TIMER2->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
+                | TIMER_CTRL_PRESC_DIV1;
+        TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_TIMEROUF;
 
-        // reset TIMER1, needed if you want run after the flash
+        // reset timers after flashing
+
+        // TIMER1
         TIMER1->CMD=TIMER_CMD_STOP;
         TIMER1->ROUTE=0;
         TIMER1->IEN=0;
@@ -238,108 +273,129 @@ public:
         TIMER1->CC[1].CCV=0;
         TIMER1->CC[2].CTRL=0;
         TIMER1->CC[2].CCV=0;
-
-        // reset TIMER2
+        
+        // TIMER2
         TIMER2->CMD=TIMER_CMD_STOP;
+        TIMER2->ROUTE=0;
         TIMER2->IEN=0;
         TIMER2->IFC=~0;
         TIMER2->TOP=0xFFFF;
         TIMER2->CNT=0;
         TIMER2->CC[0].CTRL=0;
         TIMER2->CC[0].CCV=0;
+        TIMER2->CC[1].CTRL=0;
+        TIMER2->CC[1].CCV=0;
+        TIMER2->CC[2].CTRL=0;
+        TIMER2->CC[2].CCV=0;
 
-        //Enable necessary interrupt lines
-        TIMER1->IEN = 0; // |= TIMER_IEN_CC0;
-        TIMER2->IEN |= TIMER_IEN_OF; // signaling overflow, needed for pending bit trick
+        // TIMER3
+        TIMER3->CMD=TIMER_CMD_STOP;
+        TIMER3->ROUTE=0;
+        TIMER3->IEN=0;
+        TIMER3->IFC=~0;
+        TIMER3->TOP=0xFFFF;
+        TIMER3->CNT=0;
+        TIMER3->CC[0].CTRL=0;
+        TIMER3->CC[0].CCV=0;
+        TIMER3->CC[1].CTRL=0;
+        TIMER3->CC[1].CCV=0;
+        TIMER3->CC[2].CTRL=0;
+        TIMER3->CC[2].CCV=0;
 
+        // signaling overflow, needed for pending bit trick
+        TIMER3->IEN |= TIMER_IEN_OF;
+        
         NVIC_SetPriority(TIMER1_IRQn, 3);
         NVIC_SetPriority(TIMER2_IRQn, 3);
+        NVIC_SetPriority(TIMER3_IRQn, 3);
 
         NVIC_ClearPendingIRQ(TIMER1_IRQn);
         NVIC_ClearPendingIRQ(TIMER2_IRQn);
+        NVIC_ClearPendingIRQ(TIMER3_IRQn);
 
         NVIC_EnableIRQ(TIMER1_IRQn);
-        NVIC_EnableIRQ(TIMER2_IRQn);   
+        NVIC_EnableIRQ(TIMER2_IRQn);
+        NVIC_EnableIRQ(TIMER3_IRQn);   
     }
 
     ///
     // VHT extension
     ///
-    #ifdef WITH_VHT
+    // #ifdef WITH_VHT
 
-    static void IRQinitVhtTimer()
-    {
-        // enabling TIMER3
-        CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER3;
+    // static void IRQinitVhtTimer()
+    // {
+    //     // enabling TIMER3
+    //     CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER3;
 
-        TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
-                        | TIMER_CTRL_PRESC_DIV1; 
-        TIMER3->IEN |= TIMER_IEN_CC0; // enable interrupt on CC0
+    //     TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
+    //                     | TIMER_CTRL_PRESC_DIV1; 
+    //     TIMER3->IEN |= TIMER_IEN_CC0; // enable interrupt on CC0
 
-        NVIC_SetPriority(TIMER3_IRQn, 8);
-        NVIC_ClearPendingIRQ(TIMER3_IRQn);
-        NVIC_EnableIRQ(TIMER3_IRQn);
+    //     NVIC_SetPriority(TIMER3_IRQn, 8);
+    //     NVIC_ClearPendingIRQ(TIMER3_IRQn);
+    //     NVIC_EnableIRQ(TIMER3_IRQn);
 
-        // setting PRS on channel 4 to capture RTC timer at COMP1 in CC[0]
-        TIMER3->CC[0].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
-            | TIMER_CC_CTRL_FILT_DISABLE
-            | TIMER_CC_CTRL_INSEL_PRS
-            | TIMER_CC_CTRL_PRSSEL_PRSCH4
-            | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-        PRS->CH[4].CTRL = PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
-    }
+    //     // setting PRS on channel 4 to capture RTC timer at COMP1 in CC[0]
+    //     TIMER3->CC[0].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
+    //         | TIMER_CC_CTRL_FILT_DISABLE
+    //         | TIMER_CC_CTRL_INSEL_PRS
+    //         | TIMER_CC_CTRL_PRSSEL_PRSCH4
+    //         | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+    //     PRS->CH[4].CTRL = PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
+    // }
 
-    static void IRQstartVhtTimer()
-    {
-        // start timer
-        TIMER3->CMD = TIMER_CMD_START;
-    }
+    // static void IRQstartVhtTimer()
+    // {
+    //     // start timer
+    //     TIMER3->CMD = TIMER_CMD_START;
+    // }
 
-    // TODO: (s) document that read CCV overwrites reg with CCVB
-    static inline unsigned int IRQgetVhtTimerCounter()
-    {
-        return (TIMER2->CNT<<16) | TIMER3->CC[0].CCV;
-    }
+    // // TODO: (s) document that read CCV overwrites reg with CCVB
+    // static inline unsigned int IRQgetVhtTimerCounter()
+    // {
+    //     return (TIMER2->CNT<<16) | TIMER3->CC[0].CCV;
+    // }
 
-    static inline void IRQsetVhtTimerCounter(unsigned int v)
-    {
-        TIMER3->CNT = static_cast<uint16_t>(v & 0xFFFFUL);
-    }
+    // static inline void IRQsetVhtTimerCounter(unsigned int v)
+    // {
+    //     TIMER3->CNT = static_cast<uint16_t>(v & 0xFFFFUL);
+    // }
 
-    static inline bool IRQgetVhtMatchFlag()
-    {
-        return TIMER3->IF & TIMER_IF_CC0;
-    }
+    // static inline bool IRQgetVhtMatchFlag()
+    // {
+    //     return TIMER3->IF & TIMER_IF_CC0;
+    // }
 
-    static inline void IRQclearVhtMatchFlag()
-    {
-        TIMER3->IFC |= TIMER_IFC_CC0;
-    }
+    // static inline void IRQclearVhtMatchFlag()
+    // {
+    //     TIMER3->IFC |= TIMER_IFC_CC0;
+    // }
 
-    static inline void IRQsetVhtMatchReg(unsigned int v)
-    {
-        IRQclearVhtMatchFlag();
+    // static inline void IRQsetVhtMatchReg(unsigned int v)
+    // {
+    //     IRQclearVhtMatchFlag();
 
-        // undocumented quirk, CC 1 tick after
-        //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
-        // TODO: (s) finish
-    }
+    //     // undocumented quirk, CC 1 tick after
+    //     //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+    //     // TODO: (s) finish
+    // }
 
-    #endif // #ifdef WITH_VHT
+    // #endif // #ifdef WITH_VHT
 
     ///
-    // Event (with timestamp) or trigger extension 
+    // Trigger extension 
     ///
-    static inline unsigned int IRQgetEventMatchReg()
+    static inline unsigned int IRQgetTriggerMatchReg()
     {
-        return (TIMER2->CC[1].CCV<<16) | TIMER1->CC[1].CCV;
+        return (TIMER3->CC[1].CCV<<16) | TIMER2->CC[1].CCV;
     }
 
-    static inline void IRQsetEventMatchReg(unsigned int v)
+    static inline void IRQsetTriggerMatchReg(unsigned int v)
     {  
-        // clear previous TIMER1 setting
-        TIMER1->IFC |= TIMER_IFC_CC1;
-        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
+        // clear previous TIMER2 setting
+        TIMER3->IFC |= TIMER_IFC_CC1;
+        //NVIC_ClearPendingIRQ(TIMER3_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
         uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
@@ -348,48 +404,37 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCeventLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        Hsc::nextCCeventUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
+        Hsc::nextCCtriggerLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        Hsc::nextCCtriggerUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
 
-        // set and enable output compare interrupt on channel 0 for most significant timer
-        TIMER1->CC[1].CCV = Hsc::nextCCeventLower;
-        TIMER1->IEN |= TIMER_IEN_CC1;
-        TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        // force interrupt pending if lower part is zero, needed?
-        if (Hsc::nextCCeventLower == 0/* || Hsc::nextCCeventLower == TIMER1->CNT-1*/)
-        {
-            TIMER1->IFS |= TIMER_IFS_CC1;
-            NVIC_SetPendingIRQ(TIMER1_IRQn);
-        }
+        // set and enable output compare interrupt on channel 1 for most significant timer
+        TIMER3->CC[1].CCV = Hsc::nextCCtriggerUpper;
+        TIMER3->IEN |= TIMER_IEN_CC1;
+        TIMER3->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
 
-    static inline bool IRQgetEventFlag()
+    static inline bool IRQgetTriggerFlag()
     {
         //return TIMER1->IF & TIMER_IF_CC1;
         return TIMER2->IF & TIMER_IF_CC1;
     }
 
-    static inline void IRQclearEventFlag()
+    static inline void IRQclearTriggerFlag()
     {
         // disable output compare interrupt
-        TIMER1->IEN &= ~TIMER_IEN_CC1; // signal capture and compare register for OS interrupts
-        //TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        TIMER2->IEN &= ~TIMER_IEN_CC1;
+        TIMER2->IEN &= ~TIMER_IEN_CC1; // signal capture and compare register for OS interrupts
         //TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
+        
         // clear output compare flag
-        TIMER1->IFC |= TIMER_IFC_CC1;
         TIMER2->IFC |= TIMER_IFC_CC1;
 
         // clear pending interrupt
-        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
+        //NVIC_ClearPendingIRQ(TIMER2_IRQn);
     }
 
     static inline uint32_t IRQgetEventTimestamp()
     {
-        return (TIMER2->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
+        return (TIMER3->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
     }
 
     static inline void clearTimestampBuffer()
@@ -398,7 +443,7 @@ public:
         IRQgetEventTimestamp();
     }
 
-    static inline void IRQforcePendingEvent()
+    static inline void IRQforcePendingTrigger()
     {
         NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
@@ -409,8 +454,8 @@ public:
     static unsigned int IRQgetNextCCticksUpper() { return Hsc::nextCCticksUpper; }
     static unsigned int IRQgetNextCCticksLower() { return Hsc::nextCCticksLower; }
 
-    static unsigned int IRQgetNextCCeventUpper() { return Hsc::nextCCeventUpper; }
-    static unsigned int IRQgetNextCCeventLower() { return Hsc::nextCCeventLower; }
+    static unsigned int IRQgetNextCCtriggerUpper() { return Hsc::nextCCtriggerUpper; }
+    static unsigned int IRQgetNextCCtriggerLower() { return Hsc::nextCCtriggerLower; }
 
     // TODO: (s) set timer3 (input capture) input on CC1, read timestamp from TIMER3 in input capute etc...
 
@@ -423,22 +468,22 @@ private:
     Hsc& operator=(const Hsc&)=delete;
     
     static inline unsigned int IRQread32Timer(){
-        unsigned int high = TIMER2->CNT;
-        unsigned int low = TIMER1->CNT;
-        unsigned int high2 = TIMER2->CNT;
+        unsigned int high = TIMER3->CNT;
+        unsigned int low = TIMER2->CNT;
+        unsigned int high2 = TIMER3->CNT;
         
         if(high == high2) // No lower part overflow
         {
             return (high<<16) | low; // constructing 32 bit number
         }
 
-        return high2<<16 | TIMER1->CNT;
+        return high2<<16 | TIMER2->CNT;
     }
 
     inline static unsigned int nextCCticksUpper;
     inline static unsigned int nextCCticksLower;
-    inline static unsigned int nextCCeventUpper;
-    inline static unsigned int nextCCeventLower;
+    inline static unsigned int nextCCtriggerUpper;
+    inline static unsigned int nextCCtriggerLower;
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };
