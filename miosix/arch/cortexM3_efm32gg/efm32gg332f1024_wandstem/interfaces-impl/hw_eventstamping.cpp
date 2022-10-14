@@ -48,11 +48,10 @@ enum class Channel;
 // Event and wait support variables
 ///
 
-static std::mutex eventMutex;
-static Thread* waitingThread = nullptr;
-static std::atomic<bool>event(false);
-static std::atomic<bool>trigger(false);
-static std::atomic<bool>eventTimeout(false);
+// [0] is for SFD_STXON, [1] is for TIMESTAMP_IN/OUT
+static Thread * waitingThread[2] = { nullptr, nullptr };
+static std::mutex eventMutex[2];
+static std::atomic<bool> timeout(false);
 
 ///
 // Actual interface 
@@ -66,89 +65,73 @@ static std::atomic<bool>eventTimeout(false);
     TIMESTAMP_IN_OUT
 };*/
 
-static EventDirection currentDirection = EventDirection::DISABLED;
+// [0] is for SFD_STXON, [1] is for TIMESTAMP_IN/OUT
+static EventDirection currentDirection[2] = { EventDirection::DISABLED, EventDirection::DISABLED };
 
-inline void configureEventHelper(GpioPin pinChannel, EventDirection direction)
-{
-    if(direction == EventDirection::INPUT)
-    {
-        try // register GPIO irq
-        {
-            registerGpioIrq(pinChannel, GpioIrqEdge::RISING, [](){  
-                    FastInterruptDisableLock dLock;
-                    events::IRQsignalEvent();
-            });
-        }
-        catch(const std::runtime_error& error)
-        {
-            // GPIO irq already previosly registered, no need to register it again
-        }
-    }
-    else if(direction == EventDirection::DISABLED)
-        unregisterGpioIrq(pinChannel);
-    else ; // OUTPUT direction, wired using alternate functions (see routing table in RM) (uses timeout to wake up)
-}
 
 void configureEvent(Channel channel, EventDirection direction)
 {
-    // check channel compatibility
-    if(channel == Channel::STXON && direction == EventDirection::INPUT)
-        throw BadEventTimerConfiguration();
-    else if(channel == Channel::SFD && direction == EventDirection::OUTPUT)
-        throw BadEventTimerConfiguration();
-    else ; // other...
-
-    // register channel GPIO irq to wake up waiting thread
-    switch (channel)
+    if(channel == Channel::SFD_STXON)
     {
-    case Channel::SFD: // PA8, excChB including SFD and FRM_DONE
-        configureEventHelper(transceiver::excChB::getPin(), direction);
-        break;
-    case Channel::STXON: // PA9
-        configureEventHelper(transceiver::stxon::getPin(), direction);
-        break;
-    default: // PE12, TIMESTAMP_IN_OUT: 
-        configureEventHelper(expansion::gpio10::getPin(), direction);
-        break;
-    }
-
-    // save event direction state
-    currentDirection = direction;
-
-    {
-        FastInterruptDisableLock dLock;
-        
-        // INPUT_CAPTURE
-        if(direction == EventDirection::INPUT)
+        switch (direction)
         {
-            // configure timer as input capture triggered by PRS
-            TIMER1->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
+        case EventDirection::INPUT:  // SFD
+            // configure timers
+            TIMER2->CC[1].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
                                     | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-            TIMER3->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS 
+            TIMER3->CC[1].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
                                     | TIMER_CC_CTRL_PRSSEL_PRSCH0 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
 
-            // TODO: (s) set PRS here and just use waitEvent as wrapper for waiting?
-        }
-        // OUTPUT_COMPARE
-        else if(direction == EventDirection::OUTPUT)
-        {
-            // configure timer as output compare
+            // connect timers to PRS
+            PRS->CH[0].CTRL = PRS_CH_CTRL_SOURCESEL_GPIOH | PRS_CH_CTRL_SIGSEL_GPIOPIN8;
+
+            break;
+        case EventDirection::OUTPUT: // STXON
+            // reset timers if we were in INPUT mode
+            TIMER2->CC[1].CTRL = 0;
+            PRS->CH[0].CTRL = 0;
+
+            // configure timer
             TIMER2->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-            TIMER3->CC[1].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE; 
-
-            // connect TIMER2 output using routing table //< set and reset moved into TIMER2_ISR
-            //TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-            //TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-            //TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-        }
-        // DISABLED
-        else 
-        {
-            TIMER1->CC[2].CTRL = 0;
+            break;
+        default: // EventDirection::DISABLED
             TIMER2->CC[1].CTRL = 0;
             TIMER3->CC[1].CTRL = 0;
-            TIMER3->CC[2].CTRL = 0;
+            PRS->CH[0].CTRL = 0;
+            break;
         }
+        currentDirection[0] = direction;
+    }
+    else // Channel::TIMESTAMP_IN_OUT
+    {
+        switch (direction)
+        {
+        case EventDirection::INPUT: // TIMESTAMP_IN
+            // configure timers
+            TIMER1->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
+                                    | TIMER_CC_CTRL_PRSSEL_PRSCH1 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+            TIMER3->CC[2].CTRL = TIMER_CC_CTRL_ICEDGE_RISING | TIMER_CC_CTRL_FILT_DISABLE | TIMER_CC_CTRL_INSEL_PRS
+                                    | TIMER_CC_CTRL_PRSSEL_PRSCH1 | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+
+            // connect timers to PRS
+            PRS->CH[1].CTRL = PRS_CH_CTRL_SOURCESEL_GPIOH | PRS_CH_CTRL_SIGSEL_GPIOPIN12;
+            break;
+        case EventDirection::OUTPUT: // TIMESTAMP_OUT
+            // reset timers if we were in INPUT mode
+            TIMER1->CC[2].CTRL = 0;
+            TIMER3->CC[2].CTRL = 0;
+            PRS->CH[1].CTRL = 0;
+
+            // configure timer
+            TIMER1->CC[2].CTRL = TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            break;
+        default: // EventDirection::DISABLED
+            TIMER1->CC[2].CTRL = 0;
+            TIMER3->CC[2].CTRL = 0;
+            PRS->CH[1].CTRL = 0;
+            break;
+        }
+        currentDirection[1] = direction;
     }
 }
 
@@ -167,40 +150,15 @@ std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs
 }
 std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs)
 {
-    // check if channel has been configured correctly (INPUT_CAPTURE)
-    if (currentDirection != EventDirection::INPUT) throw BadEventTimerConfiguration();
+    // dispatch SFD or TIMESTAMP_IN
+    int channelIndex = channel == Channel::SFD_STXON ? 0 : 1;
 
-    // lock guard, this allows only one thread to access timeout timer per time
-    std::unique_lock<std::mutex> lck(eventMutex, std::try_to_lock);
+    // lock guard, this allows only one thread to access timeout timer per time for SFD_STXON and TIMESTAMP_IN_OUT
+    std::unique_lock<std::mutex> lck(eventMutex[channelIndex], std::try_to_lock);
     bool gotLock = lck.owns_lock();
     if (!gotLock) return std::make_pair(EventResult::BUSY, 0);
 
     FastInterruptDisableLock dLock;
-
-    // connect correct channel
-    uint32_t PRS_FLAGS = 0;
-
-    // connect TIMER to GPIO using PRS (GPIOH--PRS-->TIMER)
-    PRS_FLAGS = PRS_CH_CTRL_SOURCESEL_GPIOH;
-    
-    // selecting right channel for PRS binding and enable IRQ on channel
-    switch (channel)
-    {
-    case Channel::SFD: // PA8, excChB including SFD and FRM_DONE
-        enableGpioIrq(transceiver::excChB::getPin());
-        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN8;
-        break;
-    case Channel::STXON: // PA9, STXON
-        enableGpioIrq(transceiver::stxon::getPin());
-        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN9;
-        break;
-    default: // PE12, Channel::TIMESTAMP_IN_OUT: 
-        enableGpioIrq(expansion::gpio10::getPin());
-        PRS_FLAGS |= PRS_CH_CTRL_SIGSEL_GPIOPIN12;
-        break;
-    }
-
-    PRS->CH[0].CTRL = PRS_FLAGS;
 
     // uncorrect time
     long long absoluteTimeoutNsTsnc = vc->IRQuncorrectTimeNs(absoluteTimeoutNs);
@@ -209,22 +167,34 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
     if(hsc->IRQgetTimeNs() > absoluteTimeoutNsTsnc) return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
 
     // set up timeout timer
-    hsc->IRQsetTriggerNs(absoluteTimeoutNsTsnc);
+    if(channel == Channel::SFD_STXON)
+        hsc->IRQsetTimeoutNs(absoluteTimeoutNsTsnc);
+    else // Channel::TIMESTAMP_IN_OUT
+        ; // timeout for TIMESTAMP_IN not implemented. Future development
 
-    // clean timestamp buffer
-    Hsc::clearTimestampBuffer();
+    // clean timestamp buffer (and BCCV)
+    if(channel == Channel::SFD_STXON)
+    {
+        TIMER2->CC[1].CCV;  TIMER2->CC[1].CCV;
+        TIMER3->CC[1].CCV;  TIMER3->CC[1].CCV;
+    }
+    else // Channel::TIMESTAMP_IN_OUT
+    {
+        TIMER1->CC[2].CCV;  TIMER1->CC[2].CCV;
+        TIMER3->CC[2].CCV;  TIMER3->CC[2].CCV;
+    }
 
     // enable timers interrupt (PRS triggers both at the same time, just one needed)
-    //TIMER3->IEN |= TIMER_IEN_CC2;
-    TIMER1->IEN |= TIMER_IEN_CC2;
+    if(channel == Channel::SFD_STXON)
+        TIMER2->IEN |= TIMER_IEN_CC1;
+    else // Channel::TIMESTAMP_IN_OUT
+        TIMER3->IEN |= TIMER_IEN_CC2;
 
     // register current thread for wakeup
-    waitingThread = Thread::IRQgetCurrentThread();
+    waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
 
-    event = false;
-    eventTimeout = false;
     // wait for condition or timeout interrupt  (avoids spurious wakeups)
-    while(hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc && !event && !eventTimeout)
+    while(hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc && waitingThread[channelIndex] != nullptr)
     {
         // putting thread to sleep, woken up by either timeout or desired interrupt
         Thread::IRQwait();
@@ -232,50 +202,44 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
             FastInterruptEnableLock eLock(dLock);
             Thread::yield();
         }
+        // FIXME: (s) si sveglia che hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc non è più vera
+    }
+
+    // stop timeout in case not triggered yet
+    TIMER2->IEN &= ~TIMER_IEN_CC2;
+    TIMER2->CC[2].CTRL & ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+    // disable timer interrupts attached to PRS for timestamping 
+    if(channel == Channel::SFD_STXON)
+        TIMER2->IEN &= ~TIMER_IEN_CC1;
+    else // Channel::TIMESTAMP_IN_OUT
+        TIMER3->IEN &= ~TIMER_IEN_CC2;
+
+    // if timeout, we got past time and thread is still not a nullptr
+    //bool timeout = waitingThread[channelIndex] != nullptr;
+
+    if(timeout) // timeout
+    {
+        timeout=false;
+        waitingThread[0] = nullptr;
+        return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
     }
     
-    // disable timer interrupts
-    //TIMER3->IEN &= ~TIMER_IEN_CC2;
-    TIMER1->IEN &= ~TIMER_IEN_CC2;
+    // read captured timer value
+    long long timestampLower;
+    if(channel == Channel::SFD_STXON)
+        timestampLower = (TIMER3->CC[1].CCV<<16) | TIMER2->CC[1].CCV;
+    else // Channel::TIMESTAMP_IN_OUT
+        timestampLower = (TIMER3->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
 
-    // reset timeout timer
-    Hsc::IRQclearTriggerFlag();
+    long long timestampTick = hsc->upperTimeTick | timestampLower;
+    long long timestampNs = hsc->tc.tick2ns(timestampTick);
 
-    // reset event status
-    waitingThread = nullptr;
+    // correct time
+    long long correctedTimestampNs = vc->IRQcorrectTimeNs(timestampNs);
 
-    // disconnect GPIOH--PRS-->TIMER connection
-    PRS->CH[0].CTRL = 0;
+    return std::make_pair(EventResult::EVENT, correctedTimestampNs);
 
-    // disable IRQ on channel
-    switch (channel)
-    {
-    case Channel::SFD: // PA8, excChB including SFD and FRM_DONE
-        disableGpioIrq(transceiver::excChB::getPin());
-        break;
-    case Channel::STXON: // PA9, STXON
-        disableGpioIrq(transceiver::stxon::getPin());
-        break;
-    default: // PE12, Channel::TIMESTAMP_IN_OUT: 
-        disableGpioIrq(expansion::gpio10::getPin());
-        break;
-    }
-
-    // event received before timeout
-    if(event)
-    {
-        // read captured timer value
-        long long timestampTick = hsc->upperTimeTick | Hsc::IRQgetEventTimestamp();
-        long long timestampNs = hsc->tc.tick2ns(timestampTick);
-
-        // correct time
-        long long correctedTimestampNs = vc->IRQcorrectTimeNs(timestampNs);
-
-        return std::make_pair(EventResult::EVENT, correctedTimestampNs);
-    }
-
-    // timeout
-    return std::make_pair(EventResult::EVENT_TIMEOUT, 0);
 }
 
 ///
@@ -289,11 +253,11 @@ EventResult triggerEvent(Channel channel, long long ns)
 
 EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
 {
-    // check if channel has been configured correctly (OUTPUT_COMPARE)
-    if (currentDirection != EventDirection::OUTPUT) throw BadEventTimerConfiguration();
+    // dispatch STXON or TIMESTAMP_OUT
+    int channelIndex = channel == Channel::SFD_STXON ? 0 : 1;
 
-    // lock guard, this allows only one thread to access timeout timer per time
-    std::unique_lock<std::mutex> lck(eventMutex, std::try_to_lock);
+    // lock guard, this allows only one thread to access trigger one timer per time for SFD_STXON and TIMESTAMP_IN_OUT
+    std::unique_lock<std::mutex> lck(eventMutex[channelIndex], std::try_to_lock);
     bool gotLock = lck.owns_lock();
     if (!gotLock) return EventResult::BUSY;
     
@@ -306,14 +270,16 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     if(hsc->IRQgetTimeNs() > absoluteNsTsnc) return EventResult::TRIGGER_IN_THE_PAST;
 
     // register current thread for wakeup
-    waitingThread = Thread::IRQgetCurrentThread();
+    waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
 
     // configure event on timer side
-    hsc->IRQsetTriggerNs(absoluteNsTsnc);
+    // we are assuming that trigger time is less then 89.47s
+    // therefore the 64bit extension is not needed and is chopped off.
+    long long absoluteTickTsnc = hsc->tc.ns2tick(absoluteNsTsnc);
+    Hsc::IRQsetTriggerMatchReg(static_cast<unsigned int>(absoluteTickTsnc), channel == Channel::SFD_STXON);
 
-    trigger = false;
     // wait for trigger to be fired (avoids spurious wakeups)
-    while(hsc->IRQgetTimeNs() <= absoluteNsTsnc && !trigger)
+    while(hsc->IRQgetTimeNs() <= absoluteNsTsnc && waitingThread[channelIndex] != nullptr)
     {
         // putting thread to sleep, woken up by either timeout or desired interrupt
         Thread::IRQwait();
@@ -322,12 +288,6 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
             Thread::yield();
         }
     }
-
-    // reset timeout timer
-    Hsc::IRQclearTriggerFlag();
-
-    // reset event status
-    waitingThread = nullptr;
 
     // disable timer interrupts (done in ISR)
     //TIMER2->IEN &= ~TIMER_IEN_CC1;
@@ -340,40 +300,71 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
 // Signals
 ///
 
-void IRQsignalEvent()         
+void IRQsignalEventSFD()         
 { 
-    if(waitingThread)
+    if(waitingThread[0])
     {
-        event=true; 
-        waitingThread->IRQwakeup();  
-        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+        waitingThread[0]->IRQwakeup();  
+        if(waitingThread[0]->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		    Scheduler::IRQfindNextThread();
+
+        waitingThread[0] = nullptr;
     }
 }
 
-void IRQsignalEventTimeout()  
-{  
-    if(waitingThread)
+void IRQsignalEventTIMESTAMP_IN()         
+{ 
+    if(waitingThread[1])
     {
-        eventTimeout=true; 
-        waitingThread->IRQwakeup(); 
-        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+        waitingThread[1]->IRQwakeup();  
+        if(waitingThread[1]->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		    Scheduler::IRQfindNextThread();
+        
+        waitingThread[1] = nullptr;
+    }
+}
+
+void IRQsignalEventSTXON()         
+{ 
+    if(waitingThread[0])
+    {
+        waitingThread[0]->IRQwakeup();  
+        if(waitingThread[0]->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+		    Scheduler::IRQfindNextThread();
+
+        waitingThread[0] = nullptr;
+    }
+}
+
+void IRQsignalEventTIMESTAMP_OUT()         
+{ 
+    if(waitingThread[1])
+    {
+        waitingThread[1]->IRQwakeup();  
+        if(waitingThread[1]->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+		    Scheduler::IRQfindNextThread();
+        
+        waitingThread[1] = nullptr;
+    }
+}
+
+void IRQsignalEventTimeout()  // only for SFD
+{  
+    if(waitingThread[0])
+    {
+        waitingThread[0]->IRQwakeup(); 
+        if(waitingThread[0]->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
+		    Scheduler::IRQfindNextThread();
+
+        waitingThread[0] = nullptr;
+        timeout=true;
     } 
 }
 
-void IRQsignalTrigger()  
-{  
-    if(waitingThread)
-    {
-        trigger=true; 
-        waitingThread->IRQwakeup(); 
-        if(waitingThread->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
-		    Scheduler::IRQfindNextThread();
-    } 
+std::pair<EventDirection, EventDirection> getEventsDirection() 
+{ 
+    return std::make_pair(currentDirection[0], currentDirection[1]); 
 }
-
-EventDirection getEventDirection() { return currentDirection; }
 
 } // namespace events
 

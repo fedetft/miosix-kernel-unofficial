@@ -41,8 +41,7 @@ namespace events
 // FIXME: (s) temporary solution, should go in cpp but cannot do forward declaration!
 enum class Channel
 {
-    SFD,
-    STXON,
+    SFD_STXON,
     TIMESTAMP_IN_OUT
 };
 
@@ -95,8 +94,8 @@ void configureEvent(Channel channel, EventDirection direction);
  * @param timeoutNs 
  * @return std::pair<EventResult, long long> 
  */
-std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs); // TODO: (s) su input, se output ERRORE
-std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs); // TODO: (s) su input, se output ERRORE
+std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs);
+std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs);
 
 /**
  * @brief 
@@ -112,15 +111,18 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs); // watc
  * @brief 
  * 
  */
-void IRQsignalEvent();
+void IRQsignalEventSFD();
+void IRQsignalEventTIMESTAMP_IN();
+void IRQsignalEventSTXON();
+void IRQsignalEventTIMESTAMP_OUT();
 void IRQsignalEventTimeout();
-void IRQsignalTrigger();
+
 /**
  * @brief Get the Event Direction object
  * 
  * @return EventDirection 
  */
-EventDirection getEventDirection();
+std::pair<EventDirection, EventDirection> getEventsDirection();
 
 } // namespace events
 

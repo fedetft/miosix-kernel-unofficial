@@ -104,11 +104,65 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {
-    // only enabled TIMER1 IRQ, both on same PRS
+    // save value of TIMER3 counter right away to check for compare later
+    unsigned int upperTimerCounter = TIMER3->CNT;
+
+    // TIMESTAMP_IN/OUT
     if(TIMER1->IF & TIMER_IF_CC2)
     {
-        events::IRQsignalEvent();
-        TIMER1->IFC |= TIMER_IFC_CC2;
+        std::pair<events::EventDirection, events::EventDirection> eventsDirection = events::getEventsDirection();
+
+        // TIMESTAMP_IN
+        if(eventsDirection.second == events::EventDirection::INPUT)
+        {
+            // only enabled TIMER1 IRQ, both on same PRS
+            //events::IRQsignalEventTIMESTAMP_IN();
+            //TIMER1->IFC |= TIMER_IFC_CC2;
+        }
+        // TIMESTAMP_OUT
+        else if(eventsDirection.second == events::EventDirection::OUTPUT)
+        {
+            unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().second;
+
+            // (0) trigger at next cycle 
+            if(upperTimerCounter == (nextCCtriggerUpper-1))
+            {
+                // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            // (1) trigger was fired and we now need to clear TIMESTAMP_OUT using CMOA
+            else if(upperTimerCounter == nextCCtriggerUpper)
+            {
+                // disconnect TIMER2->CC1 to pin PE12 (TIMESTAMP_OUT)
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
+                TIMER1->CC[2].CCV = static_cast<uint32_t>(TIMER2->CNT+10);
+            }
+            // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
+            else if(upperTimerCounter > nextCCtriggerUpper)
+            {
+                // disable output compare interrupt on channel 1 for least significant timer
+                TIMER1->IEN &= ~TIMER_IEN_CC2;
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER1->IFC |= TIMER_IFC_CC2;
+                
+                // disconnect TIMER2->CC1 from PEN completely
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+                TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
+                TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
+
+                #ifdef TIMER_EVENT_DEBUG
+                greenLedOn();
+                #endif
+
+                // signal trigger
+                events::IRQsignalEventTIMESTAMP_OUT();
+            }
+            else greenLedOff(); // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+        }
+        else ; // DISABLED
     }
 }
 
@@ -136,121 +190,74 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     if(hsc->IRQgetMatchFlag() || hsc->lateIrq || hsc->IRQgetOverflowFlag())
         hsc->IRQhandler();
 
-    
-    // second part of output compare for trigger or timeout (CC[1]). If we reached this interrupt, it means
-    // we already matched the upper part of the timer and we have now matched the lower part.
-    if(hsc->IRQgetTriggerFlag() || hsc->lateTrigger)
+    // SFD_STXON
+    if(TIMER2->IF & TIMER_IF_CC1)
     {
-        Hsc::IRQclearTriggerFlag();
-
-        // trigger
-        if(events::getEventDirection() == events::EventDirection::OUTPUT)
+        std::pair<events::EventDirection, events::EventDirection> eventsDirection = events::getEventsDirection();
+        // SFD
+        if(eventsDirection.first == events::EventDirection::INPUT)
         {
-            // (2) CMOA cleared, we can terminate trigger procedure
-            if(TIMER2->CC[1].CTRL & TIMER_CC_CTRL_CMOA_CLEAR)
+            events::IRQsignalEventSFD();
+            TIMER2->IFC |= TIMER_IFC_CC1;
+        }
+        // STXON
+        else if(eventsDirection.first == events::EventDirection::OUTPUT)
+        {
+            unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().first;
+
+            // (0) trigger at next cycle 
+            if(upperTimerCounter == (nextCCtriggerUpper-1))
+            {
+                // connect TIMER2->CC1 to pin PA9 (stxon) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }
+            // (1) trigger was fired and we now need to clear STXON using CMOA
+            else if(upperTimerCounter == nextCCtriggerUpper)
+            {
+                // disconnect TIMER2->CC1 to pin PA9 (stxon)
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
+                TIMER2->CC[1].CCV = static_cast<uint32_t>(TIMER2->CNT+10);
+            }
+            // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
+            else if(upperTimerCounter > nextCCtriggerUpper)
             {
                 // disable output compare interrupt on channel 1 for least significant timer
                 TIMER2->IEN &= ~TIMER_IEN_CC1;
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
                 TIMER2->IFC |= TIMER_IFC_CC1;
-
+                
                 // disconnect TIMER2->CC1 from PEN completely
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
                 TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
                 TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
 
                 #ifdef TIMER_EVENT_DEBUG
-                greenLedOff();
+                greenLedOn();
                 #endif
 
                 // signal trigger
-                events::IRQsignalTrigger();
+                events::IRQsignalEventSTXON();
             }
-            else  // trigger
-            {
-                long long tick = hsc->IRQgetTimeTick();
-                if(tick >= hsc->IRQgetTriggerTick())
-                {
-                    // (1) trigger was fired and we now need to clear STXON using CMOA
-                    // disconnect TIMER2->CC1 to pin PA9 (stxon)
-                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
-                    TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
-                    TIMER2->CC[1].CCV = static_cast<uint32_t>(TIMER2->CNT+10);
-                }
-                // lower 32-bit timer may match but not he upper 32-bit extended part, make another round
-                else
-                {
-                    // disable output compare interrupt on channel 1 for least significant timer
-                    TIMER2->IEN &= ~TIMER_IEN_CC1;
-                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                    TIMER2->IFC |= TIMER_IFC_CC1;
-
-                    // re-enable CC on most significant timer
-                    TIMER3->IEN |= TIMER_IEN_CC1;
-                    TIMER3->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                }
-            }
+            else greenLedOff(); // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
-        // timeout
-        else if(events::getEventDirection() == events::EventDirection::INPUT)
-            events::IRQsignalEventTimeout();
         else ; // DISABLED
-
-        hsc->lateTrigger = false;
+        
     }
 
-    // first part of output compare for event timeout or trigger (CC[1])
-    // if(TIMER1->IF & TIMER_IF_CC1)
-    // {   
-    //     #ifdef TIMER_EVENT_DEBUG
-    //     greenLedOff();
-    //     #endif
-
-    //     // disable output compare interrupt on channel 1 for least significant timer
-    //     TIMER1->IEN &= ~TIMER_IEN_CC1;
-    //     TIMER1->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    //     TIMER1->IFC |= TIMER_IFC_CC1;
-
-    //     // set and enable output compare interrupt on channel 1 for most significant timer
-    //     TIMER2->CC[1].CCV = hsc->IRQgetNextCCeventUpper();
-    //     TIMER2->IEN |= TIMER_IEN_CC1;
-    //     TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-    //     if(events::getEventDirection() == events::EventDirection::OUTPUT)
-    //     {
-    //         // (0) TRIGGER: connect TIMER2->CC1 to pin PA9 (stxon) on #0
-    //         TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-    //         TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-    //         TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-    //     }
-        
-    //     // force interrupt pending if we're under 1.365312ms (TIMER2->CCV = 0) or we already match the upper part.
-    //     // Note, because of quirk, without this we would be expecting 14 (15 - 1) but we're reading 15 causing a deadlock.
-    //     if (Hsc::IRQgetNextCCeventUpper() == 0 || Hsc::IRQgetNextCCeventUpper() == TIMER2->CNT-1)
-    //     {
-    //         TIMER2->IFS |= TIMER_IFS_CC1;
-    //         Hsc::IRQforcePendingEvent();  //TIMER2_IRQHandler();
-    //     }
-        
-    //     // if by the time we get here, the upper part of the counter has already matched
-    //     // the counter register or got past it, call TIMER2 handler directly instead of waiting
-    //     // for the other round of compare
-    //     // first check if not enough since we could be still expecting a lower value after overflow
-    //     // (e.g. i'm at 65123, i wait for --6513--*OVERFLOW*-->14)
-    //     // TODO: (s) i'm pretty sure it's wrong...
-    //     /*else if(upperTimerCounter >= hsc->IRQgetNextCCeventUpper() && TIMER2->CNT-1 >= Hsc::IRQgetNextCCeventUpper())
-    //     {
-    //         TIMER2->IFS |= TIMER_IFS_CC1;
-    //         Hsc::IRQforcePendingEvent(); //TIMER2_IRQHandler();
-    //     }*/
-    // }
-
-    // only enabled TIMER2 IRQ, both on same PRS
-    /*if(TIMER1->IF & TIMER_IF_CC2)
+    // Timeout
+    if(TIMER2->IF & TIMER_IF_CC2)
     {
-        TIMER1->IFC |= TIMER_IFC_CC2;
-        events::IRQsignalEvent();
-    }*/
+        // if upper part matches, it's time to trigger
+        if((hsc->upperTimeTick | upperTimerCounter) == (hsc->upperTimeoutTick | Hsc::IRQgetNextCCtimeoutUpper()))
+        {
+            TIMER2->IEN &= ~TIMER_IEN_CC2;
+            TIMER2->CC[2].CTRL & ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            events::IRQsignalEventTimeout();
+        }
+    }
 }
 
 /**
@@ -285,7 +292,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     // TIMER3 overflow, pending bit trick.
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
     
-    // first part of output compare for timer match, disable output compare interrupt
+    // first part of output compare for os timer match, disable output compare interrupt
     // for TIMER3 and turn of output comapre interrupt of TIMER2
     if(TIMER3->IF & TIMER_IF_CC0)
     {
@@ -316,99 +323,12 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
         }*/
     }
 
-    // first part of output compare for event trigger or timeout (CC[1])
-    if(TIMER3->IF & TIMER_IF_CC1)
+    // TIMESTAMP_IN input capture
+    if(TIMER3->IF & TIMER_IF_CC2)
     {
-        #ifdef TIMER_EVENT_DEBUG
-        greenLedOn();
-        #endif
-
-        // disable output compare interrupt on channel 1 for most significant timer
-        TIMER3->IEN &= ~TIMER_IEN_CC1;
-        TIMER3->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER3->IFC |= TIMER_IFC_CC1;
-
-        // set and enable output compare interrupt on channel 1 for least significant timer
-        TIMER2->CC[1].CCV = hsc->IRQgetNextCCtriggerLower();
-        TIMER2->IEN |= TIMER_IEN_CC1;
-        TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        // trigger specific case
-        if(events::getEventDirection() == events::EventDirection::OUTPUT)
-        {
-            // connect TIMER2->CC1 to pin PA9 (stxon) on #0
-            TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-            TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-            TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-        }
+        events::IRQsignalEventTIMESTAMP_IN();
+        TIMER3->IFC |= TIMER_IFC_CC2;
     }
-
-    // second part of output compare for ttimeout or trigger (CC[1]). If we reached this interrupt, it means
-    // we already matched the lower part of the timer and we have now matched the upper part.
-    // if(hsc->IRQgetEventFlag() || hsc->lateEvent)
-    // {
-    //     Hsc::IRQclearEventFlag();
-
-    //     // (2) TRIGGER: CMOA cleared, we can terminate trigger procedure
-    //     if(TIMER2->CC[1].CTRL & TIMER_CC_CTRL_CMOA_CLEAR)
-    //     {
-    //         TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
-    //         TIMER2->IEN &= ~TIMER_IEN_CC1;
-    //         TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
-    //         TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
-
-    //         #ifdef TIMER_EVENT_DEBUG
-    //         greenLedOn();
-    //         #endif
-
-    //         // signal trigger
-    //         events::IRQsignalEventTimeout();
-    //     }
-    //     else  // trigger or event
-    //     {
-    //         long long tick = hsc->IRQgetTimeTick();
-    //         if(tick >= hsc->IRQgetEventTick())
-    //         {
-    //             // trigger case
-    //             if(events::getEventDirection() == events::EventDirection::OUTPUT) 
-    //             {
-    //                 // (1) TRIGGER: specific case trigger, trigger was fired and we now need to clear STXON using CMOA
-    //                 if(TIMER2->CC[1].CTRL & TIMER_CC_CTRL_CMOA_SET)
-    //                 {
-    //                     // disconnect TIMER2->CC1 to pin PA9 (stxon)
-    //                     TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
-    //                     TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
-    //                     TIMER2->CC[1].CCV = static_cast<uint32_t>(TIMER2->CNT+1); // takes max 2^16 / 48e6 [s] = 1.365312ms
-    //                 }
-    //             }
-    //             // event case
-    //             else if (events::getEventDirection() == events::EventDirection::INPUT)
-    //             {
-    //                 #ifdef TIMER_EVENT_DEBUG
-    //                 greenLedOff();
-    //                 #endif
-
-    //                 events::IRQsignalEventTimeout(); // signal event timeout
-    //             }
-    //             else; // DISABLED, shouldn't get here
-    //         }
-    //         // lower 32-bit timer may match but not he upper 32-bit extended part, make another round
-    //         else
-    //         {
-    //             TIMER1->IEN |= TIMER_IEN_CC1;
-    //             TIMER1->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    //         }
-            
-    //         hsc->lateEvent = false;
-    //     }
-    // }
-
-    // // Timestamping, wake up thread waiting for timestamp
-    // if(TIMER2->IF & TIMER_IF_CC2)
-    // {
-    //     TIMER2->IFC |= TIMER_IFC_CC2;
-    //     events::IRQsignalEvent();
-    // }
 }
 
 /**

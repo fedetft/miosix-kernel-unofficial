@@ -79,29 +79,6 @@ namespace miosix {
  *
  */
 
-//> OLD CONFIGURATION <//
-/**
- * 
- * Timers configuration: 
- * 
- * TIMER0->CC[0] free
- * TIMER0->CC[1] free
- * TIMER0->CC[2] free
- * 
- * TIMER1->CC[0] OUTPUT_COMPARE, os IRQ (lower 32-bit)
- * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ (upper 32-bit)
- * 
- * TIMER1->CC[1] OUTPUT_COMPARE, event timeout or trigger (lower 32-bit)
- * TIMER2->CC[1] OUTPUT_COMPARE, event timeout or trigger (upper 32-bit)
- * 
- * TIMER1->CC[2] INPUT_CAPTURE, timestamping (lower 32-bit)
- * TIMER2->CC[2] INPUT_CAPTURE, timestamping (upper 32-bit)
- * 
- * TIMER3->CC[0] INPUT_CAPTURE, VHT
- * TIMER3->CC[1] free
- * TIMER3->CC[2] free
- */
-
 //> NEW CONFIGURATION <//
 /**
  * Timers configuration: 
@@ -116,15 +93,15 @@ namespace miosix {
  * 
  * TIMER1->CC[0] free
  * TIMER1->CC[1] free
- * TIMER1->CC[2] INPUT_CAPTURE,  timestamping       (lower 32-bit) <- SFD/TIMESTAMP_IN (PRS) / -> TIMESTAMP_OUT
+ * TIMER1->CC[2] OUTPUT_COMPARE TIMESTAMP_OUT -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- TIMESTAMP_IN (PRS)
  * 
- * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ             (lower 32-bit)
- * TIMER2->CC[1] OUTPUT_COMPARE, timeout or trigger (lower 32-bit) -> STXON
- * TIMER2->CC[2] free
+ * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ (lower 32-bit)
+ * TIMER2->CC[1] OUTPUT_COMPARE trigger STXON -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- SFD (PRS)
+ * TIMER2->CC[2] OUTOUT_COMPARE timeout of SFD (and TIMESTAMP_IN) (only lower 32-bit)
  * 
- * TIMER3->CC[0] OUTPUT_COMPARE, os IRQ             (upper 32-bit)
- * TIMER3->CC[1] OUTPUT_COMPARE, timeout or trigger (upper 32-bit)
- * TIMER3->CC[2] INPUT_CAPTURE,  timestamping       (upper 32-bit) <- SFD/TIMESTAMP_IN (PRS)
+ * TIMER3->CC[0] OUTPUT_COMPARE, os IRQ (upper 32-bit)
+ * TIMER3->CC[1] INPUT_CAPTURE, (upper 32-bit) <- SFD (PRS)
+ * TIMER3->CC[2] INPUT_CAPTURE, timestamping (upper 32-bit) TIMESTAMP_IN (PRS)
  * 
  */
 
@@ -384,17 +361,17 @@ public:
     // #endif // #ifdef WITH_VHT
 
     ///
-    // Trigger extension 
+    // Timeout extension 
     ///
-    static inline unsigned int IRQgetTriggerMatchReg()
+    static inline unsigned int IRQgetTimeoutMatchReg()
     {
-        return (TIMER3->CC[1].CCV<<16) | TIMER2->CC[1].CCV;
+        return 0; //(TIMER3->CC[1].CCV<<16) | TIMER2->CC[1].CCV;
     }
 
-    static inline void IRQsetTriggerMatchReg(unsigned int v)
+    static inline void IRQsetTimeoutMatchReg(unsigned int v)
     {  
         // clear previous TIMER2 setting
-        TIMER3->IFC |= TIMER_IFC_CC1;
+        TIMER2->IFC |= TIMER_IFC_CC2;
         //NVIC_ClearPendingIRQ(TIMER3_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
@@ -404,49 +381,80 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCtriggerLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        Hsc::nextCCtriggerUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
+        Hsc::nextCCtimeoutLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        Hsc::nextCCtimeoutUpper = upper_ticks; // == 0 ? 0 : upper_ticks-1; // underflow handling
 
         // set and enable output compare interrupt on channel 1 for most significant timer
-        TIMER3->CC[1].CCV = Hsc::nextCCtriggerUpper;
-        TIMER3->IEN |= TIMER_IEN_CC1;
-        TIMER3->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->CC[2].CCV = Hsc::nextCCtimeoutLower;
+        TIMER2->IEN |= TIMER_IEN_CC2;
+        TIMER2->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
     }
 
-    static inline bool IRQgetTriggerFlag()
+    static inline bool IRQgetTimeoutFlag()
     {
         //return TIMER1->IF & TIMER_IF_CC1;
-        return TIMER2->IF & TIMER_IF_CC1;
+        return TIMER2->IF & TIMER_IF_CC2;
     }
 
-    static inline void IRQclearTriggerFlag()
+    static inline void IRQclearTimeoutFlag()
     {
         // disable output compare interrupt
-        TIMER2->IEN &= ~TIMER_IEN_CC1; // signal capture and compare register for OS interrupts
+        TIMER2->IEN &= ~TIMER_IEN_CC2; // signal capture and compare register for OS interrupts
         //TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
         
         // clear output compare flag
-        TIMER2->IFC |= TIMER_IFC_CC1;
+        TIMER2->IFC |= TIMER_IFC_CC2;
 
         // clear pending interrupt
         //NVIC_ClearPendingIRQ(TIMER2_IRQn);
     }
 
-    static inline uint32_t IRQgetEventTimestamp()
-    {
-        return (TIMER3->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
-    }
-
-    static inline void clearTimestampBuffer()
-    {
-        IRQgetEventTimestamp();
-        IRQgetEventTimestamp();
-    }
-
-    static inline void IRQforcePendingTrigger()
+    static inline void IRQforcePendingTimeout()
     {
         NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
+
+    static inline void IRQsetTriggerMatchReg(unsigned int v, bool SFD_STXON)
+    {
+        int channelIndex = SFD_STXON ? 0 : 1;
+
+        // clear previous TIMER setting
+        if(SFD_STXON) // STXON
+            TIMER2->IFC |= TIMER_IFC_CC1;
+        else // TIMESTAMP_IN/OUT
+            TIMER1->IFC |= TIMER_IFC_CC2;
+
+        //NVIC_ClearPendingIRQ(TIMER2_IRQn);
+        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
+
+        // extracting lower and upper 16-bit parts from match value
+        uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFULL); // lower part
+        uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
+
+        // set output compare timer register
+        // because of an undocumented quirk, the compare register is checked 1 tick late. 
+        // By subtracting one tick, we have to make sure we do not underflow!
+        Hsc::nextCCtriggerLower[channelIndex] = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        Hsc::nextCCtriggerUpper[channelIndex] = upper_ticks;
+
+        // set and enable output compare interrupt on right channel for least significant timer
+        if(SFD_STXON) // STXON
+        {
+            TIMER2->CC[1].CCV = Hsc::nextCCtriggerLower[0];
+            TIMER2->IEN |= TIMER_IEN_CC1;
+            TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        }
+        else // TIMESTAMP_IN/OUT
+        {
+            TIMER1->CC[2].CCV = Hsc::nextCCtriggerLower[1];
+            TIMER1->IEN |= TIMER_IEN_CC2;
+            TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        }
+    }
+
+    // TODO: (s) fix
+    static long long IRQgetEventTimestamp() { return 0; }
+
 
     ///
     // static variables getters
@@ -454,10 +462,17 @@ public:
     static unsigned int IRQgetNextCCticksUpper() { return Hsc::nextCCticksUpper; }
     static unsigned int IRQgetNextCCticksLower() { return Hsc::nextCCticksLower; }
 
-    static unsigned int IRQgetNextCCtriggerUpper() { return Hsc::nextCCtriggerUpper; }
-    static unsigned int IRQgetNextCCtriggerLower() { return Hsc::nextCCtriggerLower; }
+    static unsigned int IRQgetNextCCtimeoutUpper() { return Hsc::nextCCtimeoutUpper; }
+    static unsigned int IRQgetNextCCtimeoutLower() { return Hsc::nextCCtimeoutLower; }
 
-    // TODO: (s) set timer3 (input capture) input on CC1, read timestamp from TIMER3 in input capute etc...
+    static std::pair<unsigned int, unsigned int> IRQgetNextCCtriggerUpper() 
+    { 
+        return std::make_pair(Hsc::nextCCtriggerUpper[0], Hsc::nextCCtriggerUpper[1]); 
+    }
+    static std::pair<unsigned int, unsigned int>  IRQgetNextCCtriggerLower() 
+    { 
+        return std::make_pair(Hsc::nextCCtriggerLower[0], Hsc::nextCCtriggerLower[1]);
+    }
 
 private:
     /**
@@ -480,10 +495,15 @@ private:
         return high2<<16 | TIMER2->CNT;
     }
 
+    // irq
     inline static unsigned int nextCCticksUpper;
     inline static unsigned int nextCCticksLower;
-    inline static unsigned int nextCCtriggerUpper;
-    inline static unsigned int nextCCtriggerLower;
+    // timeout
+    inline static unsigned int nextCCtimeoutUpper;
+    inline static unsigned int nextCCtimeoutLower;
+    // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
+    inline static unsigned int nextCCtriggerUpper[2];
+    inline static unsigned int nextCCtriggerLower[2];
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };

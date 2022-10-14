@@ -189,10 +189,10 @@ public:
     
     long long upperTimeTick = 0; //Extended timer counter (upper bits)
     long long upperIrqTick = 0;  //Extended interrupt time point (upper bits)
-    long long upperTriggerTick = 0;  //Extended interrupt time point (upper bits)
+    long long upperTimeoutTick = 0;  //Extended interrupt time point (upper bits)
     miosix::TimeConversion tc;
     bool lateIrq=false;
-    bool lateTrigger=false;
+    bool lateTimeout=false;
     
     /**
      * \return the current time in ticks
@@ -327,16 +327,16 @@ public:
      * Schedule the next os interrupt
      * \param ns absolute time in ticks, must be > 0
      */
-    inline void IRQsetTriggerTick(long long tick)
+    inline void IRQsetTimeoutTick(long long tick)
     {
         auto tick2 = tick + quirkAdvance;
-        upperTriggerTick = tick2 & upperMask;
-        D::IRQsetTriggerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+        upperTimeoutTick = tick2 & upperMask;
+        D::IRQsetTimeoutMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
 
         if(IRQgetTimeTick() >= tick)
         {
-            D::IRQforcePendingTrigger();
-            lateTrigger=true;
+            D::IRQforcePendingTimeout();
+            lateTimeout=true;
         }
     }
     
@@ -344,17 +344,17 @@ public:
      * Schedule the next os interrupt
      * \param ns absolute time in nanoseconds, must be > 0
      */
-    inline void IRQsetTriggerNs(long long ns)
+    inline void IRQsetTimeoutNs(long long ns)
     {
-        IRQsetTriggerTick(tc.ns2tick(ns));
+        IRQsetTimeoutTick(tc.ns2tick(ns));
     }
 
     /**
      * \return the time when the next os interrupt is scheduled in ticks
      */
-    inline long long IRQgetTriggerTick()
+    inline long long IRQgetTimeoutTick()
     {
-        return upperTriggerTick | D::IRQgetTriggerMatchReg();
+        return upperTimeoutTick | D::IRQgetTimeoutMatchReg();
     }
     
     /**

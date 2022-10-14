@@ -310,7 +310,7 @@ void Transceiver::sendAt(const void* pkt, int size, long long when)
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
 
-    if(absoluteTriggerEvent(w, Channel::STXON)!=EventResult::TRIGGER)
+    if(absoluteTriggerEvent(w, Channel::SFD_STXON)!=EventResult::TRIGGER)
     {
 	//See diagram on page 69 of datasheet
         commandStrobe(CC2520Command::SFLUSHTX);
@@ -452,7 +452,7 @@ void Transceiver::startRxAndWaitForRssi()
         if(i==retryTimes-1)
             throw runtime_error("Transceiver::startRxAndWaitForRssi timeout");
         // dummy channel and eventDirection, just wait for timeout
-        waitEvent(rssiWait, Channel::SFD); 
+        waitEvent(rssiWait, Channel::SFD_STXON); 
     }
 }
 
@@ -495,7 +495,7 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     bool silentError=false;
     restart:
     //Wait for the first event to occur (SFD)
-    if(waitEvent(sfdTimeout, Channel::SFD).first != EventResult::EVENT)
+    if(waitEvent(sfdTimeout, Channel::SFD_STXON).first != EventResult::EVENT)
     {
         //In case of timeout, abort current transmission
         idle();
@@ -548,7 +548,7 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     }
     
     //Wait for the second event to occur (TX_FRM_DONE)
-    bool timeout=waitEvent(maxPacketTimeout, Channel::SFD).first != EventResult::EVENT;
+    bool timeout=waitEvent(maxPacketTimeout, Channel::SFD_STXON).first != EventResult::EVENT;
     exc=getExceptions(0b001);
     if(timeout==true || (exc & CC2520Exception::TX_FRM_DONE)==0)
     {
@@ -573,7 +573,7 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     //Wait for the first event to occur (SFD), or timeout
     EventResult eventResult;
     long long timestamp;
-    std::tie(eventResult, timestamp) = absoluteWaitEvent(timeout, Channel::SFD);
+    std::tie(eventResult, timestamp) = absoluteWaitEvent(timeout, Channel::SFD_STXON);
     if(eventResult != EventResult::EVENT)
     {
         result.error=RecvResult::TIMEOUT;
@@ -618,7 +618,7 @@ bool Transceiver::handlePacketReceptionEvents(long long timeout, int size, RecvR
     long long tt=getTime()+slack+timePerByte*size;
     auto secondTimeout=config.strictTimeout ? min(timeout,tt) : max(timeout,tt);
 
-    if(absoluteWaitEvent(secondTimeout, Channel::SFD).first != EventResult::EVENT)
+    if(absoluteWaitEvent(secondTimeout, Channel::SFD_STXON).first != EventResult::EVENT)
     {
         // TODO: (s) check
         //if(timer->getValue()<timeout)
