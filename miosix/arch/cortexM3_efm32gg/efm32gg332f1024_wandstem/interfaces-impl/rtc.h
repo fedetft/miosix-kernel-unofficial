@@ -61,6 +61,17 @@ namespace miosix
  *     static void IRQinit() {}
  */
 
+//> NEW CONFIGURATION <//
+/**
+ * RTC configuration: 
+ * RTC [Clocked]
+ * 
+ * COMP0 DEEP SLEEP
+ * COMP1 -> OUTUPUT_COMPARE (PRS, ch4 triggers TIMER1 input capture)
+ * COMP2 free
+ * 
+ */
+
 class Rtc : public RTCTimerAdapter<Rtc, 24>
 {
 public:
@@ -218,9 +229,9 @@ public:
 
         //In the EFM32GG332F1024 the RTC has two compare channels, used in this way:
         //COMP0 -> used for wait and trigger
-        //COMP1 -> reserved for VHT resync and Power manager
+        //COMP1 -> reserved for VHT
         //NOTE: interrupt not yet enabled as we're not setting RTC->IEN
-        NVIC_SetPriority(RTC_IRQn, 7); // 0 is the higest priority, 15 il the lowest
+        NVIC_SetPriority(RTC_IRQn, 3); // 0 is the higest priority, 15 il the lowest
         NVIC_ClearPendingIRQ(RTC_IRQn);
         NVIC_EnableIRQ(RTC_IRQn);  
         
@@ -233,7 +244,7 @@ public:
 
     static void IRQinitVhtTimer()
     {
-        RTC->IEN |= RTC_IEN_COMP1;
+        //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s) not necessary right?
     }
 
     static void IRQstartVhtTimer()
@@ -267,7 +278,6 @@ public:
         unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         RTC->COMP1 = v_quirk & 0xFFFFFF;
         while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
-        //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s)?
     }
 
     #endif // #ifdef WITH_VHT

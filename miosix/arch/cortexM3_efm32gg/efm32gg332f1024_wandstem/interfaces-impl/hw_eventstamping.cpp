@@ -291,7 +291,7 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
 
     // disable timer interrupts (done in ISR)
     //TIMER2->IEN &= ~TIMER_IEN_CC1;
-    //TIMER1->IEN &= ~TIMER_IEN_CC1;
+    //TIMER1->IEN &= ~TIMER_IEN_CC2;
 
     return EventResult::TRIGGER;
 }

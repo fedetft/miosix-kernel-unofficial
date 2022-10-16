@@ -187,6 +187,9 @@ private:
         IRQerrorLog("\r\nVHT exceeded maximum theoretical correction");
         IRQerrorLog("\r\nerror: "); IRQerrorLog(std::to_string(static_cast<int>(error)).c_str());
         IRQerrorLog("\r\nmaxTheoreticalError: "); IRQerrorLog(std::to_string(static_cast<int>(maxTheoreticalError)).c_str());
+        IRQerrorLog("\r\nsyncPointActualHsc: "); IRQerrorLog(std::to_string(static_cast<int>(syncPointActualHsc)).c_str());
+        IRQerrorLog("\r\nsyncPointExpectedHsc: "); IRQerrorLog(std::to_string(static_cast<int>(syncPointExpectedHsc)).c_str());
+        IRQerrorLog("\r\nvhtClockOffset: "); IRQerrorLog(std::to_string(static_cast<int>(vhtClockOffset)).c_str());
         IRQerrorLog("\r\n\n");
         miosix_private::IRQsystemReboot();
     }

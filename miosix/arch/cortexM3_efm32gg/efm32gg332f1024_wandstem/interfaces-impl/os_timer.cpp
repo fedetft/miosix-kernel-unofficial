@@ -31,11 +31,21 @@
 #include "interfaces-impl/time_types_spec.h"
 #include "interfaces/hw_eventstamping.h"
 #include <atomic>
+#include "e20/e20.h" // DELETEME: (s)
+#include "thread" // DELETEME: (s)
 
 using namespace miosix;
 
 namespace miosix {
 
+static FixedEventQueue<100,12> queue; // DELETEME: (s)
+
+// DELETEME: (s)
+void startDBGthread()
+{
+    std::thread t([]() { queue.run(); });
+    t.detach();
+}
 
 long long getTime() noexcept
 {
@@ -52,18 +62,17 @@ namespace internal {
 
 void IRQosTimerInit()
 {
+    vc->IRQinit(); // inits HSC and correction stack
+
     // TODO: (s) remove init + instances! init inside constructor
     // Note: order here is important. VHT expects a working and started RTC (TODO: (s) if not started, call init + start)
     #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
     rtc->IRQinit();
-    //rtc->IRQinit();
     #endif
 
     #if defined(WITH_VHT)
     vht->IRQinit();
     #endif
-
-    vc->IRQinit(); // inits HSC and correction stack
 }
 
 void IRQosTimerSetTime(long long ns) noexcept
@@ -104,14 +113,42 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {
+    //FIXME: (s)
+    /*
+    ***Exception: VHT
+    VHT exceeded maximum theoretical correction
+    error: -38782
+    maxTheoreticalError: 2882
+    syncPointActualHsc: 9574987
+    syncPointExpectedHsc: 9613769
+    vhtClockOffset: -11190
+    */
+
     // save value of TIMER3 counter right away to check for compare later
     unsigned int upperTimerCounter = TIMER3->CNT;
+
+    // VHT
+    if(TIMER1->IF & TIMER_IF_CC1)
+    {        
+        // PRS captured RTC current value inside the CC_1 of the TIMER1 (lower part of timer)
+        hsc->IRQclearVhtMatchFlag();
+        
+        // replace lower 32-bit part of timer with the VHT registered one
+        long long syncPointActualHsc = hsc->upperTimeTick | hsc->IRQgetVhtTimerCounter();
+
+        // handle lower part timer overflowed before vht lower part timer
+        if(syncPointActualHsc > hsc->IRQgetTimeTick()) { syncPointActualHsc -= 1<<16; }
+
+        // update vht correction controller
+        if(vht->IRQisCorrectionEnabled())
+            vht->IRQupdate(syncPointActualHsc);
+    }      
 
     // TIMESTAMP_IN/OUT
     if(TIMER1->IF & TIMER_IF_CC2)
     {
         std::pair<events::EventDirection, events::EventDirection> eventsDirection = events::getEventsDirection();
-
+        
         // TIMESTAMP_IN
         if(eventsDirection.second == events::EventDirection::INPUT)
         {
@@ -124,9 +161,15 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
         {
             unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().second;
 
+            // TODO: (s) if upper part matches already, trigger right now
+            // TODO: (s) if too close, then abort, timeout
             // (0) trigger at next cycle 
             if(upperTimerCounter == (nextCCtriggerUpper-1))
             {
+                #ifdef TIMER_EVENT_DEBUG
+                greenLedOn();
+                #endif
+
                 // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
                 TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
                 TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
@@ -138,10 +181,12 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
                 // disconnect TIMER2->CC1 to pin PE12 (TIMESTAMP_OUT)
                 TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
                 TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
-                TIMER1->CC[2].CCV = static_cast<uint32_t>(TIMER2->CNT+10);
+
+                // signal trigger
+                events::IRQsignalEventTIMESTAMP_OUT();
             }
             // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
-            else if(upperTimerCounter > nextCCtriggerUpper)
+            else if(upperTimerCounter == nextCCtriggerUpper+1)
             {
                 // disable output compare interrupt on channel 1 for least significant timer
                 TIMER1->IEN &= ~TIMER_IEN_CC2;
@@ -154,13 +199,13 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
                 TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
 
                 #ifdef TIMER_EVENT_DEBUG
-                greenLedOn();
+                greenLedOff();
                 #endif
 
                 // signal trigger
-                events::IRQsignalEventTIMESTAMP_OUT();
+                //events::IRQsignalEventTIMESTAMP_OUT();
             }
-            else greenLedOff(); // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+            else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
         else ; // DISABLED
     }
@@ -204,7 +249,8 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         else if(eventsDirection.first == events::EventDirection::OUTPUT)
         {
             unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().first;
-
+            // TODO: (s) if upper part matches already, trigger right now
+            // TODO: (s) if too close, then abort, timeout
             // (0) trigger at next cycle 
             if(upperTimerCounter == (nextCCtriggerUpper-1))
             {
@@ -219,10 +265,9 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 // disconnect TIMER2->CC1 to pin PA9 (stxon)
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
-                TIMER2->CC[1].CCV = static_cast<uint32_t>(TIMER2->CNT+10);
             }
             // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
-            else if(upperTimerCounter > nextCCtriggerUpper)
+            else if(upperTimerCounter == nextCCtriggerUpper+1)
             {
                 // disable output compare interrupt on channel 1 for least significant timer
                 TIMER2->IEN &= ~TIMER_IEN_CC1;
@@ -241,7 +286,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 // signal trigger
                 events::IRQsignalEventSTXON();
             }
-            else greenLedOff(); // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+            else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
         else ; // DISABLED
         
@@ -331,40 +376,6 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
     }
 }
 
-/**
- * TIMER3 interrupt routine
- * 
- */
-// void __attribute__((naked)) TIMER3_IRQHandler()
-// {
-//     saveContext();
-//     asm volatile("bl _Z21TIMER3_IRQHandlerImplv");
-//     restoreContext();
-// }
-
-// void __attribute__((used)) TIMER3_IRQHandlerImpl()
-// {
-//     greenLedOn();
-//     #ifdef WITH_VHT
-       
-//     // if-guard
-//     if(!hsc->IRQgetVhtMatchFlag()) return;
-
-//     // PRS captured RTC current value inside the CC_0 of the TIMER3 (lower part of timer)
-//     hsc->IRQclearVhtMatchFlag();
-    
-//     // replace lower 32-bit part of timer with the VHT registered one
-//     long long syncPointActualHsc = hsc->upperTimeTick | hsc->IRQgetVhtTimerCounter();
-//     // handle lower part timer overflowed before vht lower part timer
-//     if(syncPointActualHsc > hsc->IRQgetTimeTick()) { syncPointActualHsc -= 1<<16; }
-
-//     // update vht correction controller
-//     if(vht->IRQisCorrectionEnabled())
-//         vht->IRQupdate(syncPointActualHsc);
-
-//     #endif
-//     greenLedOff();
-// }
 
 /**
  * RTC interrupt routine
@@ -377,9 +388,7 @@ void __attribute__((naked)) RTC_IRQHandler()
 }
 
 void __attribute__((used)) RTChandlerImpl()
-{
-    #if defined(WITH_DEEP_SLEEP) || defined(WITH_VHT)
-    
+{    
     // handle RTC overflow
     if(rtc->IRQgetOverflowFlag()) { rtc->IRQoverflowHandler(); }
 
@@ -388,5 +397,4 @@ void __attribute__((used)) RTChandlerImpl()
     if(rtc->IRQgetVhtMatchFlag()) { rtc->IRQclearVhtMatchFlag(); }
     #endif
 
-    #endif
 }

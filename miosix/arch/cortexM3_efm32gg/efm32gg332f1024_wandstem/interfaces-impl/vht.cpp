@@ -27,9 +27,19 @@
 
 #include "time/clock_sync.h"
 #include "interfaces-impl/time_types_spec.h"
+#include "e20/e20.h" // DELETEME: (s)
+#include "thread" // DELETEME: (s)
 
 namespace miosix
 {
+    /*static FixedEventQueue<100,12> queue; // DELETEME: (s)
+
+    // DELETEME: (s)
+    void startDBGthread()
+    {
+        std::thread t([]() { queue.run(); });
+        t.detach();
+    }*/
 
     Vht& Vht::instance()
     {
@@ -57,14 +67,13 @@ namespace miosix
 
     void Vht::IRQinit()
     {
+        //startDBGthread(); // DELETEME: (s)
+
         this->flopsyncVHT = &FlopsyncVHT::instance();
 
         // setting up VHT timer
         Hsc::IRQinitVhtTimer();
-        Hsc::IRQstartVhtTimer();
-
         Rtc::IRQinitVhtTimer();
-        Rtc::IRQstartVhtTimer(); // read inside rtc.h
 
         // performing VHT initialization
         unsigned int nowRtc = Rtc::IRQgetTimerCounter() + 2; // TODO: (s) this is for undocumented quirk, generalize! + CHECK OVERFLOW
@@ -75,8 +84,7 @@ namespace miosix
         while(!Rtc::IRQgetVhtMatchFlag()); // wait for first compare
 
         // Reading vht timestamp but replacing lower part of counter with RTC value
-        long long vhtTimestamp = Hsc::IRQgetVhtTimerCounter();
-
+        unsigned int vhtTimestamp = Hsc::IRQgetVhtTimerCounter();
         if(vhtTimestamp > Hsc::IRQgetTimerCounter()){
             vhtTimestamp -= 1<<16; // equivalent to ((TIMER2->CNT-1)<<16) | TIMER3->CC[0].CCV;
         }
@@ -99,7 +107,7 @@ namespace miosix
         Rtc::IRQsetVhtMatchReg(nextSyncPointRtc);
         this->syncPointTheoreticalHsc = nowHsc;
 
-        // first VHT correction
+        //first VHT correction
         IRQupdateImpl(syncPointTheoreticalHsc, syncPointExpectedHsc, 0);
 
         this->init = true;
@@ -118,8 +126,9 @@ namespace miosix
         Rtc::IRQsetVhtMatchReg(Rtc::IRQgetVhtTimerMatchReg() + syncPeriodRtc);
 
         // calculate required parameters
+        
         this->error = this->syncPointActualHsc - syncPointExpectedHsc;
-        this->clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);
+        this->clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);        
 
         // TODO: (s) extend error.h types and print everything inside error.cpp + recover
         // handle case in which error exceeds maximum theoretical error

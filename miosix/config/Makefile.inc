@@ -2140,8 +2140,8 @@ else ifeq ($(ARCH),cortexM3_efm32gg)
         $(BOARD_INC)/interfaces-impl/flopsync3.cpp                  \
         $(BOARD_INC)/interfaces-impl/time_types_spec.cpp            \
         $(BOARD_INC)/interfaces-impl/gpioirq.cpp                    \
+        $(BOARD_INC)/interfaces-impl/vht.cpp                        \
         ## $(BOARD_INC)/interfaces-impl/deep_sleep.cpp                 \
-        ## $(BOARD_INC)/interfaces-impl/vht.cpp                        \
 
         ## Add a #define to allow querying board name
         CFLAGS_BASE   += -DEFM32GG332F1024 -D_BOARD_WANDSTEM

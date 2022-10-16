@@ -92,16 +92,16 @@ namespace miosix {
  * TIMER0->CC[2] free
  * 
  * TIMER1->CC[0] free
- * TIMER1->CC[1] free
- * TIMER1->CC[2] OUTPUT_COMPARE TIMESTAMP_OUT -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- TIMESTAMP_IN (PRS)
+ * TIMER1->CC[1] INPUT_CAPTURE, VHT <- RTC OUTPUT_COMPARE (PRS ch4)
+ * TIMER1->CC[2] OUTPUT_COMPARE TIMESTAMP_OUT -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- TIMESTAMP_IN (PRS ch1)
  * 
  * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ (lower 32-bit)
- * TIMER2->CC[1] OUTPUT_COMPARE trigger STXON -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- SFD (PRS)
- * TIMER2->CC[2] OUTOUT_COMPARE timeout of SFD (and TIMESTAMP_IN) (only lower 32-bit)
+ * TIMER2->CC[1] OUTPUT_COMPARE trigger STXON -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- SFD (PRS ch0)
+ * TIMER2->CC[2] OUTOUT_COMPARE  
  * 
  * TIMER3->CC[0] OUTPUT_COMPARE, os IRQ (upper 32-bit)
- * TIMER3->CC[1] INPUT_CAPTURE, (upper 32-bit) <- SFD (PRS)
- * TIMER3->CC[2] INPUT_CAPTURE, timestamping (upper 32-bit) TIMESTAMP_IN (PRS)
+ * TIMER3->CC[1] INPUT_CAPTURE, (upper 32-bit) <- SFD (PRS ch0)
+ * TIMER3->CC[2] INPUT_CAPTURE, timestamping (upper 32-bit) TIMESTAMP_IN (PRS ch1)
  * 
  */
 
@@ -282,7 +282,7 @@ public:
         // signaling overflow, needed for pending bit trick
         TIMER3->IEN |= TIMER_IEN_OF;
         
-        NVIC_SetPriority(TIMER1_IRQn, 3);
+        NVIC_SetPriority(TIMER1_IRQn, 4);
         NVIC_SetPriority(TIMER2_IRQn, 3);
         NVIC_SetPriority(TIMER3_IRQn, 3);
 
@@ -298,67 +298,52 @@ public:
     ///
     // VHT extension
     ///
-    // #ifdef WITH_VHT
+    #ifdef WITH_VHT
 
-    // static void IRQinitVhtTimer()
-    // {
-    //     // enabling TIMER3
-    //     CMU->HFPERCLKEN0 |= CMU_HFPERCLKEN0_TIMER3;
+    static void IRQinitVhtTimer()
+    {
+        // setting PRS on channel 4 to capture RTC timer at COMP1 in CC[1]
+        TIMER1->CC[1].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
+            | TIMER_CC_CTRL_FILT_DISABLE
+            | TIMER_CC_CTRL_INSEL_PRS
+            | TIMER_CC_CTRL_PRSSEL_PRSCH4
+            | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
+        PRS->CH[4].CTRL = PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
 
-    //     TIMER3->CTRL = TIMER_CTRL_MODE_UP | TIMER_CTRL_CLKSEL_PRESCHFPERCLK 
-    //                     | TIMER_CTRL_PRESC_DIV1; 
-    //     TIMER3->IEN |= TIMER_IEN_CC0; // enable interrupt on CC0
+        TIMER1->IEN |= TIMER_IEN_CC1;
+    }
 
-    //     NVIC_SetPriority(TIMER3_IRQn, 8);
-    //     NVIC_ClearPendingIRQ(TIMER3_IRQn);
-    //     NVIC_EnableIRQ(TIMER3_IRQn);
+    static void IRQstartVhtTimer()
+    {
+        // start timer
+        //TIMER1->CMD = TIMER_CMD_START; //  TIMER1 is already clocked
+    }
 
-    //     // setting PRS on channel 4 to capture RTC timer at COMP1 in CC[0]
-    //     TIMER3->CC[0].CTRL=TIMER_CC_CTRL_ICEDGE_RISING
-    //         | TIMER_CC_CTRL_FILT_DISABLE
-    //         | TIMER_CC_CTRL_INSEL_PRS
-    //         | TIMER_CC_CTRL_PRSSEL_PRSCH4
-    //         | TIMER_CC_CTRL_MODE_INPUTCAPTURE;
-    //     PRS->CH[4].CTRL = PRS_CH_CTRL_SOURCESEL_RTC | PRS_CH_CTRL_SIGSEL_RTCCOMP1;
-    // }
+    static inline unsigned int IRQgetVhtTimerCounter()
+    {
+        return (TIMER3->CNT<<16) | TIMER1->CC[1].CCV;
+    }
 
-    // static void IRQstartVhtTimer()
-    // {
-    //     // start timer
-    //     TIMER3->CMD = TIMER_CMD_START;
-    // }
+    static inline bool IRQgetVhtMatchFlag()
+    {
+        return TIMER1->IF & TIMER_IF_CC1;
+    }
 
-    // // TODO: (s) document that read CCV overwrites reg with CCVB
-    // static inline unsigned int IRQgetVhtTimerCounter()
-    // {
-    //     return (TIMER2->CNT<<16) | TIMER3->CC[0].CCV;
-    // }
+    static inline void IRQclearVhtMatchFlag()
+    {
+        TIMER1->IFC |= TIMER_IFC_CC1;
+    }
 
-    // static inline void IRQsetVhtTimerCounter(unsigned int v)
-    // {
-    //     TIMER3->CNT = static_cast<uint16_t>(v & 0xFFFFUL);
-    // }
+    static inline void IRQsetVhtMatchReg(unsigned int v)
+    {
+        IRQclearVhtMatchFlag();
 
-    // static inline bool IRQgetVhtMatchFlag()
-    // {
-    //     return TIMER3->IF & TIMER_IF_CC0;
-    // }
+        // undocumented quirk, CC 1 tick after
+        //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
+        // TODO: (s) finish
+    }
 
-    // static inline void IRQclearVhtMatchFlag()
-    // {
-    //     TIMER3->IFC |= TIMER_IFC_CC0;
-    // }
-
-    // static inline void IRQsetVhtMatchReg(unsigned int v)
-    // {
-    //     IRQclearVhtMatchFlag();
-
-    //     // undocumented quirk, CC 1 tick after
-    //     //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
-    //     // TODO: (s) finish
-    // }
-
-    // #endif // #ifdef WITH_VHT
+    #endif // #ifdef WITH_VHT
 
     ///
     // Timeout extension 
