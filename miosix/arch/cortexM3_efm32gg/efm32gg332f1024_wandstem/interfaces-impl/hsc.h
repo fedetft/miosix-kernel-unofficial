@@ -97,7 +97,7 @@ namespace miosix {
  * 
  * TIMER2->CC[0] OUTPUT_COMPARE, os IRQ (lower 32-bit)
  * TIMER2->CC[1] OUTPUT_COMPARE trigger STXON -> (only lower 32-bit) / INPUT_CAPTURE (lower 32-bit) <- SFD (PRS ch0)
- * TIMER2->CC[2] OUTOUT_COMPARE  
+ * TIMER2->CC[2] OUTOUT_COMPARE, timeout (only lower 32-bit)
  * 
  * TIMER3->CC[0] OUTPUT_COMPARE, os IRQ (upper 32-bit)
  * TIMER3->CC[1] INPUT_CAPTURE, (upper 32-bit) <- SFD (PRS ch0)
@@ -136,7 +136,7 @@ public:
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
         // clear previous TIMER2 setting
-        TIMER3->IFC |= TIMER_IFC_CC0;
+        TIMER3->IFC = TIMER_IFC_CC0;
         //NVIC_ClearPendingIRQ(TIMER2_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
@@ -162,7 +162,7 @@ public:
 
     static inline void IRQclearOverflowFlag()
     {
-        TIMER3->IFC |= TIMER_IFC_OF;
+        TIMER3->IFC = TIMER_IFC_OF;
     }
 
     static inline bool IRQgetMatchFlag()
@@ -178,7 +178,7 @@ public:
         TIMER2->CC[0].CCV = 0;
 
         // clear output compare flag
-        TIMER2->IFC |= TIMER_IFC_CC0;
+        TIMER2->IFC = TIMER_IFC_CC0;
 
         // clear pending interrupt
         //NVIC_ClearPendingIRQ(TIMER1_IRQn);
@@ -298,7 +298,6 @@ public:
     ///
     // VHT extension
     ///
-    #ifdef WITH_VHT
 
     static void IRQinitVhtTimer()
     {
@@ -331,7 +330,7 @@ public:
 
     static inline void IRQclearVhtMatchFlag()
     {
-        TIMER1->IFC |= TIMER_IFC_CC1;
+        TIMER1->IFC = TIMER_IFC_CC1;
     }
 
     static inline void IRQsetVhtMatchReg(unsigned int v)
@@ -342,8 +341,6 @@ public:
         //unsigned int v_quirk = v == 0 ? 0 : v-1; // handling underflow
         // TODO: (s) finish
     }
-
-    #endif // #ifdef WITH_VHT
 
     ///
     // Timeout extension 
@@ -356,7 +353,7 @@ public:
     static inline void IRQsetTimeoutMatchReg(unsigned int v)
     {  
         // clear previous TIMER2 setting
-        TIMER2->IFC |= TIMER_IFC_CC2;
+        TIMER2->IFC = TIMER_IFC_CC2;
         //NVIC_ClearPendingIRQ(TIMER3_IRQn);
 
         // extracting lower and upper 16-bit parts from match value
@@ -388,7 +385,7 @@ public:
         //TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
         
         // clear output compare flag
-        TIMER2->IFC |= TIMER_IFC_CC2;
+        TIMER2->IFC = TIMER_IFC_CC2;
 
         // clear pending interrupt
         //NVIC_ClearPendingIRQ(TIMER2_IRQn);
@@ -405,9 +402,9 @@ public:
 
         // clear previous TIMER setting
         if(SFD_STXON) // STXON
-            TIMER2->IFC |= TIMER_IFC_CC1;
+            TIMER2->IFC = TIMER_IFC_CC1;
         else // TIMESTAMP_IN/OUT
-            TIMER1->IFC |= TIMER_IFC_CC2;
+            TIMER1->IFC = TIMER_IFC_CC2;
 
         //NVIC_ClearPendingIRQ(TIMER2_IRQn);
         //NVIC_ClearPendingIRQ(TIMER1_IRQn);

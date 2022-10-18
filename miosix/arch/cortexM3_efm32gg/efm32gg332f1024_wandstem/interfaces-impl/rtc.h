@@ -240,7 +240,6 @@ public:
     ///
     // VHT extension
     ///
-    #ifdef WITH_VHT
 
     static void IRQinitVhtTimer()
     {
@@ -279,8 +278,6 @@ public:
         RTC->COMP1 = v_quirk & 0xFFFFFF;
         while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1);
     }
-
-    #endif // #ifdef WITH_VHT
 
 
 private:

@@ -593,6 +593,14 @@ inline long long fp32_32::operator * (unsigned long long a) const
     return this->value > 0 ? mul64x32d32(a, integerVal, decimalVal) : -mul64x32d32(a, integerVal, decimalVal);
 }
 
+// up until this line, the warning is active
+
+// https://www.fluentcpp.com/2019/08/30/how-to-disable-a-warning-in-cpp/
+// PUSH disable warning (instruction specific to the compiler, see below)
+#pragma GCC diagnostic push
+// DISABLE the warning that a parameter is not used
+#pragma GCC diagnostic ignored "-Wstrict-aliasing"
+
 template<>
 inline fp32_32 fp32_32::fastInverse() const
 {    
@@ -634,6 +642,9 @@ inline fp32_32 fp32_32::fastInverse() const
 
     return fp32_32(signum<int64_t>(this->value) * y);
 }
+
+// POP disable warning, the warning is now active again
+#pragma GCC diagnostic pop
 
 template<>
 inline fp32_32 fp32_32::operator / (const fp32_32& f) const

@@ -202,10 +202,12 @@ std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long a
             FastInterruptEnableLock eLock(dLock);
             Thread::yield();
         }
-        // FIXME: (s) si sveglia che hsc->IRQgetTimeNs() <= absoluteTimeoutNsTsnc non è più vera
     }
 
-    // stop timeout in case not triggered yet
+    if(waitingThread[channelIndex] != nullptr) timeout = true; // spurious wakeup and we got past timeout time
+    waitingThread[channelIndex] = nullptr;
+
+    // stop timeout in case of event
     TIMER2->IEN &= ~TIMER_IEN_CC2;
     TIMER2->CC[2].CTRL & ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
@@ -289,9 +291,36 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
         }
     }
 
-    // disable timer interrupts (done in ISR)
-    //TIMER2->IEN &= ~TIMER_IEN_CC1;
-    //TIMER1->IEN &= ~TIMER_IEN_CC2;
+    // (2) CMOA cleared, we can terminate trigger procedure 
+    // disabling interrupts and output compare along with location reset is done here,
+    // assuming (resonably) that the OUTPUT_COMPARE to clear the CMOA (scheduled 10 ticks after the match)
+    // will be fired while exiting from interrupt and restoring the context.
+    // (see os_timer.cpp TIMER1_IRQHandlerImpl or TIMER2_IRQHandlerImpl for (0) and (1))
+    if(channel == Channel::SFD_STXON) // STXON
+    {
+        TIMER1->IEN &= ~TIMER_IEN_CC2;
+        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        
+        // disconnect TIMER2->CC1 from PEN completely
+        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+        TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
+        TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
+    }
+    else // Channel::TIMESTAMP_IN_OUT
+    {
+        // disable output compare interrupt on channel 1 for least significant timer
+        TIMER2->IEN &= ~TIMER_IEN_CC1;
+        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        
+        // disconnect TIMER2->CC1 from PEN completely
+        TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+        TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
+        TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+    }
+
+    #ifdef TIMER_EVENT_DEBUG
+    greenLedOff();
+    #endif
 
     return EventResult::TRIGGER;
 }
