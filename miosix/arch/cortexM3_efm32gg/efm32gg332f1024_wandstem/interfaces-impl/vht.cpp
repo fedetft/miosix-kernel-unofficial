@@ -118,7 +118,10 @@ namespace miosix
     void Vht::IRQupdate(long long syncPointActualHsc)
     {
         this->syncPointActualHsc = syncPointActualHsc + vhtClockOffset;
+        
+        #ifdef WITH_VHT
         auto GBD1 = rtc->IRQgetTimeTick(); // DELETEME: (s)
+        #endif
 
         // set next RTC trigger
         this->nextSyncPointRtc += this->syncPeriodRtc; // increments next RTC sync point as currentSyncPoint + syncPeriod

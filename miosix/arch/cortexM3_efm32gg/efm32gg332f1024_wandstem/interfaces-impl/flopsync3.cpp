@@ -139,7 +139,7 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     // printf("prescaledDenum\t%.15f\n", static_cast<double>(prescaledDenum));
     // printf("syncPeriod / prescaledDenum:\t%lld\n", syncPeriod / prescaledDenum);
     // printf("(syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
-    printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
+    // printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
     // printf("inv_vcdot_km1:\t%.20f\n", (double)inv_vcdot_km1);
     // printf("a:\t\t%.20f\n", (double)a_km1);
     // iprintf("b:\t\t%lld\n", b_km1);
@@ -203,10 +203,18 @@ void Flopsync3::assertInit()
 
 void Flopsync3::reset()
 {
-    //this->a_km1 = 1;
-    //this->b_km1 = 1;
-    //...
-    // TODO: (s) update VC coeff?
+    this->syncPeriod    = 0;
+    this->vcdot_k       = static_cast<int32_t>(1); 
+    this->vcdot_km1     = static_cast<int32_t>(1); 
+    this->inv_vcdot_k   = static_cast<int32_t>(1); 
+    this->inv_vcdot_km1 = static_cast<int32_t>(1);
+    this->k             = 0;
+    this->T0            = 0;
+    this->init          = false; 
+    this->a_km1         = static_cast<int32_t>(1);
+    this->b_km1         = 0;
+
+    // ASK: (s) update VC coeff?
 }
 
 Flopsync3::Flopsync3() : posCorrection(VirtualClockSpec::numCorrections-1), maxPeriod(1099511627775), 

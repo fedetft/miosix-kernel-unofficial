@@ -383,7 +383,8 @@ public:
 
     constexpr Fixed& operator = (int32_t a)
     {
-        this->value = a<<dp;
+        this->value = a;
+        this->value <<= dp;
         return *this;
     }
 
