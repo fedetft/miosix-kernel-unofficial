@@ -621,7 +621,7 @@ public:
         // assing new pair in the list of pairs
         correctionsPairs[pos] = newPair;
 
-        // recompute combined coefficiencies 
+        // recompute combined coefficiencies (N is the number of corrections we have on the VLCS)
         fp32_32 a(1);
         long long b = 0;
         for(size_t i = 0; i < N; i++)

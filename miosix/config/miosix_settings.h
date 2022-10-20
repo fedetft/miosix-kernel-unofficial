@@ -150,7 +150,7 @@ const unsigned char MAX_OPEN_FILES=8;
  * mode, so to use debugging it is necessary to disable sleep in the idle thread.
  * By default it is not defined (idle thread calls sleep).
  */
-#define JTAG_DISABLE_SLEEP
+//#define JTAG_DISABLE_SLEEP
 
 #if defined(WITH_DEEP_SLEEP) && defined(JTAG_DISABLE_SLEEP)
 #error Deep sleep cannot work together with jtag
@@ -161,7 +161,7 @@ const unsigned int STACK_MIN=256;
 
 /// \internal Size of idle thread stack.
 /// Should be >=STACK_MIN (MUST be divisible by 4)
-const unsigned int STACK_IDLE=256;
+const unsigned int STACK_IDLE=512; //256; //512; //1024; //2048;
 
 /// Default stack size for pthread_create.
 /// The chosen value is enough to call C standard library functions
@@ -213,21 +213,12 @@ const unsigned int MAX_TIME_SLICE=1000000;
 /// \def WITH_VHT
 /// Uncomment to apply VHT clock correction between RTC and HSC
 /// with the use of the internal FLOPSYNC_VHT controller
-//#define WITH_VHT
+#define WITH_VHT
 
-/// \def WITH_VIRTUAL_CLOCK
+/// \def WITH_FLOPSYNC
 /// Uncomment to apply clock correction updated with error coming from
 /// the network module with the use of the internal FLOPSYNC controller
-#define WITH_VIRTUAL_CLOCK
-
-// checkes on clock correction compatibilities
-#if defined(WITH_VHT) && !defined(WITH_VIRTUAL_CLOCK)
-#warning VHT is specifically designed to work with deep sleep when using virtual clock. This will lead to useless loss of performance.
-#endif
-
-#if defined(WITH_VHT) && !defined(WITH_DEEP_SLEEP)
-#warning VHT is specifically designed to work with deep sleep when using virtual clock. This will lead to useless loss of performance.
-#endif
+//#define WITH_FLOPSYNC
 
 //
 // Other low level kernel options. There is usually no need to modify these.

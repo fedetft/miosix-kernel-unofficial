@@ -32,14 +32,14 @@
 
 namespace miosix
 {
-    /*static FixedEventQueue<100,12> queue; // DELETEME: (s)
+    static FixedEventQueue<100,12> queue; // DELETEME: (s)
 
     // DELETEME: (s)
     void startDBGthread()
     {
         std::thread t([]() { queue.run(); });
         t.detach();
-    }*/
+    }
 
     Vht& Vht::instance()
     {
@@ -49,19 +49,21 @@ namespace miosix
 
     long long Vht::IRQcorrect(long long ns)
     {
-        if(!init) { return ns; }
-
+        /* LEGACY (correction chain) */
+        //if(!init) { return ns; }
         //long long tick = tc.ns2tick(ns) /*+ vhtClockOffset*/;
         //return tc.tick2ns(syncPointTheoreticalHsc + fastNegMul(tick - syncPointExpectedHsc, factorI, factorD));
+        
         return a_km1 * ns + b_km1;
     }
 
     long long Vht::IRQuncorrect(long long ns)
     {
-        if(!init) { return ns; }
-
+        /* LEGACY (correction chain) */
+        //if(!init) { return ns; }
         //long long tick = tc.ns2tick(ns);
         //return tc.tick2ns(syncPointExpectedHsc + fastNegMul(tick - syncPointTheoreticalHsc, inverseFactorI, inverseFactorD) /*- vhtClockOffset*/);
+        
         return (ns - b_km1) / a_km1;
     }
 
@@ -76,17 +78,17 @@ namespace miosix
         Rtc::IRQinitVhtTimer();
 
         // performing VHT initialization
-        unsigned int nowRtc = Rtc::IRQgetTimerCounter() + 2; // TODO: (s) this is for undocumented quirk, generalize! + CHECK OVERFLOW
-        Rtc::IRQsetVhtMatchReg(nowRtc);
+        unsigned int nowRtc = Rtc::IRQgetTimerCounter();
+        Rtc::IRQsetVhtMatchReg(nowRtc+1);
 
         Rtc::IRQclearVhtMatchFlag();
         // WARNING: this while may break if connected to GDB while doing step-by-step execution from above
         while(!Rtc::IRQgetVhtMatchFlag()); // wait for first compare
 
-        // Reading vht timestamp but replacing lower part of counter with RTC value
-        unsigned int vhtTimestamp = Hsc::IRQgetVhtTimerCounter();
+        // Reading vht timestamp but replacing lower part of counter with captured value
+        unsigned int vhtTimestamp = Hsc::IRQgetVhtTimerCounter(); // ASK: (s) anche il PRS triggera 1tick dopo????
         if(vhtTimestamp > Hsc::IRQgetTimerCounter()){
-            vhtTimestamp -= 1<<16; // equivalent to ((TIMER2->CNT-1)<<16) | TIMER3->CC[0].CCV;
+            vhtTimestamp -= 1<<16; // equivalent to ((TIMER3->CNT-1)<<16) | TIMER1->CC[1].CCV;
         }
 
         Rtc::IRQclearVhtMatchFlag();
@@ -116,6 +118,7 @@ namespace miosix
     void Vht::IRQupdate(long long syncPointActualHsc)
     {
         this->syncPointActualHsc = syncPointActualHsc + vhtClockOffset;
+        auto GBD1 = rtc->IRQgetTimeTick(); // DELETEME: (s)
 
         // set next RTC trigger
         this->nextSyncPointRtc += this->syncPeriodRtc; // increments next RTC sync point as currentSyncPoint + syncPeriod
@@ -126,10 +129,9 @@ namespace miosix
         Rtc::IRQsetVhtMatchReg(Rtc::IRQgetVhtTimerMatchReg() + syncPeriodRtc);
 
         // calculate required parameters
-        
         this->error = this->syncPointActualHsc - syncPointExpectedHsc;
         this->clockCorrectionFlopsync = flopsyncVHT->computeCorrection(error);        
-
+        
         // TODO: (s) extend error.h types and print everything inside error.cpp + recover
         // handle case in which error exceeds maximum theoretical error
         if(error < -maxTheoreticalError || error > maxTheoreticalError) 
@@ -153,7 +155,16 @@ namespace miosix
 
         // compute aX + b coefficient pairs
         fp32_32 a; a.value = (static_cast<int64_t>(factorI)<<32) | factorD;
-        long long b = tc.tick2ns(syncPointTheoreticalHsc - (a * syncPointExpectedHsc));
+        long long bTicks = syncPointTheoreticalHsc - (a * syncPointExpectedHsc);
+        // NOTE: tick2ns converts internally the number to an unsigned
+        long long b = bTicks > 0 ? tc.tick2ns(std::abs(bTicks)) : -tc.tick2ns(std::abs(bTicks));
+
+        /*auto tmp = IRQgetTime();
+        queue.post([=]() {  printf("Time:\t%lld ns\t(%.3fs)\n", tmp, tmp / 1e9); }); // DELETEME: (s)
+        queue.post([=]() {  iprintf("e: %lld\n", error); }); // DELETEME: (s)
+        queue.post([=]() {  printf("a: %.3f\n", static_cast<double>(a)); }); // DELETEME: (s)
+        queue.post([=]() {  iprintf("b: %lld\n", b); }); // DELETEME: (s)
+        queue.post([=]() {  puts(""); }); // DELETEME: (s)*/
 
         // update internal and vc coeff. at position N only if necessary
         if(a_km1 != a || b_km1 != b)
@@ -161,14 +172,14 @@ namespace miosix
             this->a_km1 = a;
             this->b_km1 = b;
 
-            vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
+            //vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
         }
     }
 
     void Vht::IRQresyncClock()
     {
         long long nowRtc = Rtc::IRQgetTimerCounter();
-        long long syncAtRtc = nowRtc + 2; // TODO: (s) generalize for random quirk
+        long long syncAtRtc = nowRtc + 1; // TODO: (s) generalize for random quirk
         //This is very important, we need to restore the previous value in COMP1, to gaurentee the proper wakeup
         long long prevCOMP1 = Rtc::IRQgetVhtTimerMatchReg();
         Rtc::IRQsetVhtMatchReg(syncAtRtc);
@@ -188,7 +199,7 @@ namespace miosix
         Rtc::IRQclearVhtMatchFlag();
         Hsc::IRQclearVhtMatchFlag();
         
-        Rtc::IRQsetVhtMatchReg(prevCOMP1+1); // TODO: (s) generalize quirk
+        Rtc::IRQsetVhtMatchReg(prevCOMP1/*+1*/); // TODO: (s) generalize quirk
         
         long long syncAtHrt = mul64x32d32(syncAtRtc, 1464, 3623878656);
         vhtClockOffset = syncAtHrt - timestamp;
