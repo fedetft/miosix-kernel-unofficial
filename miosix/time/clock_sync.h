@@ -183,6 +183,7 @@ private:
      */
     void IRQhandleErrorException()
     {
+        auto tmp = RTC->CNT;
         IRQerrorLog("\r\n***Exception: VHT");
         IRQerrorLog("\r\nVHT exceeded maximum theoretical correction");
         IRQerrorLog("\r\nerror: "); IRQerrorLog(std::to_string(static_cast<int>(error)).c_str());
@@ -190,6 +191,7 @@ private:
         IRQerrorLog("\r\nsyncPointActualHsc: "); IRQerrorLog(std::to_string(static_cast<int>(syncPointActualHsc)).c_str());
         IRQerrorLog("\r\nsyncPointExpectedHsc: "); IRQerrorLog(std::to_string(static_cast<int>(syncPointExpectedHsc)).c_str());
         IRQerrorLog("\r\nvhtClockOffset: "); IRQerrorLog(std::to_string(static_cast<int>(vhtClockOffset)).c_str());
+        IRQerrorLog("\r\nRTC: "); IRQerrorLog(std::to_string(static_cast<int>(tmp)).c_str());
         IRQerrorLog("\r\n\n");
         miosix_private::IRQsystemReboot();
     }
@@ -302,6 +304,12 @@ public:
      * 
      */
     void reset();
+
+    /**
+     * @brief 
+     * 
+     */
+    int getReceiverWindow() { return receiverWindow; }
     
 private:
     Flopsync3();
@@ -359,6 +367,11 @@ private:
     // fast correction parameters (ax + b), "a" DOES NOT refear to the flopsync controller parameter
     fp32_32 a_km1;
     long long b_km1;
+
+    // reciever window parameters
+    int receiverWindow;
+    static constexpr int minReceiverWindow = 50000;
+    static constexpr int maxReceiverWindow = 6000000;
 };
 
 }

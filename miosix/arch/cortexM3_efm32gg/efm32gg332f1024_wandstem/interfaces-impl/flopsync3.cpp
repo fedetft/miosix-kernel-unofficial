@@ -203,16 +203,17 @@ void Flopsync3::assertInit()
 
 void Flopsync3::reset()
 {
-    this->syncPeriod    = 0;
-    this->vcdot_k       = static_cast<int32_t>(1); 
-    this->vcdot_km1     = static_cast<int32_t>(1); 
-    this->inv_vcdot_k   = static_cast<int32_t>(1); 
-    this->inv_vcdot_km1 = static_cast<int32_t>(1);
-    this->k             = 0;
-    this->T0            = 0;
-    this->init          = false; 
-    this->a_km1         = static_cast<int32_t>(1);
-    this->b_km1         = 0;
+    this->syncPeriod     = 0;
+    this->vcdot_k        = static_cast<int32_t>(1); 
+    this->vcdot_km1      = static_cast<int32_t>(1); 
+    this->inv_vcdot_k    = static_cast<int32_t>(1); 
+    this->inv_vcdot_km1  = static_cast<int32_t>(1);
+    this->k              = 0;
+    this->T0             = 0;
+    this->init           = false; 
+    this->a_km1          = static_cast<int32_t>(1);
+    this->b_km1          = 0;
+    this->receiverWindow = maxReceiverWindow;
 
     // ASK: (s) update VC coeff?
 }
@@ -220,7 +221,7 @@ void Flopsync3::reset()
 Flopsync3::Flopsync3() : posCorrection(VirtualClockSpec::numCorrections-1), maxPeriod(1099511627775), 
                             syncPeriod(0), vcdot_k(1), vcdot_km1(1), inv_vcdot_k(1), inv_vcdot_km1(1), 
                             a(0.05), beta(0.025), k(0), T0(0), init(false), tc(EFM32_HFXO_FREQ), 
-                            a_km1(1LL), b_km1(0) {}
+                            a_km1(1LL), b_km1(0), receiverWindow(maxReceiverWindow) {}
 
 
 ///

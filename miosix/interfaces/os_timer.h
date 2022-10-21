@@ -177,7 +177,7 @@ unsigned int osTimerGetFrequency();
  * actual interrupt time. If this is the case set this parameter to the minimum
  * number of ticks in the future the timer must be set, otherwise keep at 0 
  */
-template<typename D, unsigned bits, unsigned quirkAdvance=0> //, unsigned eventChannels=0> // TODO: (s) remove?
+template<typename D, unsigned bits, unsigned quirkAdvance=0>
 class TimerAdapter
 {
 public:
