@@ -145,11 +145,16 @@ public:
 
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
+        // since we check upper and lower part, we lose a total of two ticks. Be aware that
+        // we lose one tick for the lower part and one tick for the upper part.
+        // subtracting one to the upper ticks would be WRONG! we would be having a quirk of
+        // 1365354.1ns instead of 41.66ns
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        Hsc::nextCCticksUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
+        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
+        Hsc::nextCCticksUpper = upper_ticks;
         
         // set and enable output compare interrupt on channel 0 for most significant timer
+        // FIXME: (s) a 0.19xxx non triggera più! :(
         TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
         TIMER3->IEN |= TIMER_IEN_CC0;
         TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -363,8 +368,8 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCtimeoutLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        Hsc::nextCCtimeoutUpper = upper_ticks; // == 0 ? 0 : upper_ticks-1; // underflow handling
+        Hsc::nextCCtimeoutLower = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
+        Hsc::nextCCtimeoutUpper = upper_ticks;
 
         // set and enable output compare interrupt on channel 1 for most significant timer
         TIMER2->CC[2].CCV = Hsc::nextCCtimeoutLower;
@@ -416,7 +421,7 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCtriggerLower[channelIndex] = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
+        Hsc::nextCCtriggerLower[channelIndex] = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
         Hsc::nextCCtriggerUpper[channelIndex] = upper_ticks;
 
         // set and enable output compare interrupt on right channel for least significant timer
