@@ -146,7 +146,19 @@ std::pair<EventResult, long long> waitEvent(Channel channel)
 }
 std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs) 
 { 
-    return absoluteWaitEvent(channel, getTime() + timeoutNs); 
+    //cap maximum absolute ns value to __LONG_LONG_MAX__
+    long long now;
+    {
+        FastInterruptDisableLock dLock;
+
+        now = IRQgetTime();
+        if (timeoutNs > (std::numeric_limits<long long>::max() - now))
+            timeoutNs = std::numeric_limits<long long>::max() - now;
+    }
+    // absolute wait 
+    // note: if interrupts preempt this up to the point where the absoluteTime is 
+    // in the past, absoluteWaitEvent will handle this
+    return absoluteWaitEvent(channel, now + timeoutNs); 
 }
 std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs)
 {

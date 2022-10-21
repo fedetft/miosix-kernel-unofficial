@@ -211,7 +211,6 @@ static void IRQsetNextPreemption(bool curIsIdleThread)
 {
     long long firstWakeupInList;
     if(sleepingList->empty())
-        //TODO: can't we just not set an interrupt?
         firstWakeupInList = std::numeric_limits<long long>::max();
     else
         firstWakeupInList = sleepingList->front()->wakeup_time;
