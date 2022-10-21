@@ -309,14 +309,14 @@ void Transceiver::sendAt(const void* pkt, int size, long long when)
     long long w = when-turnaround;
     //NOTE: when is the time where the first byte of the packet should be sent,
     //while the cc2520 requires the turnaround from STXON to sending
-
+    
     if(absoluteTriggerEvent(w, Channel::SFD_STXON)!=EventResult::TRIGGER)
     {
 	//See diagram on page 69 of datasheet
         commandStrobe(CC2520Command::SFLUSHTX);
         throw runtime_error("Transceiver::sendAt too late to send");
     }
-    //iprintf("%lld\n", getTime());
+
     handlePacketTransmissionEvents(size);
 }
 
@@ -548,7 +548,8 @@ void Transceiver::handlePacketTransmissionEvents(int size)
     }
     
     //Wait for the second event to occur (TX_FRM_DONE)
-    bool timeout=waitEvent(maxPacketTimeout, Channel::SFD_STXON).first != EventResult::EVENT;
+    bool timeout=waitEvent(maxPacketTimeout, Channel::SFD_STXON).first == EventResult::EVENT_TIMEOUT;
+
     exc=getExceptions(0b001);
     if(timeout==true || (exc & CC2520Exception::TX_FRM_DONE)==0)
     {
@@ -771,6 +772,18 @@ short int Transceiver::decodeRssi(unsigned char reg)
 
 inline std::pair<EventResult, long long> Transceiver::waitEvent(long long timeoutNs, Channel channel)
 {
+    //cap maximum absolute ns value to __LONG_LONG_MAX__
+    long long now;
+    {
+        FastInterruptDisableLock dLock;
+
+        now = IRQgetTime();
+        if (timeoutNs > (std::numeric_limits<long long>::max() - now))
+            timeoutNs = std::numeric_limits<long long>::max() - now;
+    }
+    // absolute wait 
+    // note: if interrupts preempt this up to the point where the absoluteTime is 
+    // in the past, absoluteWaitEvent will handle this
     return absoluteWaitEvent(getTime() + timeoutNs, channel);
 }
 
@@ -832,6 +845,18 @@ inline std::pair<EventResult, long long> Transceiver::absoluteWaitEvent(long lon
 
 inline EventResult Transceiver::triggerEvent(long long ns, Channel channel)
 {
+    //cap maximum absolute ns value to __LONG_LONG_MAX__
+    long long now;
+    {
+        FastInterruptDisableLock dLock;
+
+        now = IRQgetTime();
+        if (ns > (std::numeric_limits<long long>::max() - now))
+            ns = std::numeric_limits<long long>::max() - now;
+    }
+    // absolute trigger 
+    // note: if interrupts preempt this up to the point where the absoluteTime is 
+    // in the past, absoluteTriggerEvent will handle this
     return absoluteTriggerEvent(getTime() + ns, channel);
 }
 

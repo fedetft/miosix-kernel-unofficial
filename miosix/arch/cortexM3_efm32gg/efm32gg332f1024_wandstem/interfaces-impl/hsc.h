@@ -145,19 +145,28 @@ public:
 
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
-        // since we check upper and lower part, we lose a total of two ticks. Be aware that
-        // we lose one tick for the lower part and one tick for the upper part.
-        // subtracting one to the upper ticks would be WRONG! we would be having a quirk of
-        // 1365354.1ns instead of 41.66ns
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
-        Hsc::nextCCticksUpper = upper_ticks;
+        // NOTE: value capped at minimum 0 to avoid rollover and decrease of the extension
+        // part in the timer adapter.
+        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
         
-        // set and enable output compare interrupt on channel 0 for most significant timer
-        // FIXME: (s) a 0.19xxx non triggera più! :(
-        TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
-        TIMER3->IEN |= TIMER_IEN_CC0;
-        TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        // if upper part matches already, activate lower part interrupt directly
+        if(TIMER3->CNT == upper_ticks)
+        {
+            // set and enable output compare interrupt on channel 0 for least significant timer
+            TIMER2->CC[0].CCV = Hsc::nextCCticksLower; // underflow handling
+            TIMER2->IEN |= TIMER_IEN_CC0;
+            TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        }
+        else
+        {
+            // set and enable output compare interrupt on channel 0 for most significant timer
+            Hsc::nextCCticksUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
+            
+            TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
+            TIMER3->IEN |= TIMER_IEN_CC0;
+            TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        }
     }
 
     static inline bool IRQgetOverflowFlag()
@@ -368,7 +377,9 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCtimeoutLower = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
+        // note: upper part is not decremented because it's only used to be checked
+        // inside ISR and does not play am active role in CCV (where the quirk is)
+        Hsc::nextCCtimeoutLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
         Hsc::nextCCtimeoutUpper = upper_ticks;
 
         // set and enable output compare interrupt on channel 1 for most significant timer
@@ -421,7 +432,9 @@ public:
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
         // By subtracting one tick, we have to make sure we do not underflow!
-        Hsc::nextCCtriggerLower[channelIndex] = lower_ticks == 0 ? 0 : lower_ticks-2; // underflow handling
+        // note: upper part is not decremented because it's only used to be checked
+        // inside ISR and does not play am active role in CCV (where the quirk is)
+        Hsc::nextCCtriggerLower[channelIndex] = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
         Hsc::nextCCtriggerUpper[channelIndex] = upper_ticks;
 
         // set and enable output compare interrupt on right channel for least significant timer
@@ -430,12 +443,32 @@ public:
             TIMER2->CC[1].CCV = Hsc::nextCCtriggerLower[0];
             TIMER2->IEN |= TIMER_IEN_CC1;
             TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+            // TODO: (s) if too close, then abort, timeout
+            // if upper part is matching already, enable CMOA right away (not in ISR)
+            if(TIMER3->CNT == upper_ticks)
+            {
+                // connect TIMER2->CC1 to pin PA9 (stxon) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }
         }
         else // TIMESTAMP_IN/OUT
         {
             TIMER1->CC[2].CCV = Hsc::nextCCtriggerLower[1];
             TIMER1->IEN |= TIMER_IEN_CC2;
             TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+            // TODO: (s) if too close, then abort, timeout
+            // if upper part is matching already, enable CMOA right away (not in ISR)
+            if(TIMER3->CNT == upper_ticks)
+            {
+                // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
         }
     }
 
