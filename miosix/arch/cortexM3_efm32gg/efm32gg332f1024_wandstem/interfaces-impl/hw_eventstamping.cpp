@@ -310,16 +310,6 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     // (see os_timer.cpp TIMER1_IRQHandlerImpl or TIMER2_IRQHandlerImpl for (0) and (1))
     if(channel == Channel::SFD_STXON) // STXON
     {
-        TIMER1->IEN &= ~TIMER_IEN_CC2;
-        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        
-        // disconnect TIMER2->CC1 from PEN completely
-        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
-        TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
-        TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
-    }
-    else // Channel::TIMESTAMP_IN_OUT
-    {
         // disable output compare interrupt on channel 1 for least significant timer
         TIMER2->IEN &= ~TIMER_IEN_CC1;
         TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
@@ -328,6 +318,16 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
         TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
         TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
         TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+    }
+    else // Channel::TIMESTAMP_IN_OUT
+    {
+        TIMER1->IEN &= ~TIMER_IEN_CC2;
+        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        
+        // disconnect TIMER2->CC1 from PEN completely
+        TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+        TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
+        TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
     }
 
     #ifdef TIMER_EVENT_DEBUG

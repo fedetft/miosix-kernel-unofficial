@@ -38,14 +38,14 @@ using namespace miosix;
 
 namespace miosix {
 
-static FixedEventQueue<100,12> queue; // DELETEME: (s)
+/*static FixedEventQueue<100,12> queue; // DELETEME: (s)
 
 // DELETEME: (s)
 void startDBGthread()
 {
     std::thread t([]() { queue.run(); });
     t.detach();
-}
+}*/
 
 long long getTime() noexcept
 {
@@ -113,17 +113,6 @@ void __attribute__((naked)) TIMER1_IRQHandler()
 
 void __attribute__((used)) TIMER1_IRQHandlerImpl()
 {    
-    //FIXME: (s)
-    /*
-    ***Exception: VHT
-    VHT exceeded maximum theoretical correction
-    error: -38782
-    maxTheoreticalError: 2882
-    syncPointActualHsc: 9574987
-    syncPointExpectedHsc: 9613769
-    vhtClockOffset: -11190
-    */
-
     // VHT
     if(TIMER1->IF & TIMER_IF_CC1)
     {        
@@ -165,8 +154,6 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
             // save value of TIMER3 counter right away to check for compare later
             unsigned int upperTimerCounter = TIMER3->CNT;
 
-            // TODO: (s) if upper part matches already, trigger right now
-            // TODO: (s) if too close, then abort, timeout
             // (0) trigger at next cycle 
             if(upperTimerCounter == (nextCCtriggerUpper-1))
             {
@@ -260,8 +247,6 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
             // save value of TIMER3 counter right away to check for compare later
             unsigned int upperTimerCounter = TIMER3->CNT;
 
-            // TODO: (s) if upper part matches already, trigger right now
-            // TODO: (s) if too close, then abort, timeout
             // (0) trigger at next cycle 
             if(upperTimerCounter == (nextCCtriggerUpper-1))
             {
@@ -278,7 +263,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
 
                 // disable TIMER1 CC2 interrupt
-                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                //TIMER2->IEN &= ~TIMER_IEN_CC1;
 
                 // register next CC in order to clear CMOA (drives TIMESTAMP_OUT pin low)
                 // 10 tick are enough not to have any undefined behavior interval since
@@ -378,7 +363,6 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
         TIMER3->IEN &= ~TIMER_IEN_CC0;
         TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
         
-
         // set and enable output compare interrupt on channel 0 for least significant timer
         TIMER2->CC[0].CCV = hsc->IRQgetNextCCticksLower(); // underflow handling
         TIMER2->IEN |= TIMER_IEN_CC0;
