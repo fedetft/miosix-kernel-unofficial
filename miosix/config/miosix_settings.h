@@ -213,7 +213,7 @@ const unsigned int MAX_TIME_SLICE=1000000;
 /// \def WITH_VHT
 /// Uncomment to apply VHT clock correction between RTC and HSC
 /// with the use of the internal FLOPSYNC_VHT controller
-#define WITH_VHT
+//#define WITH_VHT
 
 /// \def WITH_FLOPSYNC
 /// Uncomment to apply clock correction updated with error coming from

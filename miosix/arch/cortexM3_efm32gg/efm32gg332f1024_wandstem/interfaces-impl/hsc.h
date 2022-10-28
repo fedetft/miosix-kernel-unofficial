@@ -145,27 +145,37 @@ public:
 
         // set output compare timer register
         // because of an undocumented quirk, the compare register is checked 1 tick late. 
-        // By subtracting one tick, we have to make sure we do not underflow!
-        // NOTE: value capped at minimum 0 to avoid rollover and decrease of the extension
-        // part in the timer adapter.
-        Hsc::nextCCticksLower = lower_ticks == 0 ? 0 : lower_ticks-1; // underflow handling
-        
+        Hsc::nextCCticksLower = lower_ticks-1; // underflow handling
+        Hsc::nextCCticksUpper = upper_ticks-1; // underflow handling
+
+        // set and enable output compare interrupt on channel 0 for most significant timer
+        TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
+        TIMER3->IEN |= TIMER_IEN_CC0;
+        TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+    
         // if upper part matches already, activate lower part interrupt directly
         if(TIMER3->CNT == upper_ticks)
         {
+            ledOn();
+            // static_cast<TIMER_TypeDef *>(0x40010C00UL)->CNT // DELETEME: (s)
+            // disable output compare interrupt on channel 0 for most significant timer
+            TIMER3->CC[0].CCV = 0;
+            TIMER3->IEN &= ~TIMER_IEN_CC0;
+            TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            TIMER3->IFC = TIMER_IFC_CC0;
+            
             // set and enable output compare interrupt on channel 0 for least significant timer
             TIMER2->CC[0].CCV = Hsc::nextCCticksLower; // underflow handling
             TIMER2->IEN |= TIMER_IEN_CC0;
             TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        }
-        else
-        {
-            // set and enable output compare interrupt on channel 0 for most significant timer
-            Hsc::nextCCticksUpper = upper_ticks == 0 ? 0 : upper_ticks-1; // underflow handling
-            
-            TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
-            TIMER3->IEN |= TIMER_IEN_CC0;
-            TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+            // not only we're already matching 32-bit extension and 16-bit upper part 
+            // but also we got past the lower 16-bit
+            if(TIMER2->CNT >= lower_ticks) 
+            {
+                TIMER2->IFS = TIMER_IFS_CC0;
+                Hsc::IRQforcePendingIrq();
+            }
         }
     }
 
@@ -186,11 +196,6 @@ public:
 
     static inline void IRQclearMatchFlag()
     {
-        // disable output compare interrupt
-        TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
-        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->CC[0].CCV = 0;
-
         // clear output compare flag
         TIMER2->IFC = TIMER_IFC_CC0;
 
