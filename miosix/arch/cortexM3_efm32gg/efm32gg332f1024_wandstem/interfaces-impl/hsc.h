@@ -26,8 +26,7 @@
  ***************************************************************************/
 
 
-#ifndef HSC_H
-#define HSC_H
+#pragma once
 
 #include "interfaces/os_timer.h"
 #include "interfaces-impl/bsp_impl.h"
@@ -521,20 +520,16 @@ private:
     }
 
     // irq
-    inline static unsigned int nextCCticksUpper;
-    inline static unsigned int nextCCticksLower;
+    static unsigned int nextCCticksUpper;
+    static unsigned int nextCCticksLower;
     // timeout
-    inline static unsigned int nextCCtimeoutUpper;
-    inline static unsigned int nextCCtimeoutLower;
+    static unsigned int nextCCtimeoutUpper;
+    static unsigned int nextCCtimeoutLower;
     // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
-    inline static unsigned int nextCCtriggerUpper[2];
-    inline static unsigned int nextCCtriggerLower[2];
+    static unsigned int nextCCtriggerUpper[2];
+    static unsigned int nextCCtriggerLower[2];
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };
 
 }//end miosix namespace
-
-
-#endif /* HIGH_SPEED_CLOCK */
-
