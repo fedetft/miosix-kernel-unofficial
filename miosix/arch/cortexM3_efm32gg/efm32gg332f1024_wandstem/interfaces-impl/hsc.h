@@ -166,15 +166,6 @@ public:
             TIMER2->CC[0].CCV = Hsc::nextCCticksLower; // underflow handling
             TIMER2->IEN |= TIMER_IEN_CC0;
             TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            // not only we're already matching 32-bit extension and 16-bit upper part 
-            // but also we got past the lower 16-bit
-            // NOTE: may not occur if lower_ticks is close to 0xffff
-            if(TIMER2->CNT >= lower_ticks) 
-            {
-                TIMER2->IFS = TIMER_IFS_CC0;
-                Hsc::IRQforcePendingIrq();
-            }
         }
     }
 
