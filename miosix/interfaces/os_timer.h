@@ -486,6 +486,7 @@ public:
         auto tick2 = tick + quirkAdvance;
         upperIrqTick = tick2 & upperMask;
         D::IRQsetTimerMatchReg(static_cast<unsigned int>(tick2 & lowerMask));
+        //maybe BUG should check if time is in the past after setting match register
     }
     
     /**
