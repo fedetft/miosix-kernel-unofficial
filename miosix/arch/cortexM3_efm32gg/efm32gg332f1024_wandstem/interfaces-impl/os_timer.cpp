@@ -242,7 +242,6 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         // disable TIMER2 interrupt for lower part
         TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
         TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        TIMER2->CC[0].CCV = 0;
 
         // this particular branch covers a corner case in timer for the irq set.
         // while setting the next irq in hsc.h, it could be that the upper 16-bit part matches and we therefore
@@ -350,7 +349,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
 }
 
 /**
- * TIMER2 interrupt routine
+ * TIMER3 interrupt routine
  * 
  */
 void __attribute__((naked)) TIMER3_IRQHandler()
@@ -375,9 +374,6 @@ void __attribute__((naked)) TIMER3_IRQHandler()
 // it may cause problems if we're calling TIMER3 twice for the sleep while waiting for TIMER2?
 void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
-    // save value of TIMER2 counter right away to check for compare later
-    unsigned int lowerTimerCounter = TIMER2->CNT;
-
     // TIMER3 overflow, pending bit trick.
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
     
@@ -406,6 +402,7 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
 
             // not only we're already matching 32-bit extension and 16-bit upper part 
             // but also we got past the lower 16-bit
+            // NOTE: may not occur if lower_ticks is close to 0xffff
             if(TIMER2->CNT >= (hsc->IRQgetNextCCticksLower()+1)) // need to check 'unquirked' value
             {
                 TIMER2->IFS = TIMER_IFS_CC0;

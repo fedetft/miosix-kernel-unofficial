@@ -158,7 +158,6 @@ public:
             ledOn();
             // static_cast<TIMER_TypeDef *>(0x40010C00UL)->CNT // DELETEME: (s)
             // disable output compare interrupt on channel 0 for most significant timer
-            TIMER3->CC[0].CCV = 0;
             TIMER3->IEN &= ~TIMER_IEN_CC0;
             TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
             TIMER3->IFC = TIMER_IFC_CC0;
@@ -170,6 +169,7 @@ public:
 
             // not only we're already matching 32-bit extension and 16-bit upper part 
             // but also we got past the lower 16-bit
+            // NOTE: may not occur if lower_ticks is close to 0xffff
             if(TIMER2->CNT >= lower_ticks) 
             {
                 TIMER2->IFS = TIMER_IFS_CC0;
