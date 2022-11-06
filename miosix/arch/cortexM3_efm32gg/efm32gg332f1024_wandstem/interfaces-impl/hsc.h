@@ -104,11 +104,6 @@ namespace miosix {
  * 
  */
 
-// //FIXME: remove -- begin
-// class Hsc;
-// extern Hsc *hsc;
-// //FIXME: remove -- end
-
 class Hsc : public TimerAdapter<Hsc, 32>
 {
 public:
@@ -139,23 +134,22 @@ public:
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
+        //Important! To be documented.
+        TIMER2->IEN &= ~TIMER_IEN_CC0;
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        TIMER2->IFC = TIMER_IFC_CC0;
+
         matchValue = v;
         unsigned short upper16 = v >> 16;
         TIMER3->CC[0].CCV = upper16 - 1;
         TIMER3->IEN |= TIMER_IEN_CC0;
         TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
+        //Important! To be documented.
+        TIMER3->IFC = TIMER_IFC_CC0;
+
         if(TIMER3->CNT == upper16)
         {
-//             //Optional -- begin
-//             if(hsc->upperTimeTick>=hsc->upperIrqTick)
-//             {
-//                 TIMER3->IEN &= ~TIMER_IEN_CC0;
-//                 TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-//                 TIMER3->IFC = TIMER_IFC_CC0;
-//             }
-//             //Optional -- end
-
             unsigned short lower16 = v & 0xffff;
             TIMER2->CC[0].CCV = lower16 - 1;
             TIMER2->IEN |= TIMER_IEN_CC0;
@@ -459,12 +453,6 @@ public:
 
     // TODO: (s) fix
     static long long IRQgetEventTimestamp() { return 0; }
-
-
-    ///
-    // static variables getters
-    ///
-    static unsigned int IRQmatchValue() { return matchValue; }
 
     static unsigned int IRQgetNextCCtimeoutUpper() { return Hsc::nextCCtimeoutUpper; }
     static unsigned int IRQgetNextCCtimeoutLower() { return Hsc::nextCCtimeoutLower; }
