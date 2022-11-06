@@ -45,10 +45,7 @@ void startDBGthread()
 {
     std::thread t([]() { queue.run(); });
     t.detach();
-}
-
-struct start{ start() { startDBGthread(); } };
-start start1;*/
+}*/
 
 long long getTime() noexcept
 {
@@ -235,26 +232,10 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         //Optional -- begin
 //         if(hsc->upperTimeTick>=hsc->upperIrqTick)
 //         {
-//             if(hsc->IRQgetTimeTick() >= hsc->IRQgetIrqTick());
-//             else {
-//                 auto a=hsc->IRQgetTimeTick();
-//                 auto b=hsc->IRQgetIrqTick();
-//                 auto c=hsc->lateIrq;
-//                 queue.IRQpost([=]{iprintf("\n## %lld %lld 0x%llx 0x%llx %lld %d\n",a,b,a,b,b-a,c);});
-//             }
+//             TIMER3->IEN &= ~TIMER_IEN_CC0;
+//             TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//             TIMER3->IFC = TIMER_IFC_CC0;
 //         }
-        //245125029 245583628    0xe9c 4fa5  0xea3 4f0c 458599 0  9.554ms
-        //921603577 921996640   0x36ee 8df9 0x36f4 8d60 393063 0 8.189ms
-        //986401931 986860530   0x3acb 4c8b 0x3ad2 4bf2 458599 0 9.55ms
-        //1033500712 1034876815 0x3d99 f828 0x3dae f78f 1376103 0 28.669ms
-        //2006079806 2010667173 0x7792 593e 0x77d8 58a5 4587367 0 95.570ms
-        if(hsc->upperTimeTick>=hsc->upperIrqTick) //With this one it breaks!
-        //if(hsc->IRQgetTimeTick() >= hsc->IRQgetIrqTick())
-        {
-            TIMER3->IEN &= ~TIMER_IEN_CC0;
-            TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-            TIMER3->IFC = TIMER_IFC_CC0;
-        }
         //Optional -- end
 
         TIMER2->IEN &= ~TIMER_IEN_CC0;
