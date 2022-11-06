@@ -31,8 +31,7 @@ namespace miosix
 {
 
 // irq
-unsigned int Hsc::nextCCticksUpper       = 0;
-unsigned int Hsc::nextCCticksLower       = 0;
+unsigned int Hsc::matchValue = 0xffffffff;
 
 // timeout
 unsigned int Hsc::nextCCtimeoutUpper     = 0;

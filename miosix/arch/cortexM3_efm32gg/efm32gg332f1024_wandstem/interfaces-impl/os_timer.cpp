@@ -224,42 +224,25 @@ void __attribute__((naked)) TIMER2_IRQHandler()
 void __attribute__((used)) TIMER2_IRQHandlerImpl()
 {
     #ifdef TIMER_INTERRUPT_DEBUG
-    if(hsc->IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
+    if(Hsc::IRQgetMatchFlag() || hsc->lateIrq) miosix::ledOff();
     #endif
 
-    // timer flag (CC[0])
-    // FIXME: (s)
-    // 1
-    // sleepingList->head->wakeup_time = 5142466209
-    // currentTime = 5137039156
-    // error = 5427053 (5.427053ms)
-    // 2
-    // sleepingList->head->wakeup_time = 5142466376
-    // currentTime = 5137039323
-    // error = 5427053
-    if(hsc->IRQgetMatchFlag() || hsc->lateIrq)
+    if(Hsc::IRQgetMatchFlag() || hsc->lateIrq)
     {
-        // disable TIMER2 interrupt for lower part
-        TIMER2->IEN &= ~TIMER_IEN_CC0; // signal capture and compare register for OS interrupts
-        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-        // this particular branch covers a corner case in timer for the irq set.
-        // while setting the next irq in hsc.h, it could be that the upper 16-bit part matches and we therefore
-        // activate the the lower part but we know nothing about the extended 32-bit part since the hsc
-        // itself is just a driver for the high speed clock and has no knowledge of the timer extension.
-        // we have therefore to disambiguare if we're coming from TIMER3_irqimpl or form the hsc irq set.
-        // disable output compare interrupt   
-        if(hsc->upperTimeTick < hsc->upperIrqTick)
+        //Optional -- begin
+        //if(hsc->upperTimeTick>=hsc->upperIrqTick) //With this one it breaks!
+        if(hsc->IRQgetTimeTick() >= hsc->IRQgetIrqTick())
         {
-            Hsc::IRQclearMatchFlag();
-
-            // set and enable output compare interrupt on channel 0 for most significant timer
-            TIMER3->CC[0].CCV = Hsc::IRQgetNextCCticksUpper();
-            TIMER3->IEN |= TIMER_IEN_CC0;
-            TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            TIMER3->IEN &= ~TIMER_IEN_CC0;
+            TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            TIMER3->IFC = TIMER_IFC_CC0;
+            greenLed::high();
         }
-        else hsc->IRQhandler();
+        //Optional -- end
 
+        TIMER2->IEN &= ~TIMER_IEN_CC0;
+        TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        hsc->IRQhandler();
     }
         
 
@@ -376,38 +359,23 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
     // TIMER3 overflow, pending bit trick.
     if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
-    
-    // first part of output compare for os timer match, disable output compare interrupt
-    // for TIMER3 and turn of output comapre interrupt of TIMER2
+
     if(TIMER3->IF & TIMER_IF_CC0)
     {
         TIMER3->IFC = TIMER_IFC_CC0;
-        
-        // if upper part match, set lower part and just repeat upper interrupt
-        if(hsc->upperIrqTick == hsc->upperTimeTick)
+
+        greenLed::low();
+
+        unsigned short lower16 = Hsc::IRQmatchValue() & 0xffff;
+        TIMER2->CC[0].CCV = lower16 - 1;
+        TIMER2->IEN |= TIMER_IEN_CC0;
+        TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+        //Magic. Needs documenting.
+        if(Hsc::IRQgetTimerCounter()-Hsc::IRQmatchValue()<0x80000000)
         {
-            #ifdef TIMER_INTERRUPT_DEBUG
-            miosix::ledOn();
-            #endif
-
-            // disable output compare interrupt on channel 0 for most significant timer
-            TIMER3->CC[0].CCV = 0;
-            TIMER3->IEN &= ~TIMER_IEN_CC0;
-            TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            // set and enable output compare interrupt on channel 0 for least significant timer
-            TIMER2->CC[0].CCV = hsc->IRQgetNextCCticksLower(); // underflow handling
-            TIMER2->IEN |= TIMER_IEN_CC0;
-            TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            // not only we're already matching 32-bit extension and 16-bit upper part 
-            // but also we got past the lower 16-bit
-            // NOTE: may not occur if lower_ticks is close to 0xffff
-            if(TIMER2->CNT >= (hsc->IRQgetNextCCticksLower()+1)) // need to check 'unquirked' value
-            {
-                TIMER2->IFS = TIMER_IFS_CC0;
-                Hsc::IRQforcePendingIrq();
-            }
+            //TODO: instead of force-pending TIMER2 CC0 we could call IRQHandler from here
+            TIMER2->IFS = TIMER_IFS_CC0;
+            Hsc::IRQforcePendingIrq();
         }
     }
 

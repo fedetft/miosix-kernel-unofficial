@@ -104,6 +104,11 @@ namespace miosix {
  * 
  */
 
+// //FIXME: remove -- begin
+// class Hsc;
+// extern Hsc *hsc;
+// //FIXME: remove -- end
+
 class Hsc : public TimerAdapter<Hsc, 32>
 {
 public:
@@ -129,41 +134,30 @@ public:
 
     static inline unsigned int IRQgetTimerMatchReg()
     {
-        return (TIMER3->CC[0].CCV<<16) | TIMER2->CC[0].CCV;
+        return matchValue;
     }
 
     static inline void IRQsetTimerMatchReg(unsigned int v)
     {
-        // clear previous TIMER2 setting
-        TIMER3->IFC = TIMER_IFC_CC0;
-        //NVIC_ClearPendingIRQ(TIMER2_IRQn);
-
-        // extracting lower and upper 16-bit parts from match value
-        uint16_t lower_ticks = static_cast<uint16_t> (v & 0xFFFFUL); // lower part
-        uint16_t upper_ticks = static_cast<uint16_t> (v >> 16) & 0xFFFFUL; // upper part
-
-        // set output compare timer register
-        // because of an undocumented quirk, the compare register is checked 1 tick late. 
-        Hsc::nextCCticksLower = lower_ticks-1; // underflow handling
-        Hsc::nextCCticksUpper = upper_ticks-1; // underflow handling
-
-        // set and enable output compare interrupt on channel 0 for most significant timer
-        TIMER3->CC[0].CCV = Hsc::nextCCticksUpper;
+        matchValue = v;
+        unsigned short upper16 = v >> 16;
+        TIMER3->CC[0].CCV = upper16 - 1;
         TIMER3->IEN |= TIMER_IEN_CC0;
         TIMER3->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-    
-        // if upper part matches already, activate lower part interrupt directly
-        if(TIMER3->CNT == upper_ticks)
+
+        if(TIMER3->CNT == upper16)
         {
-            ledOn();
-            // static_cast<TIMER_TypeDef *>(0x40010C00UL)->CNT // DELETEME: (s)
-            // disable output compare interrupt on channel 0 for most significant timer
-            TIMER3->IEN &= ~TIMER_IEN_CC0;
-            TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-            TIMER3->IFC = TIMER_IFC_CC0;
-            
-            // set and enable output compare interrupt on channel 0 for least significant timer
-            TIMER2->CC[0].CCV = Hsc::nextCCticksLower; // underflow handling
+//             //Optional -- begin
+//             if(hsc->upperTimeTick>=hsc->upperIrqTick)
+//             {
+//                 TIMER3->IEN &= ~TIMER_IEN_CC0;
+//                 TIMER3->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+//                 TIMER3->IFC = TIMER_IFC_CC0;
+//             }
+//             //Optional -- end
+
+            unsigned short lower16 = v & 0xffff;
+            TIMER2->CC[0].CCV = lower16 - 1;
             TIMER2->IEN |= TIMER_IEN_CC0;
             TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
         }
@@ -186,11 +180,7 @@ public:
 
     static inline void IRQclearMatchFlag()
     {
-        // clear output compare flag
         TIMER2->IFC = TIMER_IFC_CC0;
-
-        // clear pending interrupt
-        //NVIC_ClearPendingIRQ(TIMER1_IRQn);
     }
 
     static inline void IRQforcePendingIrq()
@@ -474,8 +464,7 @@ public:
     ///
     // static variables getters
     ///
-    static unsigned int IRQgetNextCCticksUpper() { return Hsc::nextCCticksUpper; }
-    static unsigned int IRQgetNextCCticksLower() { return Hsc::nextCCticksLower; }
+    static unsigned int IRQmatchValue() { return matchValue; }
 
     static unsigned int IRQgetNextCCtimeoutUpper() { return Hsc::nextCCtimeoutUpper; }
     static unsigned int IRQgetNextCCtimeoutLower() { return Hsc::nextCCtimeoutLower; }
@@ -493,7 +482,7 @@ private:
     /**
      * Constructor
      */
-    Hsc() {};
+    Hsc() {}
     Hsc(const Hsc&)=delete;
     Hsc& operator=(const Hsc&)=delete;
     
@@ -511,8 +500,7 @@ private:
     }
 
     // irq
-    static unsigned int nextCCticksUpper;
-    static unsigned int nextCCticksLower;
+    static unsigned int matchValue;
     // timeout
     static unsigned int nextCCtimeoutUpper;
     static unsigned int nextCCtimeoutLower;
