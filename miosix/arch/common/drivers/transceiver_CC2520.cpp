@@ -784,7 +784,7 @@ inline std::pair<EventResult, long long> Transceiver::waitEvent(long long timeou
     // absolute wait 
     // note: if interrupts preempt this up to the point where the absoluteTime is 
     // in the past, absoluteWaitEvent will handle this
-    return absoluteWaitEvent(getTime() + timeoutNs, channel);
+    return absoluteWaitEvent(now + timeoutNs, channel); // the function below, not the events:: one.
 }
 
 inline std::pair<EventResult, long long> Transceiver::absoluteWaitEvent(long long absoluteTimeoutNs, Channel channel)
