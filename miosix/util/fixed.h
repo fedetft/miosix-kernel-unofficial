@@ -609,7 +609,7 @@ inline fp32_32 fp32_32::fastInverse() const
     // https://blog.timhutt.co.uk/fast-inverse-square-root/
     // https://whoisslimshady.medium.com/quake-iiis-or-fast-invsqrt-or-0x5f3759df-algorithm-47e6bf5bfa35
     // https://stackoverflow.com/questions/11644441/fast-inverse-square-root-on-x64
-    
+    // FIXME: (s) no need to convert to double then cast it again to long long, already a long long.
     double number = static_cast<double>(*this);
     double absNumber = std::abs(number);
     long long i;
@@ -618,7 +618,7 @@ inline fp32_32 fp32_32::fastInverse() const
 
     x2 = absNumber; // * 0.5;
     y  = absNumber;
-    i  = * ( long long * ) &y;               
+    i  = * ( long long * ) &y;   // equivalent to a more C++ way *reinterpret_cast<long long *>(&y);           
     i  = 0x7FE0000000000000 - i; // TODO: (s) optimize with something less
     y  = * ( double * ) &i;
     
@@ -654,7 +654,6 @@ inline fp32_32 fp32_32::operator / (const fp32_32& f) const
 }
 
 // end of specializations for 32.32 fixed point
-
 
 ///
 // Specializations for 16.16 fixed point

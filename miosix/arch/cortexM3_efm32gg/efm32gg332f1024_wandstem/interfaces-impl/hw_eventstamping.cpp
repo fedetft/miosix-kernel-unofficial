@@ -26,6 +26,7 @@
  ***************************************************************************/
 
 #include "interfaces/hw_eventstamping.h"
+#include "hw_eventstamping_impl.h"
 #include "time_types_spec.h"
 #include "miosix.h"
 #include <tuple>

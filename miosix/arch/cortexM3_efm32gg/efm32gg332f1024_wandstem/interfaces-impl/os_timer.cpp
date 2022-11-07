@@ -30,6 +30,7 @@
 #include "hsc.h"
 #include "interfaces-impl/time_types_spec.h"
 #include "interfaces/hw_eventstamping.h"
+#include "hw_eventstamping_impl.h"
 #include <atomic>
 #include "e20/e20.h" // DELETEME: (s)
 #include "thread" // DELETEME: (s)
@@ -150,7 +151,8 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
         // TIMESTAMP_OUT
         else if(eventsDirection.second == events::EventDirection::OUTPUT)
         {
-            unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().second;
+            unsigned int matchValue = Hsc::IRQgetTriggerMatchReg(1);
+            unsigned short nextCCtriggerUpper = matchValue >> 16;
             // save value of TIMER3 counter right away to check for compare later
             unsigned int upperTimerCounter = TIMER3->CNT;
 
@@ -168,7 +170,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
             }
             // (1) trigger was fired and we now need to clear TIMESTAMP_OUT using CMOA
             // give 1 tick of interval just in case of lower part overflow in 
-            else if(upperTimerCounter == nextCCtriggerUpper/* || upperTimerCounter == nextCCtriggerUpper+1*/)
+            else if(upperTimerCounter == nextCCtriggerUpper)
             {
                 // disconnect TIMER2->CC1 to pin PE12 (TIMESTAMP_OUT)
                 TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
@@ -185,25 +187,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
                 // signal trigger
                 events::IRQsignalEventTIMESTAMP_OUT();
             }
-            // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
-            /*else if(upperTimerCounter == nextCCtriggerUpper+1) // TODO: (s) +10 parte bassa + no interrupt
-            {
-                // disable output compare interrupt on channel 2 for least significant timer
-                TIMER1->IEN &= ~TIMER_IEN_CC2;
-                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                
-                // disconnect TIMER2->CC1 from PEN completely
-                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
-                TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
-                TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
-
-                #ifdef TIMER_EVENT_DEBUG
-                greenLedOff();
-                #endif
-
-                // signal trigger
-                events::IRQsignalEventTIMESTAMP_OUT();
-            }*/
+            // (2) clear of CMOA inside hw eventstamping after wakeup
             else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
         else ; // DISABLED
@@ -257,7 +241,8 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         // STXON
         else if(eventsDirection.first == events::EventDirection::OUTPUT)
         {
-            unsigned int nextCCtriggerUpper = Hsc::IRQgetNextCCtriggerUpper().first;
+            unsigned int matchValue = Hsc::IRQgetTriggerMatchReg(0);
+            unsigned short nextCCtriggerUpper = matchValue >> 16;
             // save value of TIMER3 counter right away to check for compare later
             unsigned int upperTimerCounter = TIMER3->CNT;
 
@@ -287,25 +272,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 // signal trigger
                 events::IRQsignalEventSTXON();
             }
-            // (2) CMOA cleared, we can terminate trigger procedure and wake up thread
-            /*else if(upperTimerCounter == nextCCtriggerUpper+1)
-            {
-                // disable output compare interrupt on channel 1 for least significant timer
-                TIMER2->IEN &= ~TIMER_IEN_CC1;
-                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                
-                // disconnect TIMER2->CC1 from PEN completely
-                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
-                TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
-                TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
-
-                #ifdef TIMER_EVENT_DEBUG
-                greenLedOn();
-                #endif
-
-                // signal trigger
-                events::IRQsignalEventSTXON();
-            }*/
+            // (2) clear of CMOA inside hw eventstamping after wakeup
             else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
         else ; // DISABLED
@@ -319,12 +286,16 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
 
         // save value of TIMER3 counter right away to check for compare later
         unsigned int upperTimerCounter = TIMER3->CNT;
-
+        unsigned int matchValue = Hsc::IRQgetTimeoutMatchReg();
+        unsigned short upperTimeout = matchValue >> 16;
+        
         // if upper part matches, it's time to trigger
-        if((hsc->upperTimeTick | upperTimerCounter) == (hsc->upperTimeoutTick | Hsc::IRQgetNextCCtimeoutUpper()))
+        if((hsc->upperTimeTick | upperTimerCounter) >= (hsc->upperTimeoutTick | upperTimeout))
         {
             TIMER2->IEN &= ~TIMER_IEN_CC2;
             TIMER2->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+            TIMER2->IFC = TIMER_IFC_CC2;
+
             events::IRQsignalEventTimeout();
         }
     }
@@ -368,7 +339,13 @@ void __attribute__((used)) TIMER3_IRQHandlerImpl()
         TIMER2->CC[0].CCV = lower16 - 1;
         TIMER2->IEN |= TIMER_IEN_CC0;
         TIMER2->CC[0].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-        //Magic. Needs documenting.
+        
+        // This is a lateIRQ case. Normally we could check if the 32-bit part of the timer is
+        // greated than the match value. This however doesn't take into account the case i which
+        // a rollover occurs and therefore this condition is not valid anymore. To do this, we check
+        // if the current time belongs or not at the first-half of the cyclic timeline for the timer
+        // before rollovering. matchValue is converted to COMP2 before calculation and 0x80000000
+        // is exactly half of 0x0xFFFFFFFF
         if(Hsc::IRQgetTimerCounter()-matchValue<0x80000000)
         {
             //TODO: instead of force-pending TIMER2 CC0 we could call IRQHandler from here

@@ -34,11 +34,8 @@ namespace miosix
 unsigned int Hsc::matchValue = 0xffffffff;
 
 // timeout
-unsigned int Hsc::nextCCtimeoutUpper     = 0;
-unsigned int Hsc::nextCCtimeoutLower     = 0;
+unsigned int Hsc::timeoutValue = 0xffffffff;
 
 // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
-unsigned int Hsc::nextCCtriggerUpper[2]  = {0};
-unsigned int Hsc::nextCCtriggerLower[2]  = {0};
-
+unsigned int Hsc::triggerValue[2]  = {0xffffffff, 0xffffffff};
 }

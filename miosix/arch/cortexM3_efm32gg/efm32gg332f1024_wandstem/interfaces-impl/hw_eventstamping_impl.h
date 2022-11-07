@@ -27,94 +27,20 @@
 
 #pragma once
 
-#include <tuple>
-
 namespace miosix
 {
-
 namespace events
 {
 
-// forward declaration
-//enum class Channel;
-
-// FIXME: (s) temporary solution, should go in cpp but cannot do forward declaration!
-enum class Channel
-{
-    SFD_STXON,
-    TIMESTAMP_IN_OUT
-};
-
-///
-// Event and wait support structs
-///
-
-class BadEventTimerConfiguration : public std::logic_error
-{
-public:
-    BadEventTimerConfiguration() : std::logic_error("Event timer was configured in wrong mode") { };
-}; // class notImplementedException
-
-enum class EventDirection
-{
-    DISABLED,
-    INPUT,
-    OUTPUT
-};
-
-enum class EventResult 
-{
-    EVENT,
-    EVENT_IN_THE_PAST,
-    EVENT_TIMEOUT,
-    TRIGGER,
-    TRIGGER_IN_THE_PAST,
-    BUSY,
-};
-
-///
-// Actual interface 
-///
-
 /**
- * @brief 
+ * @brief
  * 
- * @param channel 
- * @param direction 
- * @return true 
- * @return false 
  */
-void configureEvent(Channel channel, EventDirection direction);
+void IRQsignalEventSFD();
+void IRQsignalEventTIMESTAMP_IN();
+void IRQsignalEventSTXON();
+void IRQsignalEventTIMESTAMP_OUT();
+void IRQsignalEventTimeout();
 
-
-/**
- * @brief 
- * 
- * @param channel 
- * @param timeoutNs 
- * @return std::pair<EventResult, long long> 
- */
-std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs);
-std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs);
-
-/**
- * @brief 
- * 
- * @param channel 
- * @param ns 
- * @return EventResult 
- */
-EventResult triggerEvent(Channel channel, long long ns); // watch for overflow! count number of times
-EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs); // watch for overflow! count number of times
-
-
-/**
- * @brief Get the Event Direction object
- * 
- * @return EventDirection 
- */
-std::pair<EventDirection, EventDirection> getEventsDirection();
-
-} // namespace events
-
-} // namespace miosix
+}
+}
