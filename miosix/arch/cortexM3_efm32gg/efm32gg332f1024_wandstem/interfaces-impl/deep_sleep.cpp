@@ -72,12 +72,14 @@ bool IRQdeepSleep(long long abstime)
     test ? miosix::greenLedOn() : miosix::greenLedOff();
     #endif
     
-    // 1. RTC set ticks from High Speed Clock and starts
-    rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
+    
     // disable VHT ISR to avoid pending interrupts
     #ifdef WITH_VHT 
     vht->IRQdisableCorrection(); 
     #endif
+
+    // 1. RTC set ticks from High Speed Clock and starts
+    rtc->IRQsetTimeNs(hsc->IRQgetTimeNs());
 
     // 2. perform deep sleep
     IRQdeepSleep_impl(vc->IRQuncorrectTimeNs(abstime));
