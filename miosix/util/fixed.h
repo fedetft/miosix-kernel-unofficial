@@ -609,7 +609,6 @@ inline fp32_32 fp32_32::fastInverse() const
     // https://blog.timhutt.co.uk/fast-inverse-square-root/
     // https://whoisslimshady.medium.com/quake-iiis-or-fast-invsqrt-or-0x5f3759df-algorithm-47e6bf5bfa35
     // https://stackoverflow.com/questions/11644441/fast-inverse-square-root-on-x64
-    // FIXME: (s) no need to convert to double then cast it again to long long, already a long long.
     double number = static_cast<double>(*this);
     double absNumber = std::abs(number);
     long long i;
