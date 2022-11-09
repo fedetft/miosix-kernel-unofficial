@@ -233,7 +233,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
     if(TIMER2->IF & TIMER_IF_CC1)
     {
         TIMER2->IFC = TIMER_IFC_CC1;
-
+        // TODO: (s) irqgetevent...
         std::pair<events::EventDirection, events::EventDirection> eventsDirection = events::getEventsDirection();
         // SFD
         if(eventsDirection.first == events::EventDirection::INPUT)
@@ -245,7 +245,6 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
             unsigned short nextCCtriggerUpper = matchValue >> 16;
             // save value of TIMER3 counter right away to check for compare later
             unsigned int upperTimerCounter = TIMER3->CNT;
-            static bool clearCMOA = false;
 
             // (0) trigger at next cycle 
             if(upperTimerCounter == (nextCCtriggerUpper-1))
@@ -255,29 +254,26 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
-            // (1b) TIMER2->CNT+10 was triggered, do not enter in underneath branch again in case
-            // we still have equal upper 16-bit part
-            else if(clearCMOA) { clearCMOA = false; }
-            // (1a) trigger was fired and we now need to clear STXON using CMOA
+            // (1) trigger was fired and we now need to clear STXON using CMOA
             else if(upperTimerCounter == nextCCtriggerUpper)
             {   
                 // disconnect TIMER2->CC1 to pin PA9 (stxon)
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
 
-                // disable TIMER1 CC2 interrupt
-                //TIMER2->IEN &= ~TIMER_IEN_CC1;
-
                 // register next CC in order to clear CMOA (drives STX_ON pin low)
                 // 10 tick are enough not to have any undefined behavior interval since
                 // just to enter and exit an interrupt it takes more than 10 ticks.
-                TIMER2->CC[1].CCV = TIMER2->CNT+10; 
-                clearCMOA = true; 
+                unsigned short wakeup = TIMER2->CNT+10;
+                TIMER2->CC[1].CCV = wakeup;
+                while((static_cast<unsigned short>(TIMER2->CNT) - wakeup) > 0x8000) ;
 
-                // signal trigger
+                // disable TIMER1 CC2 interrupt
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->IFC = TIMER_IFC_CC1;
+
                 events::IRQsignalEventSTXON();
             }
-            // (2) clear of CMOA inside hw_eventstamping after wakeup
             else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
         }
         else ; // DISABLED

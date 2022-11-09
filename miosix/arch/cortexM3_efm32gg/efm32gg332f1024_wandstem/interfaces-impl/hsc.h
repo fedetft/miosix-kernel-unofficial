@@ -388,15 +388,13 @@ public:
         NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
     
-    static inline void IRQsetTriggerMatchReg(unsigned int v, bool SFD_STXON)
+    static inline bool IRQsetTriggerMatchReg(unsigned int v, bool channelIndex)
     {
-        int channelIndex = SFD_STXON ? 0 : 1;
-
         // clear previous TIMER setting
-        if(SFD_STXON) // STXON
+        if(channelIndex) // TIMESTAMP_IN/OUT
+            TIMER1->IFC = TIMER_IFC_CC2;  
+        else // STXON
             TIMER2->IFC = TIMER_IFC_CC1;
-        else // TIMESTAMP_IN/OUT
-            TIMER1->IFC = TIMER_IFC_CC2;
 
         // extracting lower and upper 16-bit parts from match value
         triggerValue[channelIndex] = v;
@@ -404,29 +402,12 @@ public:
         // set and enable output compare interrupt on right channel for least significant timer
         unsigned short lower16 = v & 0x0000ffff;
         unsigned short upper16 = v >> 16;
-        if(SFD_STXON) // STXON
-        {
-            TIMER2->CC[1].CCV = lower16 - 1;
-            TIMER2->IEN |= TIMER_IEN_CC1;
-            TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
-            // TODO: (s) if too close, then abort, timeout
-            // if upper part is matching already, enable CMOA right away (not in ISR)
-            if(TIMER3->CNT == upper16)
-            {
-                // connect TIMER2->CC1 to pin PA9 (stxon) on #0
-                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-            }
-        }
-        else // TIMESTAMP_IN/OUT
+        if(channelIndex) // TIMESTAMP_IN/OUT
         {
             TIMER1->CC[2].CCV = lower16 - 1;
             TIMER1->IEN |= TIMER_IEN_CC2;
             //TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            // TODO: (s) if too close, then abort, timeout
 
             // if upper part is matching already, enable CMOA right away (not in ISR)
             if(TIMER3->CNT == upper16)
@@ -436,6 +417,65 @@ public:
                 TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
             }
+
+            return true;
+        }
+        else // STXON
+        {
+            TIMER2->CC[1].CCV = lower16 - 1;
+            TIMER2->IEN |= TIMER_IEN_CC1;
+            TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+            unsigned short upperCounter = TIMER3->CNT;
+            unsigned short lowerCounter = TIMER2->CNT;
+        
+            // 1. document...
+            if(static_cast<unsigned short>(upperCounter - upper16) < 0x8000)
+            {
+                // disable timer
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER2->IFC = TIMER_IFC_CC1;
+                return false;
+            }
+            // 2. document...
+            else if(upperCounter == static_cast<unsigned short>(upper16-1) && lowerCounter >= lower16)
+            {
+                // check if too late // TODO: (s) document
+                if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
+                {
+                    // disable timer
+                    TIMER2->IEN &= ~TIMER_IEN_CC1;
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER2->IFC = TIMER_IFC_CC1;
+
+                    return false; 
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+                    
+            }
+            // 3. document...
+            else if(upperCounter == upper16)
+            {
+                if(static_cast<unsigned short>(lower16 - lowerCounter) <= 200) 
+                {
+                    // disable timer
+                    TIMER2->IEN &= ~TIMER_IEN_CC1;
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER2->IFC = TIMER_IFC_CC1;
+
+                    return false;
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }
+
+            return true;
         }
     }
 
