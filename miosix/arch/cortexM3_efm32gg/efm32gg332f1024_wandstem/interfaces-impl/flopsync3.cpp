@@ -65,25 +65,8 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     fp32_32 e_kFP(e_k);
     fp32_32 u_k = factorP * e_kFP;
 
-    // estimating clock skew absorbing initial offset if starting from zero
-    static bool offsetInit = false;
-    static bool secondOffsetInit = false;
-    long long deltaT = vc_k - vc_km1;
-    if(offsetInit && !secondOffsetInit)
-    {
-        deltaT += T0;
-        secondOffsetInit = true;
-    }
-    if (!offsetInit) 
-    { 
-        offsetInit = true; 
-        setInitialOffset(vc_k); // sets T0
-        deltaT -= T0;
-    }
-
-    //long long D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
-    //       ↓↓        ↓↓       ↓↓       ↓↓   
-    long long D_k = ( deltaT / vcdot_km1 ) - syncPeriod; // TODO: (s) prescale delta e usare fp32_32
+    // estimating clock skew
+    long long D_k = ( (vc_k - vc_km1) / vcdot_km1 ) - syncPeriod;
     
     // this approach aims to scale down syncPeriod contribute in the formula since its value do npt
     // fit 32 signed bit in the fp32_32 type.
@@ -100,7 +83,6 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     //       ↓↓        ↓↓       ↓↓       ↓↓       ↓↓          ↓↓          ↓↓      
     fp32_32 rescaleFactor = ( (fp32_32(D_k) / closest2powFP) + (syncPeriod / closest2powFP) ).fastInverse();
     
-    // TODO: (s) ns2tick stateful!! disabilitare interrupt
     // calculating vcdot_k with interrupts enabled, perform assignment with interrupts disabled
     //fp32_32 vcdot_k = (u_k * (beta - 1) + fp32_32(e_k) * (1 - beta) + syncPeriod) / fp32_32(D_k + syncPeriod);
     //        ↓↓        ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓       ↓↓
@@ -134,16 +116,17 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     }
 
     /* DEBUG PRINTS */
-    // iprintf("SyncPeriod:\t%lld\n", syncPeriod);
-    // printf("closest2pow:\t%lld\n", closest2pow.value>>32);
-    // printf("prescaledDenum\t%.15f\n", static_cast<double>(prescaledDenum));
-    // printf("syncPeriod / prescaledDenum:\t%lld\n", syncPeriod / prescaledDenum);
-    // printf("(syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
-    // printf("vcdot:\t\t%.20f\n", (double)vcdot_km1);
-    // printf("inv_vcdot_km1:\t%.20f\n", (double)inv_vcdot_km1);
-    // printf("a:\t\t%.20f\n", (double)a_km1);
-    // iprintf("b:\t\t%lld\n", b_km1);
-    // printf("D_k:\t\t%.20f\n", (double)D_k);
+    // iprintf("[VC] SyncPeriod:\t%lld\n", syncPeriod);
+    // printf("[VC] closest2pow:\t%lld\n", closest2pow);
+    // printf("[VC] prescaledDenum\t%.15f\n", static_cast<double>(prescaledDenum));
+    // printf("[VC] syncPeriod / prescaledDenum:\t%lld\n", syncPeriod / prescaledDenum);
+    // printf("[VC] (syncPeriod / prescaledDenum) * rescaleFactor:\t%.15f\n", static_cast<double>(fp32_32(syncPeriod / prescaledDenum) * rescaleFactor));
+    //printf("[VC] D_k:\t\t%.20f\n", (double)D_k);
+    // printf("[VC] vcdot:\t\t%.20f\n", (double)vcdot_km1);
+    //printf("[VC] a:\t\t\t%.20f\n", (double)a_km1);
+    //printf("[VC] inv_vcdot_km1:\t%.20f\n", (double)(vcdot_km1.fastInverse()));
+    // iprintf("[VC] vc_k - vc_km1:\t\t%lld\n", tmp);
+    //printf("[VC] b:\t\t\t%lld\n", b_km1);
     // iprintf("D_k:\t\t%lld\n", D_k);
 }
 
@@ -176,7 +159,8 @@ void Flopsync3::setInitialOffset(long long T0)
 void Flopsync3::IRQsetInitialOffset(long long T0)
 {
     assertNonNegativeTime(T0);
-    this->T0 = T0;
+    // // DELETEME: (s) T0 variable deve sparire
+    this->vc_km1 = T0;
 }
 
 void Flopsync3::assertNonNegativeTime(long long time)
@@ -201,21 +185,23 @@ void Flopsync3::assertInit()
     }
 }
 
+std::pair<int, int> Flopsync3::lostPacket()
+{
+    return std::make_pair(0, this->maxReceiverWindow);
+}
+
 void Flopsync3::reset()
 {
-    this->syncPeriod     = 0;
     this->vcdot_k        = static_cast<int32_t>(1); 
     this->vcdot_km1      = static_cast<int32_t>(1); 
     this->inv_vcdot_k    = static_cast<int32_t>(1); 
     this->inv_vcdot_km1  = static_cast<int32_t>(1);
-    this->k              = 0;
-    this->T0             = 0;
-    this->init           = false; 
+    this->k              = 0; // DELETEME: (s) delete k + method
     this->a_km1          = static_cast<int32_t>(1);
     this->b_km1          = 0;
     this->receiverWindow = maxReceiverWindow;
 
-    // ASK: (s) update VC coeff?
+    vc->IRQupdateCorrectionPair(std::make_pair(a_km1, b_km1), posCorrection);
 }
 
 Flopsync3::Flopsync3() : posCorrection(VirtualClockSpec::numCorrections-1), maxPeriod(1099511627775), 

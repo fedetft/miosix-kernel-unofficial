@@ -300,6 +300,13 @@ public:
     void setInitialOffset(long long T0);
 
     /**
+     * @brief 
+     * 
+     * @return std::pair<> 
+     */
+    std::pair<int, int> lostPacket();
+
+    /**
      * @brief Resets a and b parameters among with all control variables
      * 
      */
