@@ -426,30 +426,18 @@ public:
             TIMER2->IEN |= TIMER_IEN_CC1;
             TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
-            unsigned short upperCounter = IRQgetUpper48();
-            // TODO: (s) gestire pending bit trick upper counter
+            long long upperCounter = IRQgetUpper48();
             unsigned short lowerCounter = TIMER2->CNT;
 
             // TODO: (s) document
-            // 2. document...
-            if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
+            // 1. document...
+            if(upperCounter > upper48)
             {
-                // check if too late
-                // difference between next interrupt is less then 200 ticks
-                if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
-                {
-                    // disable timer
-                    TIMER2->IEN &= ~TIMER_IEN_CC1;
-                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                    TIMER2->IFC = TIMER_IFC_CC1;
-
-                    return false; 
-                }
-                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
-                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
-                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-                    
+                // disable timer
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER2->IFC = TIMER_IFC_CC1;
+                return false;
             }
             // 3. document...
             else if(upperCounter == upper48)
@@ -468,15 +456,26 @@ public:
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
-                        // 1. document...
+            // 2. document...           
             // too late to send, TIMER3->CNT > upper16
-            else if(upperCounter > upper48)
+            else if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
             {
-                // disable timer
-                TIMER2->IEN &= ~TIMER_IEN_CC1;
-                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                TIMER2->IFC = TIMER_IFC_CC1;
-                return false;
+                // check if too late
+                // difference between next interrupt is less then 200 ticks
+                if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
+                {
+                    // disable timer
+                    TIMER2->IEN &= ~TIMER_IEN_CC1;
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER2->IFC = TIMER_IFC_CC1;
+
+                    return false; 
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+                    
             }
             return true;
         }

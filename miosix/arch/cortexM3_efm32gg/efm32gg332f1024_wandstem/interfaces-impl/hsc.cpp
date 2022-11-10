@@ -32,10 +32,10 @@ namespace miosix
 {
 
 // irq
-unsigned int Hsc::matchValue = 0xffffffff;
+unsigned int Hsc::matchValue = std::numeric_limits<unsigned int>::max();
 
 // timeout
-unsigned int Hsc::timeoutValue = 0xffffffff;
+unsigned int Hsc::timeoutValue = std::numeric_limits<unsigned int>::max();
 
 // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
 long long Hsc::triggerValue[2]  = {std::numeric_limits<long long>::max(), std::numeric_limits<long long>::max()};
