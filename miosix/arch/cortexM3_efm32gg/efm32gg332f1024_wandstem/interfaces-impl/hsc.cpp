@@ -26,6 +26,7 @@
  ***************************************************************************/
 
 #include "hsc.h"
+#include <limits>
 
 namespace miosix
 {
@@ -37,5 +38,5 @@ unsigned int Hsc::matchValue = 0xffffffff;
 unsigned int Hsc::timeoutValue = 0xffffffff;
 
 // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
-unsigned int Hsc::triggerValue[2]  = {0xffffffff, 0xffffffff};
+long long Hsc::triggerValue[2]  = {std::numeric_limits<long long>::max(), std::numeric_limits<long long>::max()};
 }

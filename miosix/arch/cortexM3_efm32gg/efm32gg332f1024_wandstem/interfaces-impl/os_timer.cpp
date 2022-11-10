@@ -241,13 +241,13 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         // STXON
         else if(eventsDirection.first == events::EventDirection::OUTPUT)
         {
-            unsigned int matchValue = Hsc::IRQgetTriggerMatchReg(0);
-            unsigned short nextCCtriggerUpper = matchValue >> 16;
+            long long matchValue = Hsc::IRQgetTriggerMatchReg(0);
+            long long nextCCtriggerUpper48 = matchValue & 0xffffffffffff0000;
             // save value of TIMER3 counter right away to check for compare later
-            unsigned int upperTimerCounter = TIMER3->CNT;
+            long long upperTimerCounter = hsc->IRQgetUpper48(); // TODO: (s) document
 
             // (0) trigger at next cycle 
-            if(upperTimerCounter == (nextCCtriggerUpper-1))
+            if(upperTimerCounter == (nextCCtriggerUpper48-0x10000))
             {
                 // connect TIMER2->CC1 to pin PA9 (stxon) on #0
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
@@ -255,7 +255,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
             // (1) trigger was fired and we now need to clear STXON using CMOA
-            else if(upperTimerCounter == nextCCtriggerUpper)
+            else if(upperTimerCounter == nextCCtriggerUpper48)
             {   
                 // disconnect TIMER2->CC1 to pin PA9 (stxon)
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;

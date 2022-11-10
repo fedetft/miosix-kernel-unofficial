@@ -388,7 +388,7 @@ public:
         NVIC_SetPendingIRQ(TIMER2_IRQn);
     }
     
-    static inline bool IRQsetTriggerMatchReg(unsigned int v, bool channelIndex)
+    inline bool IRQsetTriggerMatchReg(long long v, bool channelIndex)
     {
         // clear previous TIMER setting
         if(channelIndex) // TIMESTAMP_IN/OUT
@@ -400,8 +400,8 @@ public:
         triggerValue[channelIndex] = v;
 
         // set and enable output compare interrupt on right channel for least significant timer
-        unsigned short lower16 = v & 0x0000ffff;
-        unsigned short upper16 = v >> 16;
+        unsigned short lower16 = v & 0xffff;
+        long long upper48 = v & 0xffffffffffff0000;
 
         if(channelIndex) // TIMESTAMP_IN/OUT
         {
@@ -410,7 +410,7 @@ public:
             //TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
             // if upper part is matching already, enable CMOA right away (not in ISR)
-            if(TIMER3->CNT == upper16)
+            if(TIMER3->CNT == upper48)
             {
                 // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
                 TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
@@ -426,12 +426,13 @@ public:
             TIMER2->IEN |= TIMER_IEN_CC1;
             TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
-            unsigned short upperCounter = TIMER3->CNT;
+            unsigned short upperCounter = IRQgetUpper48();
+            // TODO: (s) gestire pending bit trick upper counter
             unsigned short lowerCounter = TIMER2->CNT;
 
             // TODO: (s) document
             // 2. document...
-            if(upperCounter == static_cast<unsigned short>(upper16-1) && lowerCounter >= lower16)
+            if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
             {
                 // check if too late
                 // difference between next interrupt is less then 200 ticks
@@ -451,7 +452,7 @@ public:
                     
             }
             // 3. document...
-            else if(upperCounter == upper16)
+            else if(upperCounter == upper48)
             {
                 if(static_cast<unsigned short>(lower16 - lowerCounter) <= 200) 
                 {
@@ -469,7 +470,7 @@ public:
             }
                         // 1. document...
             // too late to send, TIMER3->CNT > upper16
-            else if(static_cast<unsigned short>(upperCounter - upper16) < 0x8000)
+            else if(upperCounter > upper48)
             {
                 // disable timer
                 TIMER2->IEN &= ~TIMER_IEN_CC1;
@@ -481,7 +482,17 @@ public:
         }
     }
 
-    static inline unsigned int IRQgetTriggerMatchReg(bool index) 
+    inline long long IRQgetUpper48()
+    {
+        unsigned int upper16 = TIMER3->CNT;
+        long long upper48 = upperTimeTick | (upper16<<16);
+        if(IRQgetOverflowFlag() && TIMER3->CNT >= upper16)
+            upper48 += upperIncr;
+
+        return upper48;
+    }
+
+    static inline long long IRQgetTriggerMatchReg(bool index) 
     { 
         return triggerValue[index]; 
     }
@@ -515,7 +526,7 @@ private:
     // timeout
     static unsigned int timeoutValue;
     // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
-    static unsigned int triggerValue[2];
+    static long long triggerValue[2];
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
 };

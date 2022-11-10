@@ -281,10 +281,6 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     // uncorrect time
     long long absoluteNsTsnc = vc->IRQuncorrectTimeNs(absoluteNs);
 
-    // if-guard, event in the past // TODO: (s) document
-    if(hsc->IRQgetTimeNs() > absoluteNsTsnc) 
-        return EventResult::TRIGGER_IN_THE_PAST;
-
     // register current thread for wakeup
     waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
 
@@ -292,7 +288,7 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     // we are assuming that trigger time is less then 89.47s
     // therefore the 64bit extension is not needed and is chopped off.
     long long absoluteTickTsnc = hsc->tc.ns2tick(absoluteNsTsnc);
-    bool ok = Hsc::IRQsetTriggerMatchReg(static_cast<unsigned int>(absoluteTickTsnc), channel == Channel::TIMESTAMP_IN_OUT);
+    bool ok = hsc->IRQsetTriggerMatchReg(absoluteTickTsnc, channel == Channel::TIMESTAMP_IN_OUT);
     if(!ok) return EventResult::TRIGGER_IN_THE_PAST;
 
     // wait for trigger to be fired (avoids spurious wakeups)
@@ -305,7 +301,7 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
             Thread::yield();
         }
     }
-    assert(hsc->IRQgetTimeNs() >= absoluteNsTsnc); // check correct wakeup time
+    //assert(hsc->IRQgetTimeNs() >= absoluteNsTsnc); // check correct wakeup time
 
     // (2) CMOA cleared, we can terminate trigger procedure 
     // disabling interrupts and output compare along with location reset is done here,
