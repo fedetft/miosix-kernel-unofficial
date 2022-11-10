@@ -428,20 +428,13 @@ public:
 
             unsigned short upperCounter = TIMER3->CNT;
             unsigned short lowerCounter = TIMER2->CNT;
-        
-            // 1. document...
-            if(static_cast<unsigned short>(upperCounter - upper16) < 0x8000)
-            {
-                // disable timer
-                TIMER2->IEN &= ~TIMER_IEN_CC1;
-                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                TIMER2->IFC = TIMER_IFC_CC1;
-                return false;
-            }
+
+            // TODO: (s) document
             // 2. document...
-            else if(upperCounter == static_cast<unsigned short>(upper16-1) && lowerCounter >= lower16)
+            if(upperCounter == static_cast<unsigned short>(upper16-1) && lowerCounter >= lower16)
             {
-                // check if too late // TODO: (s) document
+                // check if too late
+                // difference between next interrupt is less then 200 ticks
                 if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
                 {
                     // disable timer
@@ -474,7 +467,16 @@ public:
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
-
+                        // 1. document...
+            // too late to send, TIMER3->CNT > upper16
+            else if(static_cast<unsigned short>(upperCounter - upper16) < 0x8000)
+            {
+                // disable timer
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER2->IFC = TIMER_IFC_CC1;
+                return false;
+            }
             return true;
         }
     }
