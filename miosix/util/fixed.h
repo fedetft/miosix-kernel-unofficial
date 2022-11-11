@@ -490,11 +490,21 @@ public:
 
     friend long long operator / (long long a, const Fixed& other)
     {
-        return other.fastInverse() * a;
+        if(std::abs(other.value) >= 4290672329 && std::abs(other.value) <= 4299262220)
+            return other.optimizedFastInverse() * a;
+        else return other.fastInverse() * a;
+        
     }
 
     // inverse operator
     Fixed fastInverse() const
+    {        
+        Fixed f;
+        throw notImplementedException();
+        return f;
+    }
+
+    Fixed optimizedFastInverse() const
     {        
         Fixed f;
         throw notImplementedException();
@@ -639,8 +649,39 @@ inline fp32_32 fp32_32::fastInverse() const
     y  = y * ( 2 - (y * x2) );   // 1st iteration
     y  = y * ( 2 - (y * x2) );   // 2nd iteration
     y  = y * ( 2 - (y * x2) );   // 3rd iteration
+    y  = y * ( 2 - (y * x2) );   // 4th iteration
+    y  = y * ( 2 - (y * x2) );   // 5th iteration
 
     return fp32_32(signum<int64_t>(this->value) * y);
+}
+
+/**
+ * @brief DOCUMENTARE
+ * 
+ * @tparam  
+ * @return fp32_32 
+ */
+template<>
+inline fp32_32 fp32_32::optimizedFastInverse() const
+{    
+    double absNumber = std::abs(static_cast<double>(*this));
+
+    long long i;
+    double y;
+    constexpr unsigned long long a = static_cast<unsigned long long>(4510363724260689);
+    constexpr unsigned long long b = static_cast<unsigned long long>(4517125237238580);
+    constexpr unsigned long long c = static_cast<unsigned long long>(9214371599115367424);
+
+    i  = * ( long long * ) &absNumber;   // equivalent to a more C++ way *reinterpret_cast<long long *>(&y);     
+    unsigned long long quad_magic_number = a*((*this)*(*this));
+    quad_magic_number -= b*(*this);
+    quad_magic_number += c;      
+    i  = quad_magic_number - i; // TODO: (s) optimize with something less
+    y  = * ( double * ) &i;
+    
+    y  = y * ( 2 - (y * absNumber) );   // 1st iteration
+
+    return fp32_32(this->value > 0 ? y : -y);
 }
 
 // POP disable warning, the warning is now active again
@@ -649,7 +690,11 @@ inline fp32_32 fp32_32::fastInverse() const
 template<>
 inline fp32_32 fp32_32::operator / (const fp32_32& f) const
 {
-    return (*this) * f.fastInverse();
+    //0.99900000 -> 4290672329, 1.00099999 -> 4299262220
+    if(std::abs(f.value) >= 4290672329 && std::abs(f.value) <= 4299262220)
+        return (*this) * f.optimizedFastInverse();
+    else
+        return (*this) * f.fastInverse();
 }
 
 // end of specializations for 32.32 fixed point

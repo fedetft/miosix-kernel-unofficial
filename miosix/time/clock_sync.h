@@ -279,7 +279,7 @@ public:
      * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
      * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
      */
-    void IRQupdate(long long vc_k, long long e_k);
+    void update(long long vc_k, long long e_k);
 
     /**
      * To be used only while initializing the time synchronization. Its purpose is initializing the T value

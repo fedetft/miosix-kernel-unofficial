@@ -54,7 +54,7 @@ inline long long Flopsync3::IRQuncorrect(long long vc_t)
 }
 
 long long closestPowerOfTwo(unsigned long long); // forward declaration
-void Flopsync3::IRQupdate(long long vc_k, long long e_k)
+void Flopsync3::update(long long vc_k, long long e_k)
 {
     // TODO: (s) use error handler with IRQ + reboot
     assertInit();
@@ -105,14 +105,24 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
         fp32_32 a = vcdot_km1;
         long long b = vc_km1 - vcdot_km1 * tsnc_km1;
 
-        // update internal and vc coeff. at position N only if necessary
-        if(a_km1 != a || b_km1 != b)
+        //printf("[VC] D_k:\t\t%.20f\n", (double)D_k);
+        //printf("[VC] a:\t\t\t%.20f\n", (double)a);
+        //printf("[VC] inv_vcdot_km1:\t%.20f\n", (double)(a.fastInverse()));
+        //printf("[VC] b:\t\t\t%lld\n", b);
+
+        if(this->a_km1 != a || this->b_km1 != b)
         {
+            // update internal and vc coeff. at position N only if necessary
             this->a_km1 = a;
             this->b_km1 = b;
 
             vc->IRQupdateCorrectionPair(std::make_pair(a, b), posCorrection);
         }
+
+        // calculating new receiving window (clamped between max and min)
+        this->receiverWindow = std::max(
+                            std::min(30 * e_k, static_cast<long long>(maxReceiverWindow)), 
+                            static_cast<long long>(minReceiverWindow));
     }
 
     /* DEBUG PRINTS */
@@ -127,6 +137,7 @@ void Flopsync3::IRQupdate(long long vc_k, long long e_k)
     //printf("[VC] inv_vcdot_km1:\t%.20f\n", (double)(vcdot_km1.fastInverse()));
     // iprintf("[VC] vc_k - vc_km1:\t\t%lld\n", tmp);
     //printf("[VC] b:\t\t\t%lld\n", b_km1);
+    //printf("[VC] corr of %lld = %lld\n", (long long)5e9, vc->IRQcorrectTimeNs((long long)5e9));
     // iprintf("D_k:\t\t%lld\n", D_k);
 }
 

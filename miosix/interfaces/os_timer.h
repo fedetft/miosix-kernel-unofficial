@@ -572,7 +572,7 @@ public:
     /**
      * @brief 
      * 
-     * @param ns 
+     * @param ns .
      */
     inline void IRQsetIrqNs(long long ns)
     {
@@ -617,7 +617,8 @@ public:
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
     {
         // if-guard, check if values are not negative
-        if(newPair.first < 0 || newPair.second < 0) return false;
+        if(newPair.first < 0) // || newPair.second < 0) 
+            return false;
 
         // assing new pair in the list of pairs
         correctionsPairs[pos] = newPair;
@@ -645,6 +646,9 @@ public:
         this->a = a;
         this->b = b;
         
+        //printf("[VC] a:\t\t\t%.20f\n", (double)this->a); // DELETEME: (s)
+        //printf("[VC] b:\t\t\t%lld\n", this->b); // DELETEME: (s)
+
         return true;
     }
 
@@ -792,6 +796,7 @@ public:
      */
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
     {
+        throw std::logic_error("IRQupdateCorrectionPair was called with empty correction stack");
         return true;
     }
 
