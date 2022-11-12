@@ -664,13 +664,35 @@ inline fp32_32 fp32_32::fastInverse() const
 template<>
 inline fp32_32 fp32_32::optimizedFastInverse() const
 {    
-    double absNumber = std::abs(static_cast<double>(*this));
+    static constexpr unsigned long long a_left = 4510363724260689ULL;
+    static constexpr unsigned long long b_left = 4517125237238580ULL;
+    static constexpr unsigned long long c_left = 9214371599115367424ULL;
 
+    static constexpr unsigned long long a_right = 8984085523160370ULL;
+    static constexpr unsigned long long b_right = 22471749962785312ULL;
+    static constexpr unsigned long long c_right = 9227852502035329024ULL;
+
+    unsigned long long a;
+    unsigned long long b;
+    unsigned long long c;
+
+    if(std::abs(this->value) <= 4294967296) // <= 1.0, left quadratic regression
+    {
+        a = a_left;
+        b = b_left;
+        c = c_left;
+    }
+    else // > 1.0, right quadratic regression
+    {
+        a = a_right;
+        b = b_right;
+        c = c_right;
+    }
+
+    double absNumber = std::abs(static_cast<double>(*this));
+    
     long long i;
     double y;
-    constexpr unsigned long long a = static_cast<unsigned long long>(4510363724260689);
-    constexpr unsigned long long b = static_cast<unsigned long long>(4517125237238580);
-    constexpr unsigned long long c = static_cast<unsigned long long>(9214371599115367424);
 
     i  = * ( long long * ) &absNumber;   // equivalent to a more C++ way *reinterpret_cast<long long *>(&y);     
     unsigned long long quad_magic_number = a*((*this)*(*this));
@@ -680,6 +702,7 @@ inline fp32_32 fp32_32::optimizedFastInverse() const
     y  = * ( double * ) &i;
     
     y  = y * ( 2 - (y * absNumber) );   // 1st iteration
+    y  = y * ( 2 - (y * absNumber) );   // 2nd iteration
 
     return fp32_32(this->value > 0 ? y : -y);
 }
