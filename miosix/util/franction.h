@@ -27,6 +27,8 @@
 
 #pragma once
 
+#include <stdexcept> // division by zero
+
 namespace miosix
 {
 
@@ -38,7 +40,10 @@ public:
 
     /* Constructors */
     explicit constexpr Fraction() : numerator(1), denominator(1) {}
-    explicit constexpr Fraction(long long a, long long b) : numerator(a), denominator(b) {}
+    explicit constexpr Fraction(long long a, long long b) : numerator(a), denominator(b)
+    {
+        if(b == 0) throw std::runtime_error("Math error: division by zero");
+    }
     explicit constexpr Fraction(double d) : numerator(1), denominator(1) {} // TODO: (s)
 
     // Fraction -> double
@@ -181,6 +186,7 @@ public:
 
     constexpr Fraction operator / (const long long a) const
     {
+        if(a == 0) throw std::runtime_error("Math error: division by zero");
         return Fraction(numerator, denominator * a);   
     }
 
@@ -193,6 +199,7 @@ public:
 
     constexpr Fraction& operator /= (const long long a)
     {
+        if(a == 0) throw std::runtime_error("Math error: division by zero");
         denominator *= a;
         return *this;
     }
