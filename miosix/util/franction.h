@@ -33,6 +33,9 @@ namespace miosix
 class Fraction
 {
 public:
+    long long numerator;
+    long long denominator;
+
     /* Constructors */
     explicit constexpr Fraction() : numerator(1), denominator(1) {}
     explicit constexpr Fraction(long long a, long long b) : numerator(a), denominator(b) {}
@@ -209,6 +212,14 @@ public:
         return *this;
     }
 
+    constexpr Fraction& simplify()
+    {
+        long long gdc = GCD(numerator, denominator);
+        numerator /= gdc;
+        denominator /= gdc;
+        return *this;
+    }
+
     // comparison operator
     // TODO: (s) reduce to minimum fraction first!
     /*constexpr bool operator ==  (const Fraction& other)  { return numerator == other.numerator &&
@@ -232,9 +243,6 @@ public:
     constexpr bool operator >=  (double other)    { return (*this) >= Fixed(other); }*/
 
 private:
-    long long numerator;
-    long long denominator;
-
     /* Helper functions */
     constexpr long long lcm(long long a, long long b) const
     {
