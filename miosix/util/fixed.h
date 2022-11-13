@@ -27,9 +27,6 @@
 
 #pragma once
 
-#ifndef FIXED_H
-#define FIXED_H
-
 #include <cstdint> // int32_t, int64_t, ...
 #include <cstddef> // size_t
 #include "time/timeconversion.h" // mul64x32d32
@@ -762,7 +759,3 @@ inline /*constexpr*/ fp16_16& fp16_16::operator *= (const fp16_16& f)
 // end of specializations for 16.16 fixed point
 
 } // namespace miosix
-
-
-
-#endif
