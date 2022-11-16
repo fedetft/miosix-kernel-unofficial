@@ -374,18 +374,6 @@ public:
                 IRQtimerInterrupt(tc.tick2ns(tick));
             }
         }
-
-
-        /*if(D::IRQgetTriggerFlag() || lateTrigger)
-        {
-            D::IRQclearTriggerFlag();
-            long long tick=IRQgetTimeTick();
-            if(tick >= IRQgetTriggerTick() || lateTrigger)
-            {
-                lateTrigger = false;
-                // signal timeout
-            }
-        }*/
         
         if(D::IRQgetOverflowFlag())
         {
@@ -393,7 +381,7 @@ public:
             upperTimeTick += upperIncr;
         }
     }
-    
+
     /**
      * Initializes and starts the timer.
      */
@@ -611,7 +599,7 @@ public:
         // TODO: (s) 0.1% max di errore
         // TODO: (s) siccome a nell'intorno di 1, l'inverso non ho perdita grave di quant.
         // TODO: (s) precisione del fixed point è buona
-        return static_cast<unsigned long long>(ns - b) / a;
+        return static_cast<unsigned long long>(ns - b) * a_inv;
     }
 
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
@@ -645,9 +633,7 @@ public:
 
         this->a = a;
         this->b = b;
-        
-        //printf("[VC] a:\t\t\t%.20f\n", (double)this->a); // DELETEME: (s)
-        //printf("[VC] b:\t\t\t%lld\n", this->b); // DELETEME: (s)
+        this->a_inv = a.optimizedFastInverse();
 
         return true;
     }
@@ -688,7 +674,7 @@ private:
     ///
     // Constructors
     ///
-    VirtualClock() : hsc(nullptr), tc(nullptr), a(1), b(0) {}
+    VirtualClock() : hsc(nullptr), tc(nullptr), a(1), a_inv(1), b(0) {}
     VirtualClock(const VirtualClock&)=delete;
     VirtualClock& operator=(const VirtualClock&)=delete;
 
@@ -701,6 +687,7 @@ private:
     // get time params
     //std::pair<fp32_32, long long> combinedCorrections;
     fp32_32 a;
+    fp32_32 a_inv;
     long long b;
     std::pair<fp32_32, long long> correctionsPairs[N];
 };

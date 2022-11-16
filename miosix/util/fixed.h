@@ -487,6 +487,7 @@ public:
 
     friend long long operator / (long long a, const Fixed& other)
     {
+        // TODO: (s) move to fastinverse!
         if(std::abs(other.value) >= 4290672329 && std::abs(other.value) <= 4299262220)
             return other.optimizedFastInverse() * a;
         else return other.fastInverse() * a;
