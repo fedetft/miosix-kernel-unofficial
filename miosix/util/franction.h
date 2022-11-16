@@ -32,6 +32,7 @@
 namespace miosix
 {
 
+
 class Fraction
 {
 public:
@@ -43,13 +44,22 @@ public:
     explicit constexpr Fraction(long long a, long long b) : numerator(a), denominator(b)
     {
         if(b == 0) throw std::runtime_error("Math error: division by zero");
+        if(b < 0) { a = -a; b = -b; }
     }
+    explicit constexpr Fraction(long long a) : numerator(a), denominator(1) {}
     explicit constexpr Fraction(double d) : numerator(1), denominator(1) {} // TODO: (s)
 
     // Fraction -> double
     constexpr operator double() const
     {
         return static_cast<double>(numerator) / static_cast<double>(denominator);
+    }
+
+    // Fraction -> long long
+    constexpr operator long long() const
+    {
+        // returning rounded integer division to closest integer
+        return ( numerator + ( numerator > 0 ? (denominator - 1) : -(denominator - 1) ) ) / denominator;
     }
 
     // long long -> Fraction
@@ -101,7 +111,7 @@ public:
 
     friend Fraction operator + (long long a, const Fraction& f)
     {
-        return Fraction(f.numerator + f.denominator * a, f.denominator);
+        return Fraction((f.denominator * a) + f.numerator, f.denominator);
     }
 
     constexpr Fraction& operator += (const Fraction& other)
@@ -132,7 +142,7 @@ public:
 
     friend Fraction operator - (long long a, const Fraction& f)
     {
-        return Fraction(f.numerator - f.denominator * a, f.denominator);
+        return Fraction((f.denominator * a) - f.numerator, f.denominator);
     }
 
     constexpr Fraction& operator -= (const Fraction& other)
@@ -152,7 +162,11 @@ public:
     // Multiplication
     constexpr Fraction operator * (const Fraction& other) const
     {
-        return Fraction(numerator * other.numerator, denominator * other.denominator);
+        // cross simplification
+        long long gdc1 = GCD(numerator, other.denominator);
+        long long gdc2 = GCD(other.numerator, denominator);
+
+        return Fraction( (numerator/gdc1) * (other.numerator/gdc2), (denominator/gdc2) * (other.denominator/gdc1) );
     }
 
     constexpr Fraction operator * (long long a) const
