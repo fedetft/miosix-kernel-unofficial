@@ -39,6 +39,27 @@ using namespace miosix;
 
 namespace miosix {
 
+// FIXME: (s) togliere da qui e metterlo in hsc.h
+inline void Hsc::myIRQhandler()
+{
+    if(IRQgetMatchFlag() || lateIrq)
+    {
+        IRQclearMatchFlag();
+        long long tick=IRQgetTimeTick();
+        if(tick >= IRQgetIrqTick() || lateIrq)
+        {
+            lateIrq=false;
+            IRQtimerInterrupt(vc->IRQcorrectTimeNs(tc.tick2ns(tick)));
+        }
+    }
+    
+    if(IRQgetOverflowFlag())
+    {
+        IRQclearOverflowFlag();
+        upperTimeTick += upperIncr;
+    }
+}
+
 /*static FixedEventQueue<50,24> queue; // DELETEME: (s)
 
 // DELETEME: (s)
@@ -100,6 +121,7 @@ unsigned int osTimerGetFrequency()
 
 //#define TIMER_INTERRUPT_DEBUG
 //#define TIMER_EVENT_DEBUG
+
 
 /**
  * TIMER1 interrupt routine
@@ -225,7 +247,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
         TIMER2->IEN &= ~TIMER_IEN_CC0;
         TIMER2->CC[0].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
 
-        hsc->IRQhandler();
+        hsc->myIRQhandler();
     }
         
 
@@ -329,7 +351,7 @@ void __attribute__((naked)) TIMER3_IRQHandler()
 void __attribute__((used)) TIMER3_IRQHandlerImpl()
 {
     // TIMER3 overflow, pending bit trick.
-    if(hsc->IRQgetOverflowFlag()) hsc->IRQhandler();
+    if(hsc->IRQgetOverflowFlag()) hsc->myIRQhandler();
 
     if(TIMER3->IF & TIMER_IF_CC0)
     {

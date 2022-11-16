@@ -499,6 +499,26 @@ public:
     // TODO: (s) fix
     static long long IRQgetEventTimestamp() { return 0; }
 
+    inline void myIRQhandler();
+    //{
+        /*if(IRQgetMatchFlag() || lateIrq)
+        {
+            IRQclearMatchFlag();
+            long long tick=IRQgetTimeTick();
+            if(tick >= IRQgetIrqTick() || lateIrq)
+            {
+                lateIrq=false;
+                IRQtimerInterrupt(vc->IRQcorrectTimeNs(tc.tick2ns(tick)));
+            }
+        }
+        
+        if(IRQgetOverflowFlag())
+        {
+            IRQclearOverflowFlag();
+            upperTimeTick += upperIncr;
+        }*/
+    //}
+
 private:
     /**
      * Constructor
