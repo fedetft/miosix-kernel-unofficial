@@ -47,7 +47,6 @@ namespace miosix {
 class CorrectionTile
 {
 public:
-
     long long correct(long long ns)
     {
         FastInterruptDisableLock lck;
@@ -63,9 +62,13 @@ public:
     virtual long long IRQcorrect(long long ns)=0;
     virtual long long IRQuncorrect(long long ns)=0;
 
-    //virtual void IRQinit()=0;
-    
-    // force a and b variables?
+protected:
+    CorrectionTile(unsigned int posCorrection) : posCorrection(posCorrection) {}
+    const unsigned int posCorrection;
+
+// Force derived classes to initialize position of the correction
+private:
+    CorrectionTile() = delete;
 };
 
 ///
@@ -76,12 +79,6 @@ class Vht : public CorrectionTile
 {
 public:
     static Vht& instance();
-
-    /**
-     * @brief 
-     * 
-     */
-    const unsigned int posCorrection;
 
     /**
      * @brief 
@@ -153,7 +150,7 @@ private:
     ///
     // Constructors
     ///
-    Vht() : posCorrection(0), tc(EFM32_HFXO_FREQ), syncPointTheoreticalHsc(0), syncPointExpectedHsc(0), 
+    Vht() : CorrectionTile(0), tc(EFM32_HFXO_FREQ), syncPointTheoreticalHsc(0), syncPointExpectedHsc(0), 
             syncPointActualHsc(0), syncPeriodHsc(9609375), syncPointRtc(0), nextSyncPointRtc(0), syncPeriodRtc(6560),
             factorI(1), factorD(0), inverseFactorI(1), inverseFactorD(0), error(0), a_km1(1), b_km1(0), enabledCorrection(true), 
             maxTheoreticalError(static_cast<long long>(static_cast<double>(EFM32_HFXO_FREQ) * syncPeriodRtc / 32768 * 0.0003f)),
@@ -247,12 +244,6 @@ public:
     static Flopsync3& instance();
 
     /**
-     * @brief 
-     * 
-     */
-    const unsigned int posCorrection;
-
-    /**
      * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
      * @param tsnc uncorrected time (ns)
      * @return the corrected time (ticks) according to Flopsync3 correction
@@ -304,7 +295,7 @@ public:
      * 
      * @return std::pair<> 
      */
-    std::pair<int, int> lostPacket();
+    void lostPacket(long long VCk);
 
     /**
      * @brief Resets a and b parameters among with all control variables
