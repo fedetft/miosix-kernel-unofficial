@@ -42,7 +42,6 @@ public:
     notImplementedException() : std::logic_error("Function not yet implemented") { };
 }; // class notImplementedException
 
-// TODO: (s) move everything in CPP to avoid linker error in multiple imports
 // software handled unsigned 128-bit integer
 struct uint128_t {  
     unsigned long long UPPER;
@@ -69,7 +68,7 @@ struct uint128_t {
     }
 
     // Addition
-    /*constexpr*/ uint128_t operator + (const uint128_t& other) const
+    uint128_t operator + (const uint128_t& other) const
     {
         uint128_t INTERNAL;
                
@@ -88,7 +87,6 @@ struct uint128_t {
         /* portable c++ solution */
         INTERNAL.UPPER = this->UPPER + other.UPPER; // assume no overflow on upper part
         // sum lower part by predicting overflow a + b > max => b > max - a
-        // TODO: (s) > o >=?
         if(this->LOWER > MAX_ULL - other.LOWER)
         {
             // overflow
@@ -103,7 +101,7 @@ struct uint128_t {
         return INTERNAL;
     }
 
-    inline /*constexpr*/ uint128_t& operator += (const uint128_t& other)
+    uint128_t& operator += (const uint128_t& other)
     {
         #if defined(__ARM_EABI__)
         /* ARM 32-bit solution */
@@ -135,7 +133,7 @@ struct uint128_t {
         return *this;
     }
 
-    /*constexpr*/ uint128_t operator + (unsigned long long a) const
+    uint128_t operator + (unsigned long long a) const
     {
         uint128_t INTERNAL;
 
@@ -153,7 +151,6 @@ struct uint128_t {
         #warning "uint128_t operator + (unsigned long long a) const is not optimized for this architecture"
         /* portable c++ solution */
         // sum lower part by predicting overflow a + b > max => b > max - a
-        // TODO: (s) > o >=?
         if(this->LOWER > MAX_ULL - a)
         {
             // overflow
@@ -168,7 +165,7 @@ struct uint128_t {
         return INTERNAL;
     }
 
-    /*constexpr*/ uint128_t& operator += (unsigned long long a)
+    uint128_t& operator += (unsigned long long a)
     {  
         #if defined(__ARM_EABI__)
         /* ARM 32-bit solution */
@@ -231,8 +228,9 @@ struct uint128_t {
         return INTERNAL;
     }
 
-    // TODO: (s) provide general implementation, specify should never be called
-    // from Fixed since * and / oeprators are custom in cpp spec (never call uint128_t * uint128_t, too slow!)
+    // NOTE: the following operations do NOT provide a general implementation.
+    // Those should never be called since * and / operators are too slow to be performed in
+    // a 32-bit architecture. A general implementation is anyway possible, but was not provided here.
 
     // Multiplication (not used, avoid compilation error, overwritten in cpp)
     uint128_t operator * (const uint128_t& other) const
@@ -260,14 +258,15 @@ private:
     static constexpr unsigned long long MAX_ULL = std::numeric_limits<unsigned long long>::max();
 
     /**
-     * @brief maybe better in c++ way with return std::pair?
+     * @brief performs addition between two 128-bit variables using ARM instructions
+     * to take advantage of carry instructions such adds, adcs and adc
      * 
-     * @param first_in_upper 
-     * @param first_in_lower 
-     * @param second_in_upper 
-     * @param second_in_lower 
-     * @param out_upper 
-     * @param out_lower 
+     * @param first_in_upper first operand, upper 64-bit
+     * @param first_in_lower first operand, lower 64-bit
+     * @param second_in_upper second operand, upper 64-bit
+     * @param second_in_lower second operand, lower 64-bit
+     * @param out_upper result, upper 64-bit
+     * @param out_lower result, lower 64-bit
      */
     inline void _add_and_carry_uint128_t(const uint64_t first_in_upper, const uint64_t first_in_lower,
                                     const uint64_t second_in_upper, const uint64_t second_in_lower,
@@ -291,25 +290,6 @@ private:
         uint32_t out_lower_hi = 0;
         uint32_t out_lower_low = 0;
 
-        /*iprintf("[(%lu, %lu) + (%lu, %lu)] + [(%lu, %lu) + (%lu, %lu)]\n", first_in_upper_hi, first_in_upper_low,
-                                                                            second_in_upper_hi, second_in_upper_low,
-                                                                            first_in_lower_hi, first_in_lower_low, 
-                                                                            second_in_lower_hi, second_in_lower_low);*/
-
-        // sum with carry // FIXME: (s) out_lower_hi = out_lower_low for some reason
-        /*asm volatile("adds %[out_lower_low], %[first_in_lower_low], %[second_in_lower_low]\n\t"
-                     "adcs %[out_lower_hi], %[first_in_lower_hi], %[second_in_lower_hi]\n\t"
-                     "adcs %[out_upper_low], %[first_in_upper_low], %[second_in_upper_low]\n\t"
-                     "adc  %[out_upper_hi], %[first_in_upper_hi], %[second_in_upper_hi]\n\t"
-                        : [out_lower_low] "=r" (out_lower_low), [out_lower_hi] "=r" (out_lower_hi),
-                            [out_upper_low] "=r" (out_upper_low), [out_upper_hi] "=r" (out_upper_hi)
-                        : [first_in_lower_low] "r" (first_in_lower_low), [second_in_lower_low] "r" (second_in_lower_low),
-                            [first_in_lower_hi] "r" (first_in_lower_hi), [second_in_lower_hi] "r" (second_in_lower_hi),
-                            [first_in_upper_low] "r" (first_in_upper_low), [second_in_upper_low] "r" (second_in_upper_low),
-                            [first_in_upper_hi] "r" (first_in_upper_hi), [second_in_upper_hi] "r" (second_in_upper_hi)
-                        : "cc" //"r0"  // condition code flags are modified (NZCV)
-                    );*/
-
         asm volatile("adds r0, %[first_in_lower_low], %[second_in_lower_low]\n\t"
                      "adcs r1, %[first_in_lower_hi],  %[second_in_lower_hi]\n\t"
                      "adcs r2, %[first_in_upper_low], %[second_in_upper_low]\n\t"
@@ -327,10 +307,6 @@ private:
                         : "cc", "r0", "r1", "r2", "r3"  // condition code flags (NZCV)  and r[0-3] are modified 
                     );
 
-        
-        //iprintf("[(%lu, %lu)] + [(%lu, %lu)]\n", out_upper_hi, out_upper_low, out_lower_hi, out_lower_low);
-
-
         // composing result
         (*out_lower) = (static_cast<uint64_t>(out_lower_hi)<<32) | static_cast<uint64_t>(out_lower_low);
         (*out_upper) = (static_cast<uint64_t>(out_upper_hi)<<32) | static_cast<uint64_t>(out_upper_low);
@@ -338,12 +314,23 @@ private:
 }; // struct uint128_t
 
 //e.g. T = int32_t, T2 = int64_t
+/**
+ * @brief This templated class allows to convert any floating point number (single or double
+ * precision) into a fixed point representation stored as a signed integer with a custom number of bits 
+ * to store the decimal part.
+ * 
+ * @tparam T primitive type to store fixed point number
+ * @tparam T2 primitive type with size double the size of T to temporarely store fixed point number 
+ * multiplication result
+ * @tparam dp number of bits to use for the decimal part
+ */
 template<typename T, typename T2, size_t dp=sizeof(T)*4>
 class Fixed
 {
 public:
     T value = T(0);
 
+    // constructors
     constexpr Fixed() = default;
     constexpr Fixed(const Fixed& f) = default;
 
@@ -362,7 +349,7 @@ public:
         return static_cast<long long>(value>>dp);
     }
 
-    // parenthesis
+    // parenthesis operator
     constexpr Fixed operator () (const double& d)
     {
         this->value = Fixed(d).value;
@@ -487,11 +474,10 @@ public:
 
     friend long long operator / (long long a, const Fixed& other)
     {
-        // TODO: (s) move to fastinverse!
+        // FIXME: (s) i'm having trouble moving this function outside with the fp32_32 specialization
         if(std::abs(other.value) >= 4290672329 && std::abs(other.value) <= 4299262220)
             return other.optimizedFastInverse() * a;
         else return other.fastInverse() * a;
-        
     }
 
     // inverse operator
@@ -591,7 +577,6 @@ inline long long fp32_32::operator * (long long a) const
     return signum<long long>(a) * signum<int32_t>(this->value) * static_cast<long long>(mul64x32d32(std::abs(a), integerVal, decimalVal));
 }
 
-// highly optimised function since it's used by the getTime()
 template<>
 inline long long fp32_32::operator * (unsigned long long a) const
 {
@@ -610,13 +595,16 @@ inline long long fp32_32::operator * (unsigned long long a) const
 // DISABLE the warning that a parameter is not used
 #pragma GCC diagnostic ignored "-Wstrict-aliasing"
 
+/**
+ * @brief this function allows for fast inversion of a fp32_32 type using a modified version
+ * of the fast Inverse Square Root.
+ * 
+ * @return fp32_32 inverse value 1/f
+ */
 template<>
 inline fp32_32 fp32_32::fastInverse() const
 {    
     // Modified fast Inverse Square Root from Quake 3 Arena (not written by John Carmack) 
-    // https://blog.timhutt.co.uk/fast-inverse-square-root/
-    // https://whoisslimshady.medium.com/quake-iiis-or-fast-invsqrt-or-0x5f3759df-algorithm-47e6bf5bfa35
-    // https://stackoverflow.com/questions/11644441/fast-inverse-square-root-on-x64
     double number = static_cast<double>(*this);
     double absNumber = std::abs(number);
     long long i;
@@ -626,38 +614,24 @@ inline fp32_32 fp32_32::fastInverse() const
     x2 = absNumber; // * 0.5;
     y  = absNumber;
     i  = * ( long long * ) &y;   // equivalent to a more C++ way *reinterpret_cast<long long *>(&y);           
-    i  = 0x7FE0000000000000 - i; // TODO: (s) optimize with something less
+    i  = 0x7FE0000000000000 - i;
     y  = * ( double * ) &i;
     
-
-    // f(y) = 1/(y^2) - x
-    // y is our estimated inverse square root, and we’re trying to get a better estimate. 
-    // To do that we want to get f(y) close to zero, which happens when y is correct and x equals the number that we’re taking the inverse-square-root of, 
-    // ie the input named ‘number’. The x from the above formula isn’t being updated, we know it exactly already. 
-
-    // The derivative of f(y) is -2/(y^3). This is because the x is constant, 1/y^2 is the same as y^-2, so multiply by -2 and subtract 1 from the exponent. 
-    // ynew = y - f(y)/f’(y), which after we enter the function and its derivative is 
-    // ynew = y - (1/(y^2) -x)/(-2/(y^3))
-    // = y + y/2 - x*(y^3)/2
-    // = y * (3/2 - y * y * x/2)
-    //y  = y * ( threehalfs - ( x2 * y * y ) );   // 1st iteration
-
-    // f(y) = 1/y - x, f(y) = 0 => y = 1/x
-    // TODO: (s) change explaination
+    // Newton steps for inverse function
     y  = y * ( 2 - (y * x2) );   // 1st iteration
     y  = y * ( 2 - (y * x2) );   // 2nd iteration
     y  = y * ( 2 - (y * x2) );   // 3rd iteration
-    y  = y * ( 2 - (y * x2) );   // 4th iteration
-    y  = y * ( 2 - (y * x2) );   // 5th iteration
+    //y  = y * ( 2 - (y * x2) );   // 4th iteration
+    //y  = y * ( 2 - (y * x2) );   // 5th iteration
 
     return fp32_32(signum<int64_t>(this->value) * y);
 }
 
 /**
- * @brief DOCUMENTARE
+ * @brief optimized fast inversion using quadratic regression to compute inversion
+ * in a more precise and efficnet way. Only doable if the value is around 1.
  * 
- * @tparam  
- * @return fp32_32 
+ * @return fp32_32 inverse value 1/f
  */
 template<>
 inline fp32_32 fp32_32::optimizedFastInverse() const
@@ -696,7 +670,7 @@ inline fp32_32 fp32_32::optimizedFastInverse() const
     unsigned long long quad_magic_number = a*((*this)*(*this));
     quad_magic_number -= b*(*this);
     quad_magic_number += c;      
-    i  = quad_magic_number - i; // TODO: (s) optimize with something less
+    i  = quad_magic_number - i;
     y  = * ( double * ) &i;
     
     y  = y * ( 2 - (y * absNumber) );   // 1st iteration
@@ -707,6 +681,7 @@ inline fp32_32 fp32_32::optimizedFastInverse() const
 
 // POP disable warning, the warning is now active again
 #pragma GCC diagnostic pop
+
 
 template<>
 inline fp32_32 fp32_32::operator / (const fp32_32& f) const

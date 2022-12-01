@@ -285,10 +285,8 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
 
     // configure event on timer side
-    // we are assuming that trigger time is less then 89.47s
-    // therefore the 64bit extension is not needed and is chopped off.
     long long absoluteTickTsnc = hsc->tc.ns2tick(absoluteNsTsnc);
-    bool ok = hsc->IRQsetTriggerMatchReg(absoluteTickTsnc, channel == Channel::TIMESTAMP_IN_OUT);
+    bool ok = hsc->IRQsetTriggerMatchReg(absoluteTickTsnc, channel == Channel::SFD_STXON);
     if(!ok) return EventResult::TRIGGER_IN_THE_PAST;
 
     // wait for trigger to be fired (avoids spurious wakeups)

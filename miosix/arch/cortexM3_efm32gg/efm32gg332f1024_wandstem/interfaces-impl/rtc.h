@@ -38,7 +38,7 @@ namespace miosix
  * Manages the hardware timer that runs also in low power mode.
  * This class is not safe to be accessed by multiple threads simultaneously.
  * 
- * Implements TimerAdapter required functions
+ * Implements TimerAdapter extension required functions
  *     static inline unsigned int IRQgetTimerCounter() {}
  *     static inline void IRQsetTimerCounter(unsigned int v) {}
  * 
@@ -59,12 +59,22 @@ namespace miosix
  *     static unsigned int IRQTimerFrequency() {}
  * 
  *     static void IRQinit() {}
+ * 
+ *  Implements VHT extension required functions
+ *     static void IRQinitVhtTimer() {}
+ *     static void IRQstartVhtTimer() {}
+ * 
+ *     static inline bool IRQgetVhtMatchFlag() {}
+ *     static inline void IRQclearVhtMatchFlag() {}
+ * 
+ *     static inline unsigned int IRQgetVhtTimerMatchReg() {}
+ *     static inline void IRQsetVhtMatchReg(unsigned int v) {}
  */
 
-//> NEW CONFIGURATION <//
+//> TIMER CONFIGURATION <//
 /**
  * RTC configuration: 
- * RTC [Clocked]
+ * RTC [Clocked 32kHz]
  * 
  * COMP0 DEEP SLEEP
  * COMP1 -> OUTUPUT_COMPARE (PRS, ch4 triggers TIMER1 input capture)
@@ -241,36 +251,61 @@ public:
     // VHT extension
     ///
 
+    /**
+     * @brief Initializes the RTC to work with VHT
+     * 
+     */
     static void IRQinitVhtTimer()
     {
-        //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s) not necessary right?
+        //RTC->IEN |= RTC_IEN_COMP1; // TODO: (s) not necessary, right?
     }
 
+    /**
+     * @brief Starts the RTC 
+     * 
+     */
     static void IRQstartVhtTimer()
     {
         // RTC is already started calling IRQinit() 
+        // TODO: (s) if not running, start it manually here
     }
 
+    /**
+     * @brief Retrievs the VHT related capture compare register to check
+     * if there is a VHT event from the RTC side
+     * 
+     * @return true if a VHT event needs to be processed
+     */
     static inline bool IRQgetVhtMatchFlag()
     {
         return RTC->IF & RTC_IF_COMP1;
     }
 
+    /**
+     * @brief Clears the VHT match flag
+     * 
+     */
     static inline void IRQclearVhtMatchFlag()
     {
         RTC->IFC |= RTC_IFC_COMP1;
     }
 
     /**
-     * @brief 
+     * @brief Returns the captured RTC value captured every k*200ms + initialOffset for the VHT 
      * 
-     * @return 
+     * @return RTC captured timer for VHT
      */
     static inline unsigned int IRQgetVhtTimerMatchReg()
     {
         return RTC->COMP1;
     }
 
+    /**
+     * @brief Sets the next capture compare register value for the next
+     * VHT event (expected to be k*200ms + initialOffset)
+     * 
+     * @param v 
+     */
     static inline void IRQsetVhtMatchReg(unsigned int v)
     {
         // undocumented quirk, CC 1 tick after

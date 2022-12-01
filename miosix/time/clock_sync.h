@@ -41,9 +41,14 @@ namespace miosix {
 // forward declaration
 //....
 
-///
-// Correction tile
-///
+/**
+ * Correction Tile
+ * This class defines methods and varaibles for synchronizers (VHT, FLOPSYNC-3, ...) to be compatible
+ * with the VLCS. It forses the synchronizer to:
+ * 1. Implement its correction function f
+ * 2. Implement its uncorrection function f^-1
+ * 3. Define its position on the VLCS
+*/
 class CorrectionTile
 {
 public:
@@ -74,75 +79,83 @@ private:
 ///
 // VHT
 ///
-
 class Vht : public CorrectionTile
 {
 public:
     static Vht& instance();
 
     /**
-     * @brief 
+     * @brief This function implements the time correction f of a generic uncorrected time
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns time to be corrected
+     * @return long long corrected time as f(ns) that here is implemented as a*ns + b
      */
     long long IRQcorrect(long long ns);
 
     /**
-     * @brief 
+     * @brief This function implements the time correction f^-1 of a generic corrected time
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns  time to be uncorrected
+     * @return long long uncorrected time as f^-1(ns) that here is implemented as (ns - b) / a
      */
     long long IRQuncorrect(long long ns);
 
     /**
-     * @brief sync between RTC and HSC every 20ms 
-     * Since we execute instructions at 48Mhz, we execute multiple instructions before each RTC tick
-     * 
+     * @brief configures uderlying timers to sync RTC and HSC every 20ms 
+     * The first correction is forced manually reading timers value. Since the VHT
+     * related HSC timer is started before the RTC, capturing the HSC value every 200ms
+     * results in an offset on the captured timestamp. To overcome this problem, the variable
+     * vhtOffset is initialized
      */
     void IRQinit();
 
     /**
-     * @brief 
+     * @brief Method to update the VHT corretion
      * 
-     * @param syncPointActualHsc 
+     * @param syncPointActualHsc time retrieved from the VHT timestamp, to be confronted with the
+     * theoretical one
      */
     void IRQupdate(long long syncPointActualHsc);
 
     /**
      * @brief 
      * 
-     * @param syncPointTheoreticalHsc
-     * @param syncPointComputed 
-     * @param vhtClockOffset 
+     * @param syncPointTheoreticalHsc theoretical time in which the VHT is expecting the correction (k*200ms + vhtClockOffset)
+     * @param syncPointComputed actual timestamp captured by the HSC at the RTC trigger
+     * @param clockCorrectionFlopsync correction value from the FLOPSYNC-VHT controller
      */
     void IRQupdateImpl(long long syncPointTheoreticalHsc, long long syncPointExpectedHsc, long long clockCorrectionFlopsync);
 
     /**
-     * @brief 
+     * @brief This function is used to manually resync both HSC and RTC. It comes in handy
+     * when exiting deep sleep where a manual resync is necessary.
      * 
      */
     void IRQresyncClock();
 
     /**
-     * @brief 
+     * @brief Allows to check if the correction is enabled or not
      * 
+     * @return true if correction is enabled
+     * @return false if correction is not enabled
      */
     inline bool IRQisCorrectionEnabled() { return enabledCorrection; }
 
     /**
-     * @brief 
+     * @brief Disables VHT correction
      * 
      */
     inline void IRQdisableCorrection()   
     { 
-        //RTC->IEN &= ~RTC_IEN_COMP1; // may be used for pre-wake up timer etc
         this->enabledCorrection = false; 
     }
+
+    /**
+     * @brief Enables VHT correction
+     * 
+     */
     inline void IRQenableCorrection()    
     { 
-        //RTC->IEN |= RTC_IEN_COMP1; // may be used for pre-wake up timer etc
         this->enabledCorrection = true; 
     }
     
@@ -163,12 +176,12 @@ private:
     ///
     
     /**
-     * @brief 
+     * @brief Performs fast signed multiplication using compile-time optimized functions as num * 32.32
      * 
-     * @param a 
-     * @param bi 
-     * @param bf 
-     * @return long long 
+     * @param a integer number
+     * @param bi integer part of the 32.32 number
+     * @param bf decimal part of the 32.32 number
+     * @return long long value of the signed multiplication
      */
     static inline long long fastNegMul(long long a, unsigned int bi, unsigned int bf){
         return a < 0 ? -mul64x32d32(-a,bi,bf) : mul64x32d32(a,bi,bf);
@@ -228,10 +241,8 @@ private:
     bool init;
 };
 
-///
-// Flopsync 3
-///
 /**
+ * Flopsync 3
  * This class implements an instrument for correcting the clock based on
  * the FLOPSYNC-3 non-linear synchronization algorithm. It receives FLOPSYNC-3 data
  * and parameters as input, preserving a state capable of correcting an arbitrary
@@ -244,67 +255,74 @@ public:
     static Flopsync3& instance();
 
     /**
-     * Converts an uncorrected time, expressed in nanoseconds, into a corrected one
-     * @param tsnc uncorrected time (ns)
-     * @return the corrected time (ticks) according to Flopsync3 correction
+     * @brief Converts an uncorrected time, expressed in nanoseconds, into a corrected one using its
+     * function f = a*ns + b
+     * @param tsnc uncorrected time [ns]
+     * @return the corrected time [ns]
      */
     long long IRQcorrect(long long tsnc);
 
     /**
-     * Converts a corrected time, expressed in ns, into an uncorrected one in ns
-     * @param vc_t corrected time (ns)
-     * @return the uncorrected time (ns)
+     * @brief Converts a corrected time, expressed in nanoseconds, into an uncorrected one using its
+     * function f^-1 = (ns - b) / a
+     * @param vc_t (virtual) corrected time [ns]
+     * @return uncorrected time [ns]
      */
     long long IRQuncorrect(long long vc_t);
 
-    // TODO: (s) change description + spiegare che non è fatto il IRQ tutto a parte operazioni critiche
-    // perchè tanto update ogni 10s (IRQ se cambio variabili che rompono getTime())
     /**
-     * Updates the internal value of the virtual clock
-     * @param vc_k time of the virtual clock at the step t_0 + kT
-     * - t_0 is the first synchronization time point in the local clock, in ns, corrected by FLOPSYNC-2 and VHT.
-     * - k is the number of iterations of the synchronizer.
-     * - T is the synchronization interval, as passed in the setSyncPeriod function
+     * @brief This function performs the update of the FLOPSYNC-3 controller and it's meant
+     * to be called every synchronization period T. It calculates the new values for the 
+     * clock rate 'a' and the clock offset 'b' and updates both inside the virtual clock.
+     * This controller is meant to be called form the network module but its implementation
+     * is independent from the network stack. It just needs an error and the actual virutal time
+     * to perform the correction. 98% of this function works with interrupt enabled and only
+     * disables them when needing to update 'a' and 'b' in the VC. Not only having interrupts
+     * enabled do not weight on the operative system, but also this function is called presumably
+     * every 10s
      * 
-     * Please note that vc_k is in function of the tsnc_k (uncorrected time at current pase t_0 + kT)
-     * vc_k(tsnc_k) := vc_km1 + (tsnc_k - tsnc_km1) * vcdot_km1;
-     * So far, vc_k is computed by the transceiver timer (injecting tsnc_k) and forwarded to the dynamic_timesync_downlink
+     * @param vc_k Virtual time, expected to be around kT
+     * @param e_k error between actual time and the theoretical one
      */
     void update(long long vc_k, long long e_k);
 
     /**
-     * To be used only while initializing the time synchronization. Its purpose is initializing the T value
-     * to be used in the correction as proportionality coefficient, thus performing compensation,
-     * applying it as skew compensation but including also offset compensation, therefore obtaining
-     * a monotonic clock.
-     * @param syncPeriod the time T (ns), also known as synchronization interval
+     * @brief To be used only while initializing the time synchronization. 
+     * Its purpose is initializing the T value necessary to initialize a few FLOPSYNC variables
+     * as -T to perform the first correction.
+     * @param syncPeriod the synchronization period T [ns]
+     * @throw logic_error if synchronization period exceeds the maximum or equals zero
      */
-    void IRQsetSyncPeriod(unsigned long long syncPeriod);
     void setSyncPeriod(unsigned long long syncPeriod);    
-
+    void IRQsetSyncPeriod(unsigned long long syncPeriod);
+    
     /**
-     * Set the initial offset for the virtual clock
+     * Set the initial offset for the virtual clock. It just works by setting vc_km1 to T0
+     * in order to obtain a difference of vc_k - vc_km1 around T when calling the update function.
      * 
-     * @param T0 initial offset (ns)
+     * @param T0 initial offset [ns]
      */
-    void IRQsetInitialOffset(long long T0);
     void setInitialOffset(long long T0);
+    void IRQsetInitialOffset(long long T0);
 
     /**
-     * @brief 
+     * @brief this function is called when a synchronization packet is lost.
+     * Because the synchronization packet timestamp is not available, a placeholder is passed
+     * correspondent to the theoretical time on which we were expecting the synch packet.
+     * This practically makes the virtual clock continue blindly with the same correction rate as before
      * 
-     * @return std::pair<> 
+     * @param vc_k 
      */
-    void lostPacket(long long VCk);
+    void lostPacket(long long vc_k);
 
     /**
-     * @brief Resets a and b parameters among with all control variables
+     * @brief Resets all internal FLOPSYNC-3 variables
      * 
      */
     void reset();
 
     /**
-     * @brief 
+     * @brief returns the receiver window value
      * 
      */
     int getReceiverWindow() { return receiverWindow; }
@@ -317,7 +335,7 @@ private:
     /* utils functions */
 
     /**
-     * Checks whether a passed time is negative or not. 
+     * @brief Checks whether a passed time is negative or not. 
      * 
      * \throws invalid_argument if time is negative
      * @param time time to be checked
@@ -325,7 +343,7 @@ private:
     void assertNonNegativeTime(long long time);
 
     /**
-     * This function verifies that the virtual clock has been initialized with
+     * @brief This function verifies that the virtual clock has been initialized with
      * the sync period needed in order for the controller to work.
      * 
      * @throws runtime_error if the virtual clock is missing some initialization parameters
@@ -336,8 +354,9 @@ private:
     // NOTE: what we need for the correction is just a and b coefficients.
     // most of the other variables here are assigned just for debugging purposes.
 
-    //Max period, necessary to guarantee the proper behaviour of runUpdate
-    //They are 2^40=1099s
+    // Max period, necessary to guarantee the correct functioning of the FLOPSYNC-3
+    // after this value, the temperature influences the skew so much that its contribution
+    // cannot be ignored anymore
     const unsigned long long maxPeriod;
     unsigned long long syncPeriod;
     
@@ -346,11 +365,11 @@ private:
     fp32_32 inv_vcdot_k;    // inverse of slope of virtual clock at step k 
     fp32_32 inv_vcdot_km1;  // inverse of slope of virtual clock at step k-1
 
+    // FLOPSYNC-3 controller parameters
     const fp32_32 a;
     const fp32_32 beta;    // denormalized pole for feedback linearization dynamics
 
     unsigned long long k;   // synchronizer step
-    long long T0;           // initial offset
 
     // this variable verifies that the virtual clock has been initialized
     // with the sync period
@@ -368,8 +387,8 @@ private:
 
     // reciever window parameters
     int receiverWindow;
-    static constexpr int minReceiverWindow = 50000;
-    static constexpr int maxReceiverWindow = 6000000;
+    const int minReceiverWindow;
+    const int maxReceiverWindow;
 };
 
 }

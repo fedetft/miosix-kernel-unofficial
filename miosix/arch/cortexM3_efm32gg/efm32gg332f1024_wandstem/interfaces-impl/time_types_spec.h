@@ -27,6 +27,19 @@
 
 #pragma once
 
+/**
+ * @file time_types_spec.h
+ * @author Sorrentino Alessandro
+ * @brief This header defines clock-related variables global in the entire system.
+ * More specifically, it defines the variables for the following types: HSC, RTC,  Vht, VirtualClock.
+ * Because the Virutal Clock is a tempalte class, it needs a specialization in order to be instantiated. 
+ * The lenght of the VLCS is calculated at compile time by checking how many macros are defined for the clock correction.
+ * e.g. if the macro WITH_VHT is defined but WITH_FLOPSYNC is not, N = 1 and vice versa. 
+ * By doing this, we are able to specialize the VirtualClock at compile time.
+ * @date 2022-12-01
+ * 
+ */
+
 ///
 // imports
 ///

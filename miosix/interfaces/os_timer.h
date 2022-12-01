@@ -187,9 +187,9 @@ public:
     static constexpr unsigned long long lowerMask=upperIncr-1;
     static constexpr unsigned long long upperMask=0xFFFFFFFFFFFFFFFFLL-lowerMask;
     
-    long long upperTimeTick = 0; //Extended timer counter (upper bits)
-    long long upperIrqTick = 0;  //Extended interrupt time point (upper bits)
-    long long upperTimeoutTick = 0;  //Extended interrupt time point (upper bits)
+    long long upperTimeTick = 0;     //Extended timer counter (upper bits)
+    long long upperIrqTick = 0;      //Extended interrupt time point (upper bits)
+    long long upperTimeoutTick = 0;  //Extended interrupt time point (upper bits) TODO: (s) move into HSC
     miosix::TimeConversion tc;
     bool lateIrq=false;
     bool lateTimeout=false;
@@ -286,7 +286,6 @@ public:
                 }
             }
         }
-        // FIXME: (s) and if we have to go back in time? no?
         D::IRQstartTimer();
     }
     
@@ -509,29 +508,36 @@ public:
 };
 
 
-/** 
- * ...
+///
+// Virtual Clock
+///
+
+/**
+ * @brief This class defines the Virtual Clock implementing the VLCS
+ * It contains an array of N pairs where N is resolved at compile time
+ * so the array is also allocated at compile time. It exposes virtual time
+ * with the use of aggreaged parameters 'a' and 'b' as f = ax + b
+ * but it is also capable of uncorrection inverting the previous formula as
+ * f^-1 = (x - b) / a. It stores internally a cached version of the HSC.
+ * 
+ * @tparam Hsc_TA general high speed clock driver implemented as timer adapter
+ * @tparam N number of correction in the VLCS
  */
-
-
 template <typename Hsc_TA, unsigned int N>
 class VirtualClock
 {
 public:
+    // number of corrections in the VLCS
     static constexpr unsigned int numCorrections = N;
     
-    /**
-     * @brief 
-     * 
-     * @return VirtualClock& 
-     */
     static VirtualClock& instance(){
         static VirtualClock vc;
         return vc;
     }
 
     /**
-     * @brief 
+     * @brief initializes the Virtual Clock by storing the HSC and 
+     * TimerConversion ref pointer
      * 
      */
     inline void IRQinit()
@@ -540,17 +546,14 @@ public:
         hsc = &Hsc_TA::instance();
         hsc->IRQinit();
 
-        // correciton stack init
-        // FIXME: (s) no more cascade call for init but in constructor!
-
         // Time conversion init
         tc = &(hsc->tc); // valid pointer as long as hsc instance exists (all the duration of the program)
     } 
     
     /**
-     * @brief 
+     * @brief retrieves virtual time [ns]
      * 
-     * @return long long 
+     * @return long long corrected time [ns]
      */
     inline long long IRQgetTimeNs()
     {
@@ -558,9 +561,10 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief used by the operating system to set an interrupt at a given time
+     * Before setting an irq, time needs to be uncorrected using the inverse formula f^-1
      * 
-     * @param ns .
+     * @param ns time to set the OS interrupt [ns]
      */
     inline void IRQsetIrqNs(long long ns)
     {
@@ -568,9 +572,10 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief this function sets the current time of the operating system.
+     * NOTE: this will wause a clock jump, forward or backwards.
      * 
-     * @param ns 
+     * @param ns time to set the operating system to [ns]
      */
     inline void IRQsetTimeNs(long long ns)
     {
@@ -578,10 +583,12 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief applies correction function f as f = ax + b
+     * It forces the time to be an unsigned long long to use a faster dedicated 
+     * specialization inside the Fixed class
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns time to be corrected [ns]
+     * @return long long corrected time [ns]
      */
     inline long long IRQcorrectTimeNs(long long ns)
     {
@@ -589,19 +596,28 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief applies uncorrection function f^-1 as f^1 = (x - b) / a
+     * NOTE: the division by a is implemented as the multiplication of the inversion
+     * of a, pre-computed using the optmimized fast inverse during the update of both c
+     * oefficients a and b.
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns time to be uncorrected [ns]
+     * @return long long uncorrected time [ns]
      */
     inline long long IRQuncorrectTimeNs(long long ns)
     {
-        // TODO: (s) 0.1% max di errore
-        // TODO: (s) siccome a nell'intorno di 1, l'inverso non ho perdita grave di quant.
-        // TODO: (s) precisione del fixed point è buona
         return static_cast<unsigned long long>(ns - b) * a_inv;
     }
 
+    /**
+     * @brief updates correction pairs "a" and "b" at position pos in the VLCS
+     * Both aggregated "a" and "b" parameters are computed, along with the 
+     * inversion of "a" called "a_inv"
+     * 
+     * @param newPair <a_i, b_i> new pair
+     * @param pos position of the Correction Tile inside the VLCS
+     * @return false if first parameter "a_i" is negative
+     */
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
     {
         // if-guard, check if values are not negative
@@ -630,7 +646,6 @@ public:
             b += correctionsPairs[i].second * a_temp;
         }
         
-
         this->a = a;
         this->b = b;
         this->a_inv = a.optimizedFastInverse();
@@ -639,15 +654,21 @@ public:
     }
 
     /**
-     * @brief wrapper class
+     * @brief wrapper method to convert a time in ns to a time in tick
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns time in ns
+     * @return long long time in tick
      */
     inline long long ns2tick(long long ns)
     {
         return tc->ns2tick(ns);
     }
+    /**
+     * @brief wrapper method to convert a time in tick to a time in ns 
+     * 
+     * @param tick time in tick
+     * @return long long time in ns
+     */
     inline long long tick2ns(long long tick)
     {
         return tc->tick2ns(tick);
@@ -661,9 +682,9 @@ public:
     Hsc_TA* getHscReference() { return hsc; }
 
     /**
-     * @brief 
+     * @brief getter for the timer frequency powering the virtual clock
      * 
-     * @return unsigned int 
+     * @return unsigned int frequency of the high speed clock
      */
     inline unsigned int IRQTimerFrequency()
     {
@@ -692,24 +713,27 @@ private:
     std::pair<fp32_32, long long> correctionsPairs[N];
 };
 
+/**
+ * @brief This is a specialization of the template class Virtual Clock
+ * when the VLCS has a leght of 0 (empty correction stack i.e. no clock corretions
+ * in the system)
+ * 
+ * @tparam Hsc_TA 
+ */
 template <typename Hsc_TA>
 class VirtualClock<Hsc_TA, 0>
 {
 public:
     static constexpr unsigned int numCorrections = 0;
     
-    /**
-     * @brief 
-     * 
-     * @return VirtualClock& 
-     */
     static VirtualClock& instance(){
         static VirtualClock vc;
         return vc;
     }
 
     /**
-     * @brief 
+     * @brief initializes the Virtual Clock by storing the HSC and 
+     * TimerConversion ref pointer
      * 
      */
     inline void IRQinit()
@@ -718,17 +742,15 @@ public:
         hsc = &Hsc_TA::instance();
         hsc->IRQinit();
 
-        // correciton stack init
-        // FIXME: (s) no more cascade call for init but in constructor!
-
         // Time conversion init
         tc = &(hsc->tc); // valid pointer as long as hsc instance exists (all the duration of the program)
     } 
     
     /**
-     * @brief 
+     * @brief since we have no correction, the virtual time corresponds to the hardware time.
+     * Therefore, the timer in [ns] inside the hardware timer is directly returned.
      * 
-     * @return long long 
+     * @return long long time [ns]
      */
     inline long long IRQgetTimeNs()
     {
@@ -736,9 +758,10 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief used by the operating system to set an interrupt at a given time
+     * Because no clock correction is active, time doesn't need to be uncorrected
      * 
-     * @param ns 
+     * @param ns time to set the interrupt at
      */
     inline void IRQsetIrqNs(long long ns)
     {
@@ -746,9 +769,9 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief same as: see general template version
      * 
-     * @param ns 
+     * @param ns same as: see general template version
      */
     inline void IRQsetTimeNs(long long ns)
     {
@@ -756,7 +779,8 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief since no correction is active in the system, this is a dummy function
+     * returning the input parameter as output without performing any correction
      * 
      * @param ns 
      * @return long long 
@@ -767,7 +791,8 @@ public:
     }
 
     /**
-     * @brief 
+     * @brief since no correction is active in the system, this is a dummy function
+     * returning the input parameter as output without performing any correction
      * 
      * @param ns 
      * @return long long 
@@ -778,7 +803,9 @@ public:
     }
 
     /**
-     * @brief Here just to avoid compilation error
+     * @brief Here just to avoid compilation error, this function should never be called
+     * if no clock corretion is active.
+     * @throw logic_error if used
      * 
      */
     inline bool IRQupdateCorrectionPair(std::pair<fp32_32, long long> newPair, unsigned int pos)
@@ -788,31 +815,38 @@ public:
     }
 
     /**
-     * @brief wrapper class
+     * @brief same as: see general template version
      * 
-     * @param ns 
-     * @return long long 
+     * @param ns same as: see general template version
+     * @return long long same as: see general template version
      */
     inline long long ns2tick(long long ns)
     {
         return tc->ns2tick(ns);
     }
+
+    /**
+     * @brief same as: see general template version
+     * 
+     * @param tick same as: see general template version
+     * @return long long same as: see general template version
+     */
     inline long long tick2ns(long long tick)
     {
         return tc->tick2ns(tick);
     }
 
     /**
-     * @brief Get the Hsc Reference object
+     * @brief same as: see general template version
      * 
-     * @return Hsc_TA* 
+     * @return same as: see general template version
      */
     Hsc_TA* getHscReference() { return hsc; }
 
     /**
-     * @brief 
+     * @brief same as: see general template version
      * 
-     * @return unsigned int 
+     * @return unsigned int same as: see general template version
      */
     inline unsigned int IRQTimerFrequency()
     {

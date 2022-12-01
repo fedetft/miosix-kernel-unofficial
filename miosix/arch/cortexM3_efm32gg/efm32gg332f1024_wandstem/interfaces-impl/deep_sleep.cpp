@@ -32,7 +32,7 @@
 #include "time/timeconversion.h"
 #include <sys/ioctl.h>
 #include "stdio.h"
-#include "miosix.h" // DELETEME: (s)
+#include "miosix.h"
 #include "bsp_impl.h"
 #include "time_types_spec.h"
 
@@ -45,7 +45,7 @@ using namespace miosix;
 
 namespace miosix {
 
-static TimeConversion* RTCtc = nullptr;
+static TimeConversion* RTCtc = nullptr; // cached RTC time conversion
 
 // forward declaration
 void IRQdeepSleep_impl(long long);
@@ -60,18 +60,14 @@ void IRQresyncClocks();
 ///
 void IRQdeepSleepInit()
 {
-    RTCtc       = new TimeConversion(rtc->IRQTimerFrequency());   
+    RTCtc = new TimeConversion(rtc->IRQTimerFrequency());   
 }
 
-// TODO: (s) modify this code to get not only VHT but also account for transceiver
-// REMEMBER that peripherals are turned off and on automatically by kernel!
 bool IRQdeepSleep(long long abstime)
 {
     #ifdef DEBUG_DEEP_SLEEP
-    static bool test = true;
-    test ? miosix::greenLedOn() : miosix::greenLedOff();
+    miosix::greenLedOn();
     #endif
-    
     
     // disable VHT ISR to avoid pending interrupts
     #ifdef WITH_VHT 
@@ -87,15 +83,15 @@ bool IRQdeepSleep(long long abstime)
     // 3. re-align HSC and Real Time Clock
     IRQresyncClocks(); 
     
+    // re-enable VHT correction or stop RTC
     #ifdef WITH_VHT
     vht->IRQenableCorrection();
     #else
-    rtc->IRQstopTimer(); // TODO: (s) should do also power gating?
+    rtc->IRQstopTimer();
     #endif
     
     #ifdef DEBUG_DEEP_SLEEP
-    test ? miosix::greenLedOff() : miosix::greenLedOn();
-    test = !test;
+    miosix::greenLedOff();
     #endif
 
     return true;
@@ -125,12 +121,14 @@ inline void IRQdeepSleep_impl(long long abstime)
     // ns->tick(HR)[approximated]->tick(LF)[equivalent to the approx tick(HR)]
     // This operation is of course slower than usual, but affordable given 
     // the fact that the deep sleep should be called quite with large time span.
-    unsigned long long ticks = RTCtc->ns2tick(abstime);  // TODO: (s) actually precise because of round trip??
-    //unsigned long long ticks2 = abstime / 32768; //< it's slightly lower then ticks! 143ms lower
+
+    // the reason above was not implemented since normal conversion seems to be working just fine
+    unsigned long long ticks = RTCtc->ns2tick(abstime);
+    //unsigned long long ticks2 = abstime / 32768 * 1e9;
+    // when=temp*32/46875;
     
     ioctl(STDOUT_FILENO,IOCTL_SYNC,0);
     
-    // TODO: (s) bring everything inside os_timer RTCTimerAdapter (modify IRQhandler)
     // pre deep sleep
     IRQprepareDeepSleep();
 
@@ -186,7 +184,6 @@ inline void IRQdeepSleep_impl(long long abstime)
         // we need to handle TIMER1 interrupt before sleeping because HSC timer will be
         // power-gated during sleep and TIMER1IRQHandler_Impl will never be called if not
         // by next iteration TIMER2 -> TIMER1
-        // TODO: (s) maybe use sleep prevention lock on ISR? got by TIMER2, released by TIMER1
         if(TIMER1->CC[0].CTRL & TIMER_CC_CTRL_MODE_OUTPUTCOMPARE)
         {
             while(!hsc->IRQgetMatchFlag())
@@ -210,7 +207,6 @@ inline void IRQdeepSleep_impl(long long abstime)
 
             IRQexecutePendingirq();
         }
-        
         __ISB(); // avoids anticipating deep sleep before finishing serving interrupts
 
         // Goes into low power mode and waits for RTC pending interrupt
@@ -261,7 +257,7 @@ inline void IRQdeepSleep_impl(long long abstime)
 
     // manual wait if we woke up in advance
 
-    // LEGACY CODE (RTC COMP1 is used, then old value is taken from HRTB. temp var is necessary)
+    // LEGACY CODE, not sure if still needed (RTC COMP1 is used, then old value is taken from HRTB. temp var is necessary)
     /*RTC->COMP1=(when-1) & 0xffffff; //EFM32 compare channels trigger 1 tick late (undocumented quirk)
     while(RTC->SYNCBUSY & RTC_SYNCBUSY_COMP1) ;
     RTC->IFC=RTC_IFC_COMP1;
@@ -298,7 +294,7 @@ inline void IRQrestartHFXO()
     //This locks the CPU till clock is stable
     //because the HFXO won't emit any waveform until it is stabilized
     CMU->CMD=CMU_CMD_HFCLKSEL_HFXO;	
-					
+
     CMU->OSCENCMD=CMU_OSCENCMD_HFRCODIS; //turn off RC oscillator
 }
 
@@ -323,15 +319,15 @@ inline void IRQresyncClocks()
     vht->IRQresyncClock();
     #endif
     //timerProxy->recompute correction...
-    //#else // No VHT, just pass time between each other
+    #else // No VHT, just pass time between each other
     hsc->IRQsetTimeNs(rtc->IRQgetTimeNs());
-    //#endif
+    #endif
     
 }
 
 inline void IRQexecutePendingirq()
 {
-    IRQresyncClocks(); // TODO: (s) verify
+    IRQresyncClocks();
     fastEnableInterrupts();
     __NOP(); // NOP operation to be sure that the interrupt can be executed
     fastDisableInterrupts();

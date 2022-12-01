@@ -49,12 +49,18 @@ enum class Channel
 // Event and wait support structs
 ///
 
+/**
+ * @brief New error class type for badly configured channels
+ * e.g. configuring an input-only channel as output will throw this error
+ * 
+ */
 class BadEventTimerConfiguration : public std::logic_error
 {
 public:
     BadEventTimerConfiguration() : std::logic_error("Event timer was configured in wrong mode") { };
 }; // class notImplementedException
 
+// Possible event directions
 enum class EventDirection
 {
     DISABLED,
@@ -62,6 +68,7 @@ enum class EventDirection
     OUTPUT
 };
 
+// Possible event results
 enum class EventResult 
 {
     EVENT,
@@ -77,32 +84,37 @@ enum class EventResult
 ///
 
 /**
- * @brief 
+ * @brief this function configures a given event channel as input, output or disabled
  * 
- * @param channel 
- * @param direction 
- * @return true 
- * @return false 
+ * @param channel event channel to be configured
+ * @param direction direction chosen for the channel
+ * @throw BadEventTimerConfiguration if event channel is configured wrongly
  */
 void configureEvent(Channel channel, EventDirection direction);
 
 
 /**
- * @brief 
+ * @brief this function allows to put the thread in wait and wait for an event to be
+ * trigger on the chosen event channel until an event or timeout is reached.
+ * The wait can be configured both in absolute or relative time.
  * 
- * @param channel 
- * @param timeoutNs 
- * @return std::pair<EventResult, long long> 
+ * @param channel channel to wait the event on
+ * @param timeoutNs timeout for wait event
+ * @return std::pair<EventResult, long long>  contains result for the waited event which can either
+ * be a valid EventResult followed by its timestamp, or an invalid EventResult and the timestamp will
+ * have a meaningless value of 0.
  */
 std::pair<EventResult, long long> waitEvent(Channel channel, long long timeoutNs);
 std::pair<EventResult, long long> absoluteWaitEvent(Channel channel, long long absoluteTimeoutNs);
 
 /**
- * @brief 
+ * @brief his function allows to put the thread in wait and trigger an event on a given channel
+ * at a given time. Once the event is triggered, the thread is woken up.
+ * The wait can be configured both in absolute or relative time.
  * 
- * @param channel 
- * @param ns 
- * @return EventResult 
+ * @param channel channel to trigger the event on
+ * @param ns time for event to be triggered
+ * @return EventResult result of the trigger event
  */
 EventResult triggerEvent(Channel channel, long long ns); // watch for overflow! count number of times
 EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs); // watch for overflow! count number of times

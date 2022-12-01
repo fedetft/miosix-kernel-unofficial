@@ -33,7 +33,12 @@ namespace events
 {
 
 /**
- * @brief
+ * @brief this class contains the defined events for our specific implementation
+ * The possible event channels are:
+ * - SFD
+ * - STX_ON
+ * - TIMESTAMP_IN
+ * - TIMESTAMP_OUT
  * 
  */
 void IRQsignalEventSFD();
@@ -42,5 +47,5 @@ void IRQsignalEventSTXON();
 void IRQsignalEventTIMESTAMP_OUT();
 void IRQsignalEventTimeout();
 
-}
-}
+} // end of events
+} // end of miosix
