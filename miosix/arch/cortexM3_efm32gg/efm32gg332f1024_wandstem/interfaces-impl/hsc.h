@@ -516,65 +516,7 @@ public:
         unsigned short lower16 = v & 0xffff;
         long long upper48 = v & 0xffffffffffff0000;
 
-        if(channelIndex) // TIMESTAMP_IN/OUT
-        {
-            TIMER1->CC[2].CCV = lower16 - 1;
-            TIMER1->IEN |= TIMER_IEN_CC2;
-            TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-
-            long long upperCounter = IRQgetUpper48();
-            unsigned short lowerCounter = TIMER2->CNT;
-
-            // TODO: (s) document
-            // 1. document...
-            if(upperCounter > upper48)
-            {
-                // disable timer
-                TIMER1->IEN &= ~TIMER_IEN_CC2;
-                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                TIMER1->IFC = TIMER_IFC_CC2;
-                return false;
-            }
-            // 3. document...
-            else if(upperCounter == upper48)
-            {
-                if(static_cast<unsigned short>(lower16 - lowerCounter) <= 200) 
-                {
-                    // disable timer
-                    TIMER1->IEN &= ~TIMER_IEN_CC2;
-                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                    TIMER1->IFC = TIMER_IFC_CC2;
-
-                    return false;
-                }
-                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
-                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
-                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
-            }
-            // 2. document...           
-            // too late to send, TIMER3->CNT > upper16
-            else if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
-            {
-                // check if too late
-                // difference between next interrupt is less then 200 ticks
-                if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
-                {
-                    // disable timer
-                    TIMER1->IEN &= ~TIMER_IEN_CC2;
-                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
-                    TIMER1->IFC = TIMER_IFC_CC2;
-
-                    return false; 
-                }
-                // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
-                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
-                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
-                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
-            }
-            return true;
-        }
-        else // STXON
+        if(channelIndex) // STXON
         {
             TIMER2->CC[1].CCV = lower16 - 1;
             TIMER2->IEN |= TIMER_IEN_CC1;
@@ -630,6 +572,64 @@ public:
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
                     
+            }
+            return true;
+        }
+        else // TIMESTAMP_OUT
+        {
+            TIMER1->CC[2].CCV = lower16 - 1;
+            TIMER1->IEN |= TIMER_IEN_CC2;
+            TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+
+            long long upperCounter = IRQgetUpper48();
+            unsigned short lowerCounter = TIMER2->CNT;
+
+            // TODO: (s) document
+            // 1. document...
+            if(upperCounter > upper48)
+            {
+                // disable timer
+                TIMER1->IEN &= ~TIMER_IEN_CC2;
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER1->IFC = TIMER_IFC_CC2;
+                return false;
+            }
+            // 3. document...
+            else if(upperCounter == upper48)
+            {
+                if(static_cast<unsigned short>(lower16 - lowerCounter) <= 200) 
+                {
+                    // disable timer
+                    TIMER1->IEN &= ~TIMER_IEN_CC2;
+                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER1->IFC = TIMER_IFC_CC2;
+
+                    return false;
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            // 2. document...           
+            // too late to send, TIMER3->CNT > upper16
+            else if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
+            {
+                // check if too late
+                // difference between next interrupt is less then 200 ticks
+                if(static_cast<unsigned short>(lower16 - lowerCounter) >= 0xffff - 200) 
+                {
+                    // disable timer
+                    TIMER1->IEN &= ~TIMER_IEN_CC2;
+                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER1->IFC = TIMER_IFC_CC2;
+
+                    return false; 
+                }
+                // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
             }
             return true;
         }
@@ -726,7 +726,7 @@ private:
     static unsigned int matchValue;
     // timeout
     static unsigned int timeoutValue;
-    // trigger ([0] is STXON, [1] is TIMESTAMP_OUT)
+    // trigger ([0] is TIMESTAMP_OUT, [1] is STXON)
     static long long triggerValue[2];
 
     static const unsigned int frequency = EFM32_HFXO_FREQ; //48000000 Hz if NOT prescaled!
