@@ -504,10 +504,10 @@ public:
     inline bool IRQsetTriggerMatchReg(long long v, bool channelIndex)
     {
         // clear previous TIMER setting
-        if(channelIndex) // TIMESTAMP_IN/OUT
-            TIMER1->IFC = TIMER_IFC_CC2;  
-        else // STXON
+        if(channelIndex) // STXON
             TIMER2->IFC = TIMER_IFC_CC1;
+        else // TIMESTAMP_IN/OUT
+            TIMER1->IFC = TIMER_IFC_CC2;  
 
         // extracting lower and upper 16-bit parts from match value
         triggerValue[channelIndex] = v;
@@ -524,6 +524,7 @@ public:
 
             long long upperCounter = IRQgetUpper48();
             unsigned short lowerCounter = TIMER2->CNT;
+            // ASK: (s) what about lowerCounter overflow here??
 
             // TODO: (s) document
             // 1. document...
@@ -535,7 +536,7 @@ public:
                 TIMER2->IFC = TIMER_IFC_CC1;
                 return false;
             }
-            // 3. document...
+            // 2. document...
             else if(upperCounter == upper48)
             {
                 if(static_cast<unsigned short>(lower16 - lowerCounter) <= 200) 
@@ -551,8 +552,10 @@ public:
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+                
+                //<  FIXME: (s) blocks here
             }
-            // 2. document...           
+            // 3. document...           
             // too late to send, TIMER3->CNT > upper16
             else if(upperCounter == (upper48-0x10000) && lowerCounter >= lower16)
             {
@@ -564,14 +567,12 @@ public:
                     TIMER2->IEN &= ~TIMER_IEN_CC1;
                     TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
                     TIMER2->IFC = TIMER_IFC_CC1;
-
                     return false; 
                 }
                 // connect TIMER2->CC1 to pin PA9 (STX_ON) on #0
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-                    
             }
             return true;
         }
@@ -673,10 +674,10 @@ public:
      */
     static long long IRQgetEventTimestamp(bool channelIndex = 1) 
     { 
-        if(channelIndex) // TIMESTAMP_IN
-            return (TIMER3->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
-        else // SFD
+        if(channelIndex) // SFD
             return (TIMER3->CC[1].CCV<<16) | TIMER2->CC[1].CCV;
+        else // TIMESTAMP_IN
+            return (TIMER3->CC[2].CCV<<16) | TIMER1->CC[2].CCV;
 
     }
 

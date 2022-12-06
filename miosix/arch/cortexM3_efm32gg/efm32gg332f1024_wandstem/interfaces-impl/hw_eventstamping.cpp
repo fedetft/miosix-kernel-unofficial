@@ -328,10 +328,6 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
         TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
     }
 
-    #ifdef TIMER_EVENT_DEBUG
-    greenLedOff();
-    #endif
-
     return EventResult::TRIGGER;
 }
 
