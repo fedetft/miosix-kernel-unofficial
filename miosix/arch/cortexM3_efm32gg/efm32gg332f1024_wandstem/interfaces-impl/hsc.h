@@ -504,10 +504,10 @@ public:
     inline bool IRQsetTriggerMatchReg(long long v, bool channelIndex)
     {
         // clear previous TIMER setting
-        if(channelIndex) // STXON
-            TIMER2->IFC = TIMER_IFC_CC1;
-        else // TIMESTAMP_IN/OUT
-            TIMER1->IFC = TIMER_IFC_CC2;  
+//         if(channelIndex) // STXON
+//             TIMER2->IFC = TIMER_IFC_CC1;
+//         else // TIMESTAMP_IN/OUT
+//             TIMER1->IFC = TIMER_IFC_CC2;  
 
         // extracting lower and upper 16-bit parts from match value
         triggerValue[channelIndex] = v;
