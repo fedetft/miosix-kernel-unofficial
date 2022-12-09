@@ -288,7 +288,6 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
 
     // register current thread for wakeup
     waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
-    
     // wait for trigger to be fired (avoids spurious wakeups)
     while(waitingThread[channelIndex] != nullptr)
     {
