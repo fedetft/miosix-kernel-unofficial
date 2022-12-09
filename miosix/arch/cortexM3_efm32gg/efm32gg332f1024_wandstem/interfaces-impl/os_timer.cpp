@@ -169,7 +169,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
             long long upperTimerCounter = hsc->IRQgetUpper48();
 
             // (0) trigger at next cycle 
-            if(upperTimerCounter == (nextCCtriggerUpper48-0x10000))
+            /*if(upperTimerCounter == (nextCCtriggerUpper48-0x10000))
             {
                 // connect TIMER2->CC1 to pin PE12 (TIMESTAMP_OUT) on #1
                 TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
@@ -196,7 +196,35 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
 
                 events::IRQsignalEventSTXON();
             }
-            else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+            else ;*/ // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+            // (0) trigger at next cycle 
+            if(hsc->IRQgetUpper48() == (nextCCtriggerUpper48-0x10000))
+            {
+                // connect TIMER2->CC1 to pin PE12 (TIMESTAMP_OUT) on #1
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            // (1) trigger was fired and we now need to clear STXON using CMOA
+            if(hsc->IRQgetUpper48() == nextCCtriggerUpper48)
+            {   
+                // disconnect TIMER2->CC1 to pin PA9 (stxon)
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
+
+                // register next CC in order to clear CMOA (drives TIMESTAMP_OUT pin low)
+                // 10 tick are enough not to have any undefined behavior interval since
+                // just to enter and exit an interrupt it takes more than 10 ticks.
+                unsigned short wakeup = TIMER1->CNT+10;
+                TIMER1->CC[2].CCV = wakeup;
+                while((static_cast<unsigned short>(TIMER1->CNT) - wakeup) > 0x8000) ;
+
+                // disable TIMER1 CC2 interrupt
+                TIMER1->IEN &= ~TIMER_IEN_CC2;
+                TIMER1->IFC = TIMER_IFC_CC2;
+
+                events::IRQsignalEventTIMESTAMP_OUT();
+            }
         }
         else ; // DISABLED
     }
