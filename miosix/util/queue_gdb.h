@@ -12,7 +12,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   As a special exception, if other files instantiate templates or use   *
- *   macros or inline functions from this file, or you compile this file   *
+ *   macros or functions from this file, or you compile this file   *
  *   and link it with other works to produce a work based on this file,    *
  *   this file does not by itself cause the resulting work to be covered   *
  *   by the GNU General Public License. However the source code for this   *
@@ -25,19 +25,27 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "hsc.h"
-#include <limits>
+#pragma once
 
+#include "e20/e20.h"
+#include <thread>
 namespace miosix
 {
-//QueueGDB * queue_gdb = &QueueGDB::instance(); // DELETEME: (s)
-// irq
-unsigned int Hsc::matchValue = std::numeric_limits<unsigned int>::max();
 
-// timeout
-unsigned int Hsc::timeoutValue = std::numeric_limits<unsigned int>::max();
+class QueueGDB
+{
+public:
+    static QueueGDB& instance();
 
-// trigger ([0] is TIMESTAMP_OUT, [1] is STXON)
-long long Hsc::triggerValue[2]  = {std::numeric_limits<long long>::max(), std::numeric_limits<long long>::max()};
+    void post(Callback<20> event) { queue.post(event); }
+
+private:
+    QueueGDB();
+    QueueGDB(const QueueGDB&)=delete;
+    QueueGDB& operator=(const QueueGDB&)=delete;
+
+    FixedEventQueue<100,20> queue;
+    std::thread t;
+};
 
 }

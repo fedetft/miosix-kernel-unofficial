@@ -254,7 +254,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
             long long upperTimerCounter = hsc->IRQgetUpper48();
 
             // (0) trigger at next cycle 
-            if(upperTimerCounter == (nextCCtriggerUpper48-0x10000))
+            /*if(upperTimerCounter == (nextCCtriggerUpper48-0x10000))
             {
                 // connect TIMER2->CC1 to pin PA9 (stxon) on #0
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
@@ -262,7 +262,7 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
             // (1) trigger was fired and we now need to clear STXON using CMOA
-            else if(upperTimerCounter == nextCCtriggerUpper48)
+            else if(upperTimerCounter >= nextCCtriggerUpper48)
             {   
                 // disconnect TIMER2->CC1 to pin PA9 (stxon)
                 TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
@@ -281,7 +281,34 @@ void __attribute__((used)) TIMER2_IRQHandlerImpl()
 
                 events::IRQsignalEventSTXON();
             }
-            else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()
+            else ; // still counting, upperTimerCounter < Hsc::IRQgetNextCCtriggerUpper()*/
+            if(hsc->IRQgetUpper48() == (nextCCtriggerUpper48-0x10000))
+            {
+                // connect TIMER2->CC1 to pin PA9 (stxon) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }
+            // (1) trigger was fired and we now need to clear STXON using CMOA
+            if(hsc->IRQgetUpper48() >= nextCCtriggerUpper48)
+            {   
+                // disconnect TIMER2->CC1 to pin PA9 (stxon)
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_CLEAR;
+
+                // register next CC in order to clear CMOA (drives STX_ON pin low)
+                // 10 tick are enough not to have any undefined behavior interval since
+                // just to enter and exit an interrupt it takes more than 10 ticks.
+                unsigned short wakeup = TIMER2->CNT+10;
+                TIMER2->CC[1].CCV = wakeup;
+                while((static_cast<unsigned short>(TIMER2->CNT) - wakeup) > 0x8000) ;
+
+                // disable TIMER1 CC2 interrupt
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->IFC = TIMER_IFC_CC1;
+
+                events::IRQsignalEventSTXON();
+            }
         }
         else ; // DISABLED
         

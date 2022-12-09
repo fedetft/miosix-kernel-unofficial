@@ -187,7 +187,7 @@ public:
     static constexpr unsigned long long lowerMask=upperIncr-1;
     static constexpr unsigned long long upperMask=0xFFFFFFFFFFFFFFFFLL-lowerMask;
     
-    long long upperTimeTick = 0;     //Extended timer counter (upper bits)
+    long long upperTimeTick = 0; //0x100000000000000;     //Extended timer counter (upper bits)
     long long upperIrqTick = 0;      //Extended interrupt time point (upper bits)
     long long upperTimeoutTick = 0;  //Extended interrupt time point (upper bits) TODO: (s) move into HSC
     miosix::TimeConversion tc;

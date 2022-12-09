@@ -35,7 +35,10 @@
 #include "interfaces-impl/rtc.h"
 #endif
 
+//#include "util/queue_gdb.h" // DELETEME: (s)
+
 namespace miosix {
+//extern QueueGDB * queue_gdb; // DELETEME: (s)
 /**
  * Manages the high frequency hardware timer
  * This class is not safe to be accessed by multiple threads simultaneously.
@@ -503,12 +506,6 @@ public:
      */
     inline bool IRQsetTriggerMatchReg(long long v, bool channelIndex)
     {
-        // clear previous TIMER setting
-        if(channelIndex) // STXON
-            TIMER2->IFC = TIMER_IFC_CC1;
-        else // TIMESTAMP_IN/OUT
-            TIMER1->IFC = TIMER_IFC_CC2;  
-
         // extracting lower and upper 16-bit parts from match value
         triggerValue[channelIndex] = v;
 
@@ -524,11 +521,17 @@ public:
 
             long long upperCounter = IRQgetUpper48();
             unsigned short lowerCounter = TIMER2->CNT;
-            // ASK: (s) what about lowerCounter overflow here??
+
+            /*queue_gdb->post([=]{ iprintf("UC=%lld,\tLC=%u\n", upperCounter>>16, lowerCounter); }); // DELETEME: (s)
+            queue_gdb->post([=]{ iprintf("M48=%lld,\tM16=%u\n", upper48>>16, lower16); }); // DELETEME: (s)
+            queue_gdb->post([=]{ iprintf("U48=%lld,\tL16=%lu\n", IRQgetUpper48()>>16, TIMER2->CNT); }); // DELETEME: (s)
+            queue_gdb->post([=]{ iprintf("U48=%lld,\tL16=%lu\n", IRQgetUpper48()>>16, TIMER2->CNT); }); // DELETEME: (s)
+            queue_gdb->post([=]{ iprintf("U48=%lld,\tL16=%lu\n", IRQgetUpper48()>>16, TIMER2->CNT); }); // DELETEME: (s)
+            queue_gdb->post([=]{ iprintf("U48=%lld,\tL16=%lu\n", IRQgetUpper48()>>16, TIMER2->CNT); }); // DELETEME: (s)*/
 
             // TODO: (s) document
             // 1. document...
-            if(upperCounter > upper48)
+            /*if(upperCounter > upper48)
             {
                 // disable timer
                 TIMER2->IEN &= ~TIMER_IEN_CC1;
@@ -552,8 +555,6 @@ public:
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
-                
-                //<  FIXME: (s) blocks here
             }
             // 3. document...           
             // too late to send, TIMER3->CNT > upper16
@@ -573,7 +574,60 @@ public:
                 TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
                 TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }*/
+
+            if(IRQgetUpper48() == (upper48-0x10000) && TIMER2->CNT >= lower16)
+            {
+                // check if too late
+                // difference between next interrupt is less then 200 ticks
+                if(static_cast<unsigned short>(lower16 - TIMER2->CNT) >= 0xffff - 200) 
+                {
+                    // disable timer
+                    TIMER2->IEN &= ~TIMER_IEN_CC1;
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER2->IFC = TIMER_IFC_CC1;
+                    return false; 
+                }
+                // connect TIMER2->CC1 to pin PA9 (STX_ON) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
             }
+            if(IRQgetUpper48() == upper48)
+            {
+                if(static_cast<unsigned short>(lower16 - TIMER2->CNT) <= 200) 
+                {
+                    // disable timer
+                    TIMER2->IEN &= ~TIMER_IEN_CC1;
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER2->IFC = TIMER_IFC_CC1;
+
+                    // disconnect TIMER2->CC1 from PEN completely
+                    TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+                    TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
+                    TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+                    return false;
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER2->ROUTE |= TIMER_ROUTE_CC1PEN;
+                TIMER2->CC[1].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER2->ROUTE |= TIMER_ROUTE_LOCATION_LOC0;
+            }
+            if(IRQgetUpper48() > upper48)
+            {
+                // disable timer
+                TIMER2->IEN &= ~TIMER_IEN_CC1;
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER2->IFC = TIMER_IFC_CC1;
+
+                // disconnect TIMER2->CC1 from PEN completely
+                TIMER2->CC[1].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+                TIMER2->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC0;
+                TIMER2->ROUTE &= ~TIMER_ROUTE_CC1PEN;
+
+                return false;
+            }
+
             return true;
         }
         else // TIMESTAMP_OUT

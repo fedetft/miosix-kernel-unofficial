@@ -12,7 +12,7 @@
  *   GNU General Public License for more details.                          *
  *                                                                         *
  *   As a special exception, if other files instantiate templates or use   *
- *   macros or inline functions from this file, or you compile this file   *
+ *   macros or functions from this file, or you compile this file   *
  *   and link it with other works to produce a work based on this file,    *
  *   this file does not by itself cause the resulting work to be covered   *
  *   by the GNU General Public License. However the source code for this   *
@@ -25,19 +25,16 @@
  *   along with this program; if not, see <http://www.gnu.org/licenses/>   *
  ***************************************************************************/
 
-#include "hsc.h"
-#include <limits>
+#include "queue_gdb.h"
 
 namespace miosix
 {
-//QueueGDB * queue_gdb = &QueueGDB::instance(); // DELETEME: (s)
-// irq
-unsigned int Hsc::matchValue = std::numeric_limits<unsigned int>::max();
 
-// timeout
-unsigned int Hsc::timeoutValue = std::numeric_limits<unsigned int>::max();
+QueueGDB& QueueGDB::instance(){
+    static QueueGDB queueGDB;
+    return queueGDB;
+}
 
-// trigger ([0] is TIMESTAMP_OUT, [1] is STXON)
-long long Hsc::triggerValue[2]  = {std::numeric_limits<long long>::max(), std::numeric_limits<long long>::max()};
+QueueGDB::QueueGDB() : t([this]{ queue.run(); }){}
 
 }

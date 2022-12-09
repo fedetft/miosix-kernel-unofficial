@@ -44,6 +44,7 @@ util/unicode.cpp                                                           \
 util/version.cpp                                                           \
 util/crc16.cpp                                                             \
 util/lcd44780.cpp														   \
+util/queue_gdb.cpp
 
 ## Add the architecture dependand sources to the list of files to build.
 ## ARCH_SRC will contain different source files depending on which

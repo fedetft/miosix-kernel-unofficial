@@ -193,6 +193,7 @@ void Flopsync3::update(long long vc_k, long long e_k)
     // printf("[FP3] b:\t\t\t%lld\n", b_km1);
     // printf("[FP3] corr of %lld = %lld\n", (long long)5e9, vc->IRQcorrectTimeNs((long long)5e9));
     // iprintf("[FP3] D_k:\t\t%lld\n", D_k);
+    printf("[FP3] a=%.20f b=%lld D_k=%lld\n", (double)a, b, D_k);
 
     ++k;
 }
@@ -252,8 +253,11 @@ void Flopsync3::assertInit()
 
 void Flopsync3::lostPacket(long long vc_k)
 {
-    this->vc_km1 = vc_k;
-    this->receiverWindow = this->maxReceiverWindow;
+     // double the receiving window
+    int tmpReceiverWindow = std::min<int>(1.7f*this->receiverWindow, maxReceiverWindow);
+    update(vc_k, 0); 
+    // re-assign correct receiving window because the update function changes it
+    this->receiverWindow = tmpReceiverWindow;
 }
 
 void Flopsync3::reset()

@@ -281,14 +281,14 @@ EventResult absoluteTriggerEvent(Channel channel, long long absoluteNs)
     // uncorrect time
     long long absoluteNsTsnc = vc->IRQuncorrectTimeNs(absoluteNs);
 
-    // register current thread for wakeup
-    waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
-
     // configure event on timer side
     long long absoluteTickTsnc = hsc->tc.ns2tick(absoluteNsTsnc);
     bool ok = hsc->IRQsetTriggerMatchReg(absoluteTickTsnc, channel == Channel::SFD_STXON);
     if(!ok) return EventResult::TRIGGER_IN_THE_PAST;
 
+    // register current thread for wakeup
+    waitingThread[channelIndex] = Thread::IRQgetCurrentThread();
+    
     // wait for trigger to be fired (avoids spurious wakeups)
     while(waitingThread[channelIndex] != nullptr)
     {
