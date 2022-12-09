@@ -206,7 +206,7 @@ void __attribute__((used)) TIMER1_IRQHandlerImpl()
                 TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
             }
             // (1) trigger was fired and we now need to clear STXON using CMOA
-            if(hsc->IRQgetUpper48() == nextCCtriggerUpper48)
+            if(hsc->IRQgetUpper48() >= nextCCtriggerUpper48)
             {   
                 // disconnect TIMER2->CC1 to pin PA9 (stxon)
                 TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_SET;

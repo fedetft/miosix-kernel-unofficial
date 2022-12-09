@@ -647,7 +647,7 @@ public:
 
             // TODO: (s) document
             // 1. document...
-            if(upperCounter > upper48)
+            /*if(upperCounter > upper48)
             {
                 // disable timer
                 TIMER1->IEN &= ~TIMER_IEN_CC2;
@@ -691,6 +691,54 @@ public:
                 TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
                 TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
                 TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            return true;*/
+
+            // 1. document...           
+            // too late to send, TIMER3->CNT > upper16
+            if(IRQgetUpper48() == (upper48-0x10000) && TIMER2->CNT >= lower16)
+            {
+                // check if too late
+                // difference between next interrupt is less then 200 ticks
+                if(static_cast<unsigned short>(lower16 - TIMER2->CNT) >= 0xffff - 200) 
+                {
+                    // disable timer
+                    TIMER1->IEN &= ~TIMER_IEN_CC2;
+                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER1->IFC = TIMER_IFC_CC2;
+
+                    return false; 
+                }
+                // connect TIMER1->CC2 to pin PE12 (TIMESTAMP_OUT) on #1
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            // 2. document...
+            if(IRQgetUpper48() == upper48)
+            {
+                if(static_cast<unsigned short>(lower16 - TIMER2->CNT) <= 200) 
+                {
+                    // disable timer
+                    TIMER1->IEN &= ~TIMER_IEN_CC2;
+                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                    TIMER1->IFC = TIMER_IFC_CC2;
+
+                    return false;
+                }
+                // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
+                TIMER1->ROUTE |= TIMER_ROUTE_CC2PEN;
+                TIMER1->CC[2].CTRL |= TIMER_CC_CTRL_CMOA_SET;
+                TIMER1->ROUTE |= TIMER_ROUTE_LOCATION_LOC1;
+            }
+            // 3. document...
+            if(IRQgetUpper48() > upper48)
+            {
+                // disable timer
+                TIMER1->IEN &= ~TIMER_IEN_CC2;
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
+                TIMER1->IFC = TIMER_IFC_CC2;
+                return false;
             }
             return true;
         }
