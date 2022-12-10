@@ -724,6 +724,11 @@ public:
                     TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
                     TIMER1->IFC = TIMER_IFC_CC2;
 
+                    // disconnect TIMER2->CC1 from PEN completely
+                    TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+                    TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
+                    TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
+
                     return false;
                 }
                 // connect TIMER1->CC2 to pin PA9 (STX_ON) on #0
@@ -738,6 +743,12 @@ public:
                 TIMER1->IEN &= ~TIMER_IEN_CC2;
                 TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_MODE_OUTPUTCOMPARE;
                 TIMER1->IFC = TIMER_IFC_CC2;
+
+                // disconnect TIMER2->CC1 from PEN completely
+                TIMER1->CC[2].CTRL &= ~TIMER_CC_CTRL_CMOA_CLEAR;
+                TIMER1->ROUTE &= ~TIMER_ROUTE_LOCATION_LOC1;
+                TIMER1->ROUTE &= ~TIMER_ROUTE_CC2PEN;
+
                 return false;
             }
             return true;
